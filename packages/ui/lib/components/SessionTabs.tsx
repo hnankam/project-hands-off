@@ -7,9 +7,10 @@ interface SessionTabsProps {
   className?: string;
   isLight: boolean;
   viewMode?: 'sidepanel' | 'popup' | 'newtab' | 'fullscreen';
+  isVisible?: boolean; // Track when the sessions page is visible
 }
 
-export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel' }: SessionTabsProps) => {
+export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisible = true }: SessionTabsProps) => {
   const { sessions, currentSessionId } = useSessionStorageDB();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const previousCurrentSessionId = useRef(currentSessionId);
@@ -148,6 +149,49 @@ export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel' }: Sess
     }
     previousCurrentSessionId.current = currentSessionId;
   }, [currentSessionId]);
+
+  // Auto-scroll to active tab when page becomes visible or sessions load
+  useEffect(() => {
+    // Only proceed if the component is visible
+    if (!isVisible) {
+      return undefined;
+    }
+    
+    // Helper to check if the scroll container is visible
+    const isContainerVisible = () => {
+      if (!scrollContainerRef.current) return false;
+      const rect = scrollContainerRef.current.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+
+    // Helper to perform scroll
+    const scrollToActive = () => {
+      if (!currentSessionId || !scrollContainerRef.current) return;
+      
+      const activeSessionElement = scrollContainerRef.current.querySelector(`[data-session-id="${currentSessionId}"]`);
+      
+      if (activeSessionElement && isContainerVisible()) {
+        activeSessionElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+          inline: 'center'
+        });
+      }
+    };
+
+    // Scroll when sessions are available and container becomes visible
+    if (currentSessionId && sessions.length > 0) {
+      // Try immediately
+      setTimeout(scrollToActive, 100);
+      
+      // Also try after a longer delay for page transitions
+      const delayedTimeout = setTimeout(scrollToActive, 300);
+      
+      return () => clearTimeout(delayedTimeout);
+    }
+    
+    return undefined;
+  }, [isVisible, currentSessionId, sessions.length]);
 
   return (
     <div className={cn("flex items-center w-full", className)}>

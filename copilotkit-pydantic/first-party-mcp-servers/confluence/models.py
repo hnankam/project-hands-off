@@ -41,53 +41,59 @@ class PageInfo(BaseModel):
 
 class GetPageResponse(BaseModel):
     """Response for getting a page."""
-    page: Dict[str, Any] = Field(..., description="Complete page details")
+    page: Optional[Dict[str, Any]] = Field(None, description="Complete page details")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreatePageResponse(BaseModel):
     """Response for creating a page."""
-    page: PageInfo = Field(..., description="Created page")
-    message: str = Field(..., description="Success message")
+    page: Optional[PageInfo] = Field(None, description="Created page")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdatePageResponse(BaseModel):
     """Response for updating a page."""
-    page_id: str = Field(..., description="Updated page ID")
-    message: str = Field(..., description="Success message")
+    page_id: Optional[str] = Field(None, description="Updated page ID")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeletePageResponse(BaseModel):
     """Response for deleting a page."""
-    page_id: str = Field(..., description="Deleted page ID")
-    message: str = Field(..., description="Success message")
+    page_id: Optional[str] = Field(None, description="Deleted page ID")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetPageChildrenResponse(BaseModel):
     """Response for getting page children."""
-    page_id: str = Field(..., description="Parent page ID")
-    children: List[Dict[str, Any]] = Field(..., description="List of child pages")
-    total: int = Field(..., description="Total number of children")
+    page_id: Optional[str] = Field(None, description="Parent page ID")
+    children: List[Dict[str, Any]] = Field(default_factory=list, description="List of child pages")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetPageLabelsResponse(BaseModel):
     """Response for getting page labels."""
-    page_id: str = Field(..., description="Page ID")
-    labels: List[Dict[str, Any]] = Field(..., description="List of labels")
-    total: int = Field(..., description="Total number of labels")
+    page_id: Optional[str] = Field(None, description="Page ID")
+    labels: List[Dict[str, Any]] = Field(default_factory=list, description="List of labels")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class AddPageLabelResponse(BaseModel):
     """Response for adding a label to page."""
-    page_id: str = Field(..., description="Page ID")
-    label: str = Field(..., description="Label added")
-    message: str = Field(..., description="Success message")
+    page_id: Optional[str] = Field(None, description="Page ID")
+    label: Optional[str] = Field(None, description="Label added")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class RemovePageLabelResponse(BaseModel):
     """Response for removing a label from page."""
-    page_id: str = Field(..., description="Page ID")
-    label: str = Field(..., description="Label removed")
-    message: str = Field(..., description="Success message")
+    page_id: Optional[str] = Field(None, description="Page ID")
+    label: Optional[str] = Field(None, description="Label removed")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -96,33 +102,36 @@ class RemovePageLabelResponse(BaseModel):
 
 class ListSpacesResponse(BaseModel):
     """Response for listing spaces."""
-    spaces: List[SpaceInfo] = Field(..., description="List of spaces")
-    start_at: int = Field(..., description="Starting index")
-    max_results: int = Field(..., description="Maximum results per page")
-    total: int = Field(..., description="Total number of spaces")
+    spaces: List[SpaceInfo] = Field(default_factory=list, description="List of spaces")
+    start_at: int = Field(0, description="Starting index")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetSpaceResponse(BaseModel):
     """Response for getting a space."""
-    space: Dict[str, Any] = Field(..., description="Complete space details")
+    space: Optional[Dict[str, Any]] = Field(None, description="Complete space details")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateSpaceResponse(BaseModel):
     """Response for creating a space."""
-    space: SpaceInfo = Field(..., description="Created space")
-    message: str = Field(..., description="Success message")
+    space: Optional[SpaceInfo] = Field(None, description="Created space")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateSpaceResponse(BaseModel):
     """Response for updating a space."""
-    space_key: str = Field(..., description="Updated space key")
-    message: str = Field(..., description="Success message")
+    space_key: Optional[str] = Field(None, description="Updated space key")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteSpaceResponse(BaseModel):
     """Response for deleting a space."""
-    space_key: str = Field(..., description="Deleted space key")
-    message: str = Field(..., description="Success message")
+    space_key: Optional[str] = Field(None, description="Deleted space key")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -131,17 +140,18 @@ class DeleteSpaceResponse(BaseModel):
 
 class GetPageContentResponse(BaseModel):
     """Response for getting page content."""
-    page_id: str = Field(..., description="Page ID")
-    content: str = Field(..., description="Page content (HTML or storage format)")
-    format: str = Field(..., description="Content format (storage, view)")
+    page_id: Optional[str] = Field(None, description="Page ID")
+    content: Optional[str] = Field(None, description="Page content (HTML or storage format)")
+    format: Optional[str] = Field(None, description="Content format (storage, view)")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class SearchContentResponse(BaseModel):
     """Response for searching content."""
-    results: List[Dict[str, Any]] = Field(..., description="Search results")
-    total: int = Field(..., description="Total number of results")
-    start: int = Field(..., description="Start index")
-    limit: int = Field(..., description="Maximum results returned")
+    results: List[Dict[str, Any]] = Field(default_factory=list, description="Search results")
+    start: int = Field(0, description="Start index")
+    limit: int = Field(25, description="Maximum results returned")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -150,16 +160,17 @@ class SearchContentResponse(BaseModel):
 
 class GetPageAttachmentsResponse(BaseModel):
     """Response for getting page attachments."""
-    page_id: str = Field(..., description="Page ID")
-    attachments: List[Dict[str, Any]] = Field(..., description="List of attachments")
-    total: int = Field(..., description="Total number of attachments")
+    page_id: Optional[str] = Field(None, description="Page ID")
+    attachments: List[Dict[str, Any]] = Field(default_factory=list, description="List of attachments")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class AddAttachmentResponse(BaseModel):
     """Response for adding an attachment."""
-    page_id: str = Field(..., description="Page ID")
-    attachment: Dict[str, Any] = Field(..., description="Attachment details")
-    message: str = Field(..., description="Success message")
+    page_id: Optional[str] = Field(None, description="Page ID")
+    attachment: Optional[Dict[str, Any]] = Field(None, description="Attachment details")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -168,26 +179,29 @@ class AddAttachmentResponse(BaseModel):
 
 class GetPageCommentsResponse(BaseModel):
     """Response for getting page comments."""
-    page_id: str = Field(..., description="Page ID")
-    comments: List[Dict[str, Any]] = Field(..., description="List of comments")
-    total: int = Field(..., description="Total number of comments")
+    page_id: Optional[str] = Field(None, description="Page ID")
+    comments: List[Dict[str, Any]] = Field(default_factory=list, description="List of comments")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class AddCommentResponse(BaseModel):
     """Response for adding a comment."""
-    page_id: str = Field(..., description="Page ID")
-    comment: Dict[str, Any] = Field(..., description="Comment details")
-    message: str = Field(..., description="Success message")
+    page_id: Optional[str] = Field(None, description="Page ID")
+    comment: Optional[Dict[str, Any]] = Field(None, description="Comment details")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateCommentResponse(BaseModel):
     """Response for updating a comment."""
-    comment_id: str = Field(..., description="Comment ID")
-    message: str = Field(..., description="Success message")
+    comment_id: Optional[str] = Field(None, description="Comment ID")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteCommentResponse(BaseModel):
     """Response for deleting a comment."""
-    comment_id: str = Field(..., description="Comment ID")
-    message: str = Field(..., description="Success message")
+    comment_id: Optional[str] = Field(None, description="Comment ID")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 

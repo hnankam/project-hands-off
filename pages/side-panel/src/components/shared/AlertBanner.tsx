@@ -28,28 +28,28 @@ const getAlertStyles = (type: AlertBannerProps['type'], isLight: boolean) => {
   switch (type) {
     case 'error':
       return {
-        bg: isLight ? 'bg-red-50' : 'bg-red-900/20',
+        bg: isLight ? 'bg-red-50' : 'bg-red-900/90',
         text: isLight ? 'text-red-700' : 'text-red-400',
-        button: isLight ? 'text-red-500 hover:bg-red-100' : 'text-red-400 hover:bg-red-900/40',
+        button: isLight ? 'text-red-500 hover:bg-red-100' : 'text-red-400 hover:bg-red-800',
       };
     case 'success':
       return {
-        bg: isLight ? 'bg-green-50' : 'bg-green-900/20',
+        bg: isLight ? 'bg-green-50' : 'bg-green-900/90',
         text: isLight ? 'text-green-700' : 'text-green-400',
-        button: isLight ? 'text-green-500 hover:bg-green-100' : 'text-green-400 hover:bg-green-900/40',
+        button: isLight ? 'text-green-500 hover:bg-green-100' : 'text-green-400 hover:bg-green-800',
       };
     case 'warning':
       return {
-        bg: isLight ? 'bg-yellow-50' : 'bg-yellow-900/20',
+        bg: isLight ? 'bg-yellow-50' : 'bg-yellow-900/90',
         text: isLight ? 'text-yellow-700' : 'text-yellow-400',
-        button: isLight ? 'text-yellow-500 hover:bg-yellow-100' : 'text-yellow-400 hover:bg-yellow-900/40',
+        button: isLight ? 'text-yellow-500 hover:bg-yellow-100' : 'text-yellow-400 hover:bg-yellow-800',
       };
     case 'info':
     default:
       return {
-        bg: isLight ? 'bg-blue-50' : 'bg-blue-900/20',
+        bg: isLight ? 'bg-blue-50' : 'bg-blue-900/90',
         text: isLight ? 'text-blue-700' : 'text-blue-400',
-        button: isLight ? 'text-blue-500 hover:bg-blue-100' : 'text-blue-400 hover:bg-blue-900/40',
+        button: isLight ? 'text-blue-500 hover:bg-blue-100' : 'text-blue-400 hover:bg-blue-800',
       };
   }
 };

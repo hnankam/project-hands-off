@@ -6,9 +6,10 @@ import { useState, useEffect } from 'react';
 interface SessionListProps {
   className?: string;
   isLight?: boolean;
+  viewMode?: 'sidepanel' | 'popup' | 'newtab' | 'fullscreen';
 }
 
-export const SessionList = ({ className, isLight = true }: SessionListProps) => {
+export const SessionList = ({ className, isLight = true, viewMode = 'sidepanel' }: SessionListProps) => {
   const { sessions, currentSessionId } = useSessionStorageDB();
   const [isExpanded, setIsExpanded] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -133,8 +134,8 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
                 key={session.id}
                 onClick={() => handleSessionClick(session.id)}
                 className={cn(
-                  "group flex items-center justify-between px-2 py-2 text-xs cursor-pointer transition-colors rounded",
-                  index === sessions.length - 1 && "rounded-bl-xl rounded-br-xl",
+                  "group flex items-center justify-between px-2 py-2 text-xs cursor-pointer transition-colors",
+                  "rounded",
                   session.id === currentSessionId
                     ? isLight
                       ? "bg-gray-200 text-gray-900"
@@ -143,7 +144,13 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
                       ? "text-gray-600 hover:bg-gray-100"
                       : "text-gray-500 hover:bg-gray-700/50"
                 )}
-                style={session.id !== currentSessionId ? { color: isLight ? '#4b5563' : '#6b7280' } : undefined}
+                style={{
+                  ...(session.id !== currentSessionId ? { color: isLight ? '#4b5563' : '#6b7280' } : {}),
+                  ...(index === sessions.length - 1 && viewMode === 'sidepanel' ? {
+                    borderBottomLeftRadius: '0.75rem',
+                    borderBottomRightRadius: '0.75rem'
+                  } : {})
+                }}
               >
                 <div
                   className="flex-1 min-w-0 truncate pr-2 transition-colors"

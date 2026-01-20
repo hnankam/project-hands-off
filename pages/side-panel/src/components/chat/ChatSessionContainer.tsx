@@ -144,30 +144,30 @@ const PanelsWrapper: FC<{
       className="absolute top-0 bottom-0 right-0 z-50" 
       style={{ pointerEvents: 'none', width: '100%', height: '100%' }}
     >
-      <PlansPanel
-        isLight={isLight}
-        isOpen={showPlansPanel}
-        onClose={onClosePlans}
-        plans={agentPlans}
-        sessionId={sessionId}
-        onPlansUpdate={handlePlansUpdate}
-        onWidthChange={onWidthChange}
+        <PlansPanel
+          isLight={isLight}
+          isOpen={showPlansPanel}
+          onClose={onClosePlans}
+          plans={agentPlans}
+          sessionId={sessionId}
+          onPlansUpdate={handlePlansUpdate}
+          onWidthChange={onWidthChange}
         initialWidth={initialPanelWidth}
         isSmallView={isSmallView}
         chatFontSize={chatFontSize}
-      />
-      <GraphsPanel
-        isLight={isLight}
-        isOpen={showGraphsPanel}
-        onClose={onCloseGraphs}
-        graphs={agentGraphs}
-        sessionId={sessionId}
-        onGraphsUpdate={handleGraphsUpdate}
-        onWidthChange={onWidthChange}
+        />
+        <GraphsPanel
+          isLight={isLight}
+          isOpen={showGraphsPanel}
+          onClose={onCloseGraphs}
+          graphs={agentGraphs}
+          sessionId={sessionId}
+          onGraphsUpdate={handleGraphsUpdate}
+          onWidthChange={onWidthChange}
         initialWidth={initialPanelWidth}
         isSmallView={isSmallView}
         chatFontSize={chatFontSize}
-      />
+        />
     </div>
   );
 };

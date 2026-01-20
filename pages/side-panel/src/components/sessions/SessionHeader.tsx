@@ -24,6 +24,7 @@ interface SessionHeaderProps {
   currentSessionTitle: string;
   sessionMessageCount: number;
   copiedSessionId: boolean;
+  isVisible?: boolean;
   // Action handlers
   onNewSession: () => void;
   onCloseSession: () => void;
@@ -48,6 +49,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
   currentSessionTitle,
   sessionMessageCount,
   copiedSessionId,
+  isVisible = true,
   onNewSession,
   onCloseSession,
   onResetSession,
@@ -70,7 +72,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
         isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
       )}>
       <div className="mr-2 flex min-w-0 flex-1 items-center overflow-hidden">
-        <SessionTabs isLight={isLight} viewMode={viewMode} className="flex-1" />
+        <SessionTabs isLight={isLight} viewMode={viewMode} isVisible={isVisible} className="flex-1" />
       </div>
 
       <div className="flex flex-shrink-0 items-center space-x-1">

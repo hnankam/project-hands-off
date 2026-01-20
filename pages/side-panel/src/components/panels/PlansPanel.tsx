@@ -99,28 +99,28 @@ export const PlansPanel: React.FC<PlansPanelProps> = ({
         />
       )}
       
-      <div
-        className={cn(
+    <div
+      className={cn(
           'absolute right-0 top-0 bottom-0 z-40 flex flex-col border-l font-size-' + chatFontSize,
-          isLight ? 'bg-white border-gray-200' : 'border-gray-700'
-        )}
-        style={{ 
-          backgroundColor: isLight ? '#ffffff' : '#0D1117',
+        isLight ? 'bg-white border-gray-200' : 'border-gray-700'
+      )}
+      style={{ 
+        backgroundColor: isLight ? '#ffffff' : '#0D1117',
           width: isSmallView ? '85vw' : `${width}px`,
           maxWidth: isSmallView ? '400px' : undefined,
           transition: isResizing ? 'none' : 'width 0.2s ease-in-out',
           pointerEvents: 'auto',
-        }}
-      >
+      }}
+    >
         {/* Resize handle - only show in large view */}
         {!isSmallView && (
-          <div
-            className={cn(
-              'absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500/50 transition-colors',
-              isResizing && 'bg-blue-500'
-            )}
-            onMouseDown={handleMouseDown}
-          />
+      <div
+        className={cn(
+          'absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500/50 transition-colors',
+          isResizing && 'bg-blue-500'
+        )}
+        onMouseDown={handleMouseDown}
+      />
         )}
       {/* Header */}
       <div className={cn(

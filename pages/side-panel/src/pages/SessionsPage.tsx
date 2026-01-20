@@ -29,6 +29,7 @@ interface SessionsPageProps {
   sessionsLoading?: boolean;
   publicApiKey: string;
   contextMenuMessage: string | null;
+  isVisible?: boolean; // Track if the page is currently visible
   onGoHome: () => void;
   onClose: () => void;
   onOpenAbout: () => void;
@@ -42,6 +43,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   sessionsLoading = false,
   publicApiKey,
   contextMenuMessage,
+  isVisible = true,
   onGoHome,
   onClose,
   onOpenAbout,
@@ -268,6 +270,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         currentSessionTitle={currentSessionTitle}
         sessionMessageCount={currentSessionId ? sessionMessageCounts[currentSessionId] || 0 : 0}
         copiedSessionId={copiedSessionId}
+        isVisible={isVisible}
         onNewSession={handleNewSession}
         onCloseSession={handleCloseSession}
         onResetSession={handleResetSession}
@@ -384,7 +387,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
           'flex-shrink-0 border-t px-1',
           isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
         )}>
-        <SessionList isLight={isLight} />
+        <SessionList isLight={isLight} viewMode={viewMode} />
       </div>
 
       {/* Clear Messages Confirmation Modal */}

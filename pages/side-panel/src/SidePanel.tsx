@@ -16,7 +16,7 @@
 
 import './SidePanel.css';
 // CopilotKit styles now imported in index.css (after Tailwind base for @layer support)
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import {
   useStorage,
   useSessionStorageDB,
@@ -298,6 +298,7 @@ const SidePanel = () => {
               sessionsLoading={sessionsLoading}
               publicApiKey={COPILOTKIT_PUBLIC_KEY}
               contextMenuMessage={contextMenuMessage}
+              isVisible={activePage === 'sessions'}
               onGoHome={navigateToHome}
               onClose={closeSidePanel}
               onOpenAbout={openAbout}

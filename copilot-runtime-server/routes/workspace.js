@@ -1732,51 +1732,79 @@ async function refreshAndUpdateToken(connection, userId, tokens, service) {
   // Refresh the token
   console.log(`[OAuth] Refreshing ${service} token for connection ${connection.id}`);
   
-  const newTokens = service === 'gmail'
-    ? await refreshGoogleToken(tokens.refresh_token, clientId, clientSecret)
-    : await refreshSlackToken(tokens.refresh_token, clientId, clientSecret);
-  
-  // Calculate new expiry timestamp
-  const expiresAt = newTokens.expires_in 
-    ? calculateExpiryTimestamp(newTokens.expires_in)
-    : null;
-  
-  // Merge with existing tokens (keep refresh_token if not returned)
-  const updatedTokens = {
-    access_token: newTokens.access_token,
-    refresh_token: newTokens.refresh_token || tokens.refresh_token,
-    expires_at: expiresAt,
-    scopes: newTokens.scope ? newTokens.scope.split(' ') : tokens.scopes,
-  };
-  
-  // Encrypt and save to database
-  // Note: Only store the encrypted Buffer, not the full object
-  const encryptResult = encryptOAuthTokens(updatedTokens, userId);
-  console.log('[OAuth Debug] Encrypt result type:', typeof encryptResult);
-  console.log('[OAuth Debug] Encrypt result keys:', Object.keys(encryptResult));
-  
-  const { encrypted } = encryptResult;
-  console.log('[OAuth Debug] Extracted encrypted type:', typeof encrypted);
-  console.log('[OAuth Debug] Is Buffer?', Buffer.isBuffer(encrypted));
-  console.log('[OAuth Debug] Buffer length:', encrypted ? encrypted.length : 'N/A');
-  
-  await pool.query(
-    `UPDATE workspace_connections 
-     SET encrypted_credentials = $1, 
-         token_expires_at = $2,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = $3`,
-    [
-      encrypted,  // Store only the Buffer, not the full object
-      expiresAt ? new Date(expiresAt * 1000) : null,
-      connection.id
-    ]
-  );
-  
-  console.log(`[OAuth] Successfully refreshed and updated ${service} token`);
-  console.log(`[OAuth Debug] Stored credentials in database for connection ${connection.id}`);
-  
-  return updatedTokens;
+  try {
+    const newTokens = service === 'gmail'
+      ? await refreshGoogleToken(tokens.refresh_token, clientId, clientSecret)
+      : await refreshSlackToken(tokens.refresh_token, clientId, clientSecret);
+    
+    // Calculate new expiry timestamp
+    const expiresAt = newTokens.expires_in 
+      ? calculateExpiryTimestamp(newTokens.expires_in)
+      : null;
+    
+    // Merge with existing tokens (keep refresh_token if not returned)
+    const updatedTokens = {
+      access_token: newTokens.access_token,
+      refresh_token: newTokens.refresh_token || tokens.refresh_token,
+      expires_at: expiresAt,
+      scopes: newTokens.scope ? newTokens.scope.split(' ') : tokens.scopes,
+    };
+    
+    // Encrypt and save to database
+    // Note: Only store the encrypted Buffer, not the full object
+    const encryptResult = encryptOAuthTokens(updatedTokens, userId);
+    console.log('[OAuth Debug] Encrypt result type:', typeof encryptResult);
+    console.log('[OAuth Debug] Encrypt result keys:', Object.keys(encryptResult));
+    
+    const { encrypted } = encryptResult;
+    console.log('[OAuth Debug] Extracted encrypted type:', typeof encrypted);
+    console.log('[OAuth Debug] Is Buffer?', Buffer.isBuffer(encrypted));
+    console.log('[OAuth Debug] Buffer length:', encrypted ? encrypted.length : 'N/A');
+    
+    await pool.query(
+      `UPDATE workspace_connections 
+       SET encrypted_credentials = $1, 
+           token_expires_at = $2,
+           metadata = COALESCE(metadata, '{}'::jsonb) || '{"needs_reauth": false}'::jsonb,
+           status = 'active',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3`,
+      [
+        encrypted,  // Store only the Buffer, not the full object
+        expiresAt ? new Date(expiresAt * 1000) : null,
+        connection.id
+      ]
+    );
+    
+    console.log(`[OAuth] Successfully refreshed and updated ${service} token`);
+    console.log(`[OAuth Debug] Stored credentials in database for connection ${connection.id}`);
+    
+    return updatedTokens;
+  } catch (error) {
+    // If refresh token is invalid/expired, mark connection as needing re-authentication
+    if (error.requiresReauth || error.errorCode === 'invalid_grant') {
+      console.warn(`[OAuth] Refresh token expired/revoked for ${service} connection ${connection.id}. Marking for re-authentication.`);
+      
+      // Update connection to indicate it needs re-authentication
+      await pool.query(
+        `UPDATE workspace_connections 
+         SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"needs_reauth": true, "reauth_reason": "refresh_token_expired"}'::jsonb,
+             status = 'needs_reauth',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [connection.id]
+      );
+      
+      // Create a more user-friendly error
+      const reauthError = new Error(`${service} connection requires re-authentication. Please reconnect your ${service} account.`);
+      reauthError.requiresReauth = true;
+      reauthError.connectionId = connection.id;
+      throw reauthError;
+    }
+    
+    // For other errors, just re-throw
+    throw error;
+  }
 }
 
 // ============================================================================

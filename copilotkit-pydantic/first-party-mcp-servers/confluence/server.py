@@ -3,6 +3,29 @@ Confluence MCP Server
 
 This server provides tools for interacting with Confluence through the Model Context Protocol (MCP).
 It enables AI agents to manage Confluence pages, spaces, comments, and search content programmatically.
+
+## Credential Resolution
+
+All tools use credential KEYS rather than raw credentials:
+- url_credential_key: Key for the Confluence instance URL
+- token_credential_key: Key for the API token or PAT
+- username_credential_key: Key for username (Cloud only)
+
+These keys are resolved at runtime from a secure credential store, ensuring:
+- Credentials are never hardcoded or exposed in function calls
+- Centralized credential management and rotation
+- Audit trail for credential usage
+- Multi-tenant support via unique credential keys
+
+## Authentication Methods
+
+1. **Confluence Cloud** (cloud=True):
+   - Requires: username (email) + API token
+   - Get token: https://id.atlassian.com/manage-profile/security/api-tokens
+
+2. **Confluence Server/Data Center** (cloud=False):
+   - Requires: Personal Access Token (PAT) only
+   - Get PAT: Profile → Personal Access Tokens → Create token
 """
 
 from fastmcp import FastMCP

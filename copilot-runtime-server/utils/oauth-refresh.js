@@ -29,15 +29,19 @@ export async function refreshGoogleToken(refreshToken, clientId, clientSecret) {
 
     if (!response.ok) {
       const error = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(error);
+      } catch (e) {
+        errorData = { error: error };
+      }
       
-      // Provide helpful guidance for common errors
-      if (error.includes('invalid_grant')) {
-        console.error('[OAuth Refresh] INVALID_GRANT error detected. Common causes:');
-        console.error('[OAuth Refresh]   1. Google Cloud app is in "Testing" mode - refresh tokens expire after 7 days');
-        console.error('[OAuth Refresh]   2. User revoked access from Google Account settings');
-        console.error('[OAuth Refresh]   3. User changed their Google password');
-        console.error('[OAuth Refresh]   4. Refresh token was never received (check OAuth callback logs)');
-        console.error('[OAuth Refresh] Solution: User needs to re-authenticate. The connection should be marked as invalid.');
+      // Check for specific error cases that require re-authentication
+      if (errorData.error === 'invalid_grant') {
+        const customError = new Error(`Token refresh failed: ${response.status} - ${error}`);
+        customError.requiresReauth = true; // Flag that user needs to re-authenticate
+        customError.errorCode = 'invalid_grant';
+        throw customError;
       }
       
       throw new Error(`Token refresh failed: ${response.status} - ${error}`);
@@ -55,6 +59,12 @@ export async function refreshGoogleToken(refreshToken, clientId, clientSecret) {
     };
   } catch (error) {
     console.error('[OAuth Refresh] Error refreshing Google token:', error);
+    
+    // If the error has requiresReauth flag, preserve it
+    if (error.requiresReauth) {
+      throw error;
+    }
+    
     throw error;
   }
 }
