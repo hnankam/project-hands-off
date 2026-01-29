@@ -87,37 +87,39 @@ def list_volumes(
         ListVolumesResponse with list of volumes and pagination info
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Cap limit at 20 when include_browse is True to reduce response size
-    effective_limit = min(limit, 20) if include_browse else limit
+        # Cap limit at 20 when include_browse is True to reduce response size
+        effective_limit = min(limit, 20) if include_browse else limit
     
-    response = client.volumes.list(
-        catalog_name=catalog_name,
-        schema_name=schema_name,
-        include_browse=include_browse,
-    )
+        response = client.volumes.list(
+            catalog_name=catalog_name,
+            schema_name=schema_name,
+            include_browse=include_browse,
+        )
     
-    skip = page * effective_limit
-    volumes_iterator = islice(response, skip, skip + effective_limit)
+        skip = page * effective_limit
+        volumes_iterator = islice(response, skip, skip + effective_limit)
     
-    volumes_list = []
-    for volume in volumes_iterator:
-        volumes_list.append(_convert_volume_to_model(volume))
+        volumes_list = []
+        for volume in volumes_iterator:
+            volumes_list.append(_convert_volume_to_model(volume))
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
+        # Check for more results
         has_more = False
-    
-    return ListVolumesResponse(
-        volumes=volumes_list,
-        count=len(volumes_list),
-        has_more=has_more,
-    )
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListVolumesResponse(
+            volumes=volumes_list,
+            count=len(volumes_list),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListVolumesResponse(
             volumes=[],
@@ -149,14 +151,16 @@ def get_volume(
         VolumeInfoModel with complete volume details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    volume = client.volumes.read(
-        name=name,
-        include_browse=include_browse,
-    )
+        volume = client.volumes.read(
+            name=name,
+            include_browse=include_browse,
+        )
     
-    return _convert_volume_to_model(volume)
+        return _convert_volume_to_model(volume)
+
     except Exception as e:
         return VolumeInfoModel(
             full_name=name,
@@ -199,22 +203,24 @@ def create_volume(
         CreateVolumeResponse with created volume information
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.catalog import VolumeType
+        from databricks.sdk.service.catalog import VolumeType
     
-    volume = client.volumes.create(
-        catalog_name=catalog_name,
-        schema_name=schema_name,
-        name=name,
-        volume_type=VolumeType(volume_type),
-        comment=comment,
-        storage_location=storage_location,
-    )
+        volume = client.volumes.create(
+            catalog_name=catalog_name,
+            schema_name=schema_name,
+            name=name,
+            volume_type=VolumeType(volume_type),
+            comment=comment,
+            storage_location=storage_location,
+        )
     
-    return CreateVolumeResponse(
-        volume_info=_convert_volume_to_model(volume),
-    )
+        return CreateVolumeResponse(
+            volume_info=_convert_volume_to_model(volume),
+        )
+
     except Exception as e:
         return CreateVolumeResponse(
             volume_info=None,
@@ -242,11 +248,13 @@ def delete_volume(
         DeleteVolumeResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.volumes.delete(name=name)
+        client.volumes.delete(name=name)
     
-    return DeleteVolumeResponse(name=name)
+        return DeleteVolumeResponse(name=name)
+
     except Exception as e:
         return DeleteVolumeResponse(
             name=name,
@@ -280,18 +288,20 @@ def update_volume(
         UpdateVolumeResponse with updated volume information
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    volume = client.volumes.update(
-        name=name,
-        new_name=new_name,
-        comment=comment,
-        owner=owner,
-    )
+        volume = client.volumes.update(
+            name=name,
+            new_name=new_name,
+            comment=comment,
+            owner=owner,
+        )
     
-    return UpdateVolumeResponse(
-        volume_info=_convert_volume_to_model(volume),
-    )
+        return UpdateVolumeResponse(
+            volume_info=_convert_volume_to_model(volume),
+        )
+
     except Exception as e:
         return UpdateVolumeResponse(
             volume_info=None,

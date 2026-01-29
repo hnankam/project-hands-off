@@ -34,48 +34,50 @@ def get_notebook_cells(host_credential_key: str, token_credential_key: str, path
         NotebookCellsResponse with all cells and metadata
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Export notebook as JUPYTER format
-    response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
+        # Export notebook as JUPYTER format
+        response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
     
-    # Decode and parse JSON
-    content_encoded = getattr(response, 'content', '')
-    content_str = base64.b64decode(content_encoded).decode('utf-8')
-    notebook_data = json.loads(content_str)
+        # Decode and parse JSON
+        content_encoded = getattr(response, 'content', '')
+        content_str = base64.b64decode(content_encoded).decode('utf-8')
+        notebook_data = json.loads(content_str)
     
-    # Extract cells
-    cells = notebook_data.get('cells', [])
-    notebook_metadata = notebook_data.get('metadata', {})
+        # Extract cells
+        cells = notebook_data.get('cells', [])
+        notebook_metadata = notebook_data.get('metadata', {})
     
-    # Convert to Pydantic models
-    cell_models = []
-    for index, cell in enumerate(cells):
-        # Normalize source to string (Jupyter stores as array of lines)
-        source = cell.get('source', [])
-        if isinstance(source, list):
-            source = "".join(source)
+        # Convert to Pydantic models
+        cell_models = []
+        for index, cell in enumerate(cells):
+            # Normalize source to string (Jupyter stores as array of lines)
+            source = cell.get('source', [])
+            if isinstance(source, list):
+                source = "".join(source)
         
-        # Normalize outputs (text fields are also stored as arrays)
-        outputs = _normalize_outputs(cell.get('outputs', []))
+            # Normalize outputs (text fields are also stored as arrays)
+            outputs = _normalize_outputs(cell.get('outputs', []))
         
-        cell_model = NotebookCell(
-            index=index,
-            cell_type=cell.get('cell_type', 'code'),
-            source=source,
-            metadata=cell.get('metadata', {}),
-            outputs=outputs,
-            execution_count=cell.get('execution_count'),
-            language=_extract_cell_language(cell)
+            cell_model = NotebookCell(
+                index=index,
+                cell_type=cell.get('cell_type', 'code'),
+                source=source,
+                metadata=cell.get('metadata', {}),
+                outputs=outputs,
+                execution_count=cell.get('execution_count'),
+                language=_extract_cell_language(cell)
+            )
+            cell_models.append(cell_model)
+    
+        return NotebookCellsResponse(
+            path=path,
+            cells=cell_models,
+            total_cells=len(cell_models),
+            notebook_metadata=notebook_metadata
         )
-        cell_models.append(cell_model)
-    
-    return NotebookCellsResponse(
-        path=path,
-        cells=cell_models,
-        total_cells=len(cell_models),
-        notebook_metadata=notebook_metadata
-    )
+
     except Exception as e:
         return NotebookCellsResponse(
             path=path,
@@ -100,15 +102,17 @@ def get_notebook_cell(host_credential_key: str, token_credential_key: str, path:
         NotebookCell at the specified index, or None on error
     """
     try:
-    cells_response = get_notebook_cells(host_credential_key, token_credential_key, path)
+
+        cells_response = get_notebook_cells(host_credential_key, token_credential_key, path)
     
         if cells_response.error_message:
             return None
         
-    if cell_index < 0 or cell_index >= len(cells_response.cells):
-            return None
+        if cell_index < 0 or cell_index >= len(cells_response.cells):
+                return None
     
-    return cells_response.cells[cell_index]
+        return cells_response.cells[cell_index]
+
     except Exception as e:
         return None
 
@@ -136,7 +140,8 @@ def search_notebook_cells(
         CellSearchResponse with matching cells and search metadata
     """
     try:
-    cells_response = get_notebook_cells(host_credential_key, token_credential_key, path)
+
+        cells_response = get_notebook_cells(host_credential_key, token_credential_key, path)
         
         if cells_response.error_message:
             return CellSearchResponse(
@@ -149,45 +154,46 @@ def search_notebook_cells(
                 error_message=cells_response.error_message,
             )
         
-    results = []
+        results = []
     
-    # Compile regex pattern
-    flags = 0 if case_sensitive else re.IGNORECASE
-    try:
-        regex = re.compile(pattern, flags)
-    except re.error:
-        # If pattern is not valid regex, escape it and search as literal
-        regex = re.compile(re.escape(pattern), flags)
-    
-    for cell in cells_response.cells:
-        # Filter by cell type if specified
-        if cell_type and cell.cell_type != cell_type:
-            continue
+        # Compile regex pattern
+        flags = 0 if case_sensitive else re.IGNORECASE
+        try:
+            regex = re.compile(pattern, flags)
+
+        except re.error:
+            # If pattern is not valid regex, escape it and search as literal
+            regex = re.compile(re.escape(pattern), flags)
         
-        # Get cell content as string
-        content = cell.source_text
+        for cell in cells_response.cells:
+            # Filter by cell type if specified
+            if cell_type and cell.cell_type != cell_type:
+                continue
+            
+            # Get cell content as string
+            content = cell.source_text
+            
+            # Find all matches
+            matches = regex.findall(content)
+            
+            if matches:
+                result = CellSearchResult(
+                    cell_index=cell.index,
+                    cell_type=cell.cell_type,
+                    match_count=len(matches),
+                    matches=list(set(matches)),  # All unique matches
+                    source=content  # Return full cell content
+                )
+                results.append(result)
         
-        # Find all matches
-        matches = regex.findall(content)
-        
-        if matches:
-            result = CellSearchResult(
-                cell_index=cell.index,
-                cell_type=cell.cell_type,
-                match_count=len(matches),
-                matches=list(set(matches)),  # All unique matches
-                source=content  # Return full cell content
-            )
-            results.append(result)
-    
-    return CellSearchResponse(
-        path=path,
-        pattern=pattern,
-        cell_type=cell_type,
-        case_sensitive=case_sensitive,
-        results=results,
-        total_matches=len(results)
-    )
+        return CellSearchResponse(
+            path=path,
+            pattern=pattern,
+            cell_type=cell_type,
+            case_sensitive=case_sensitive,
+            results=results,
+            total_matches=len(results)
+        )
     except Exception as e:
         return CellSearchResponse(
             path=path,
@@ -225,64 +231,66 @@ def insert_notebook_cell(
         CellOperationResponse with operation status
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Export notebook
-    response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
-    content_encoded = getattr(response, 'content', '')
-    content_str = base64.b64decode(content_encoded).decode('utf-8')
-    notebook_data = json.loads(content_str)
+        # Export notebook
+        response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
+        content_encoded = getattr(response, 'content', '')
+        content_str = base64.b64decode(content_encoded).decode('utf-8')
+        notebook_data = json.loads(content_str)
     
-    # Create new cell (convert string to array for Jupyter format)
-    source_array = cell_content.splitlines(keepends=True) if isinstance(cell_content, str) else cell_content
+        # Create new cell (convert string to array for Jupyter format)
+        source_array = cell_content.splitlines(keepends=True) if isinstance(cell_content, str) else cell_content
     
-    new_cell = {
-        "cell_type": cell_type,
-        "metadata": {},
-        "source": source_array
-    }
+        new_cell = {
+            "cell_type": cell_type,
+            "metadata": {},
+            "source": source_array
+        }
     
-    if cell_type == "code":
-        new_cell["outputs"] = []
-        new_cell["execution_count"] = None
-        if language:
-            # Add language metadata
-            new_cell["metadata"]["language"] = language
+        if cell_type == "code":
+            new_cell["outputs"] = []
+            new_cell["execution_count"] = None
+            if language:
+                # Add language metadata
+                new_cell["metadata"]["language"] = language
     
-    # Insert cell at specified index
-    cells = notebook_data.get('cells', [])
-    if cell_index < 0 or cell_index > len(cells):
-            return CellOperationResponse(
-                path=path,
-                operation="insert",
-                cell_index=cell_index,
-                status="failed",
-                total_cells=len(cells),
-                error_message=f"Insert index {cell_index} out of range (0-{len(cells)})",
-            )
+        # Insert cell at specified index
+        cells = notebook_data.get('cells', [])
+        if cell_index < 0 or cell_index > len(cells):
+                return CellOperationResponse(
+                    path=path,
+                    operation="insert",
+                    cell_index=cell_index,
+                    status="failed",
+                    total_cells=len(cells),
+                    error_message=f"Insert index {cell_index} out of range (0-{len(cells)})",
+                )
     
-    cells.insert(cell_index, new_cell)
-    notebook_data['cells'] = cells
+        cells.insert(cell_index, new_cell)
+        notebook_data['cells'] = cells
     
-    # Serialize and encode
-    modified_content = json.dumps(notebook_data, indent=2)
-    encoded_content = base64.b64encode(modified_content.encode('utf-8')).decode('ascii')
+        # Serialize and encode
+        modified_content = json.dumps(notebook_data, indent=2)
+        encoded_content = base64.b64encode(modified_content.encode('utf-8')).decode('ascii')
     
-    # Import modified notebook
-    client.workspace.import_(
-        path=path,
-        content=encoded_content,
-        format=ImportFormat.JUPYTER,
-        overwrite=True
-    )
+        # Import modified notebook
+        client.workspace.import_(
+            path=path,
+            content=encoded_content,
+            format=ImportFormat.JUPYTER,
+            overwrite=True
+        )
     
-    return CellOperationResponse(
-        path=path,
-        operation="insert",
-        cell_index=cell_index,
-        status="success",
-        total_cells=len(cells)
-    )
+        return CellOperationResponse(
+            path=path,
+            operation="insert",
+            cell_index=cell_index,
+            status="success",
+            total_cells=len(cells)
+        )
+
     except Exception as e:
         return CellOperationResponse(
             path=path,
@@ -315,55 +323,57 @@ def update_notebook_cell(
         CellOperationResponse with operation status
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Export notebook
-    response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
-    content_encoded = getattr(response, 'content', '')
-    content_str = base64.b64decode(content_encoded).decode('utf-8')
-    notebook_data = json.loads(content_str)
+        # Export notebook
+        response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
+        content_encoded = getattr(response, 'content', '')
+        content_str = base64.b64decode(content_encoded).decode('utf-8')
+        notebook_data = json.loads(content_str)
     
-    # Update cell (convert string to array for Jupyter format)
-    cells = notebook_data.get('cells', [])
-    if cell_index < 0 or cell_index >= len(cells):
-            return CellOperationResponse(
-                path=path,
-                operation="update",
-                cell_index=cell_index,
-                status="failed",
-                total_cells=len(cells),
-                error_message=f"Cell index {cell_index} out of range (0-{len(cells)-1})",
-            )
+        # Update cell (convert string to array for Jupyter format)
+        cells = notebook_data.get('cells', [])
+        if cell_index < 0 or cell_index >= len(cells):
+                return CellOperationResponse(
+                    path=path,
+                    operation="update",
+                    cell_index=cell_index,
+                    status="failed",
+                    total_cells=len(cells),
+                    error_message=f"Cell index {cell_index} out of range (0-{len(cells)-1})",
+                )
     
-    source_array = cell_content.splitlines(keepends=True) if isinstance(cell_content, str) else cell_content
-    cells[cell_index]['source'] = source_array
+        source_array = cell_content.splitlines(keepends=True) if isinstance(cell_content, str) else cell_content
+        cells[cell_index]['source'] = source_array
     
-    # Clear outputs for code cells when content is updated
-    if cells[cell_index].get('cell_type') == 'code':
-        cells[cell_index]['outputs'] = []
-        cells[cell_index]['execution_count'] = None
+        # Clear outputs for code cells when content is updated
+        if cells[cell_index].get('cell_type') == 'code':
+            cells[cell_index]['outputs'] = []
+            cells[cell_index]['execution_count'] = None
     
-    notebook_data['cells'] = cells
+        notebook_data['cells'] = cells
     
-    # Serialize and encode
-    modified_content = json.dumps(notebook_data, indent=2)
-    encoded_content = base64.b64encode(modified_content.encode('utf-8')).decode('ascii')
+        # Serialize and encode
+        modified_content = json.dumps(notebook_data, indent=2)
+        encoded_content = base64.b64encode(modified_content.encode('utf-8')).decode('ascii')
     
-    # Import modified notebook
-    client.workspace.import_(
-        path=path,
-        content=encoded_content,
-        format=ImportFormat.JUPYTER,
-        overwrite=True
-    )
+        # Import modified notebook
+        client.workspace.import_(
+            path=path,
+            content=encoded_content,
+            format=ImportFormat.JUPYTER,
+            overwrite=True
+        )
     
-    return CellOperationResponse(
-        path=path,
-        operation="update",
-        cell_index=cell_index,
-        status="success",
-        total_cells=len(cells)
-    )
+        return CellOperationResponse(
+            path=path,
+            operation="update",
+            cell_index=cell_index,
+            status="success",
+            total_cells=len(cells)
+        )
+
     except Exception as e:
         return CellOperationResponse(
             path=path,
@@ -394,48 +404,50 @@ def delete_notebook_cell(
         CellOperationResponse with operation status
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Export notebook
-    response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
-    content_encoded = getattr(response, 'content', '')
-    content_str = base64.b64decode(content_encoded).decode('utf-8')
-    notebook_data = json.loads(content_str)
+        # Export notebook
+        response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
+        content_encoded = getattr(response, 'content', '')
+        content_str = base64.b64decode(content_encoded).decode('utf-8')
+        notebook_data = json.loads(content_str)
     
-    # Delete cell
-    cells = notebook_data.get('cells', [])
-    if cell_index < 0 or cell_index >= len(cells):
-            return CellOperationResponse(
-                path=path,
-                operation="delete",
-                cell_index=cell_index,
-                status="failed",
-                total_cells=len(cells),
-                error_message=f"Cell index {cell_index} out of range (0-{len(cells)-1})",
-            )
+        # Delete cell
+        cells = notebook_data.get('cells', [])
+        if cell_index < 0 or cell_index >= len(cells):
+                return CellOperationResponse(
+                    path=path,
+                    operation="delete",
+                    cell_index=cell_index,
+                    status="failed",
+                    total_cells=len(cells),
+                    error_message=f"Cell index {cell_index} out of range (0-{len(cells)-1})",
+                )
     
-    deleted_cell = cells.pop(cell_index)
-    notebook_data['cells'] = cells
+        deleted_cell = cells.pop(cell_index)
+        notebook_data['cells'] = cells
     
-    # Serialize and encode
-    modified_content = json.dumps(notebook_data, indent=2)
-    encoded_content = base64.b64encode(modified_content.encode('utf-8')).decode('ascii')
+        # Serialize and encode
+        modified_content = json.dumps(notebook_data, indent=2)
+        encoded_content = base64.b64encode(modified_content.encode('utf-8')).decode('ascii')
     
-    # Import modified notebook
-    client.workspace.import_(
-        path=path,
-        content=encoded_content,
-        format=ImportFormat.JUPYTER,
-        overwrite=True
-    )
+        # Import modified notebook
+        client.workspace.import_(
+            path=path,
+            content=encoded_content,
+            format=ImportFormat.JUPYTER,
+            overwrite=True
+        )
     
-    return CellOperationResponse(
-        path=path,
-        operation="delete",
-        cell_index=cell_index,
-        status="success",
-        total_cells=len(cells)
-    )
+        return CellOperationResponse(
+            path=path,
+            operation="delete",
+            cell_index=cell_index,
+            status="success",
+            total_cells=len(cells)
+        )
+
     except Exception as e:
         return CellOperationResponse(
             path=path,
@@ -468,61 +480,63 @@ def reorder_notebook_cells(
         CellOperationResponse with operation status
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Export notebook
-    response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
-    content_encoded = getattr(response, 'content', '')
-    content_str = base64.b64decode(content_encoded).decode('utf-8')
-    notebook_data = json.loads(content_str)
+        # Export notebook
+        response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
+        content_encoded = getattr(response, 'content', '')
+        content_str = base64.b64decode(content_encoded).decode('utf-8')
+        notebook_data = json.loads(content_str)
     
-    # Reorder cells
-    cells = notebook_data.get('cells', [])
-    if from_index < 0 or from_index >= len(cells):
-            return CellOperationResponse(
-                path=path,
-                operation="reorder",
-                cell_index=to_index,
-                status="failed",
-                total_cells=len(cells),
-                error_message=f"From index {from_index} out of range (0-{len(cells)-1})",
-            )
-    if to_index < 0 or to_index >= len(cells):
-            return CellOperationResponse(
-                path=path,
-                operation="reorder",
-                cell_index=to_index,
-                status="failed",
-                total_cells=len(cells),
-                error_message=f"To index {to_index} out of range (0-{len(cells)-1})",
-            )
+        # Reorder cells
+        cells = notebook_data.get('cells', [])
+        if from_index < 0 or from_index >= len(cells):
+                return CellOperationResponse(
+                    path=path,
+                    operation="reorder",
+                    cell_index=to_index,
+                    status="failed",
+                    total_cells=len(cells),
+                    error_message=f"From index {from_index} out of range (0-{len(cells)-1})",
+                )
+        if to_index < 0 or to_index >= len(cells):
+                return CellOperationResponse(
+                    path=path,
+                    operation="reorder",
+                    cell_index=to_index,
+                    status="failed",
+                    total_cells=len(cells),
+                    error_message=f"To index {to_index} out of range (0-{len(cells)-1})",
+                )
     
-    # Remove cell from original position
-    cell = cells.pop(from_index)
+        # Remove cell from original position
+        cell = cells.pop(from_index)
     
-    # Insert at new position
-    cells.insert(to_index, cell)
-    notebook_data['cells'] = cells
+        # Insert at new position
+        cells.insert(to_index, cell)
+        notebook_data['cells'] = cells
     
-    # Serialize and encode
-    modified_content = json.dumps(notebook_data, indent=2)
-    encoded_content = base64.b64encode(modified_content.encode('utf-8')).decode('ascii')
+        # Serialize and encode
+        modified_content = json.dumps(notebook_data, indent=2)
+        encoded_content = base64.b64encode(modified_content.encode('utf-8')).decode('ascii')
     
-    # Import modified notebook
-    client.workspace.import_(
-        path=path,
-        content=encoded_content,
-        format=ImportFormat.JUPYTER,
-        overwrite=True
-    )
+        # Import modified notebook
+        client.workspace.import_(
+            path=path,
+            content=encoded_content,
+            format=ImportFormat.JUPYTER,
+            overwrite=True
+        )
     
-    return CellOperationResponse(
-        path=path,
-        operation="reorder",
-        cell_index=to_index,
-        status="success",
-        total_cells=len(cells)
-    )
+        return CellOperationResponse(
+            path=path,
+            operation="reorder",
+            cell_index=to_index,
+            status="success",
+            total_cells=len(cells)
+        )
+
     except Exception as e:
         return CellOperationResponse(
             path=path,

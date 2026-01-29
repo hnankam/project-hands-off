@@ -408,22 +408,24 @@ function aggressiveCompactEvents(events, options = {}) {
  *   pool: getPool(),
  *   ttl: 86400000,        // 24 hours
  *   cleanupInterval: 3600000, // 1 hour
+ *   disableCleanup: true,    // Disable automatic cleanup (default: true)
  * });
  */
 export class PostgresAgentRunner extends AgentRunner {
   /**
    * Create a new PostgresAgentRunner
    * 
-   * @param {Object} options - Configuration options
-   * @param {import('pg').Pool} options.pool - PostgreSQL connection pool
-   * @param {number} [options.ttl=86400000] - Thread TTL in milliseconds (24 hours)
-   * @param {number} [options.cleanupInterval=3600000] - Cleanup interval (1 hour)
-   * @param {boolean} [options.persistEventsImmediately=false] - Persist events as they occur
-   * @param {number} [options.maxHistoricRuns=null] - Max runs to load on connect (null/0 = load all, matches SQLite behavior)
-   * @param {Object} [options.redis] - Optional Redis client for caching
-   * @param {number} [options.cacheTTL=300] - Cache TTL in seconds (5 minutes)
-   * @param {boolean} [options.transformErrors=false] - If true, transform RUN_ERROR to RUN_FINISHED (shows failed runs in history); if false, filter out error runs entirely
-   */
+ * @param {Object} options - Configuration options
+ * @param {import('pg').Pool} options.pool - PostgreSQL connection pool
+ * @param {number} [options.ttl=86400000] - Thread TTL in milliseconds (24 hours)
+ * @param {number} [options.cleanupInterval=3600000] - Cleanup interval (1 hour)
+ * @param {boolean} [options.disableCleanup=true] - If true, disable automatic thread cleanup (default: true)
+ * @param {boolean} [options.persistEventsImmediately=false] - Persist events as they occur
+ * @param {number} [options.maxHistoricRuns=null] - Max runs to load on connect (null/0 = load all, matches SQLite behavior)
+ * @param {Object} [options.redis] - Optional Redis client for caching
+ * @param {number} [options.cacheTTL=300] - Cache TTL in seconds (5 minutes)
+ * @param {boolean} [options.transformErrors=false] - If true, transform RUN_ERROR to RUN_FINISHED (shows failed runs in history); if false, filter out error runs entirely
+ */
   constructor(options = {}) {
     super();
     
@@ -434,6 +436,7 @@ export class PostgresAgentRunner extends AgentRunner {
     this.pool = options.pool;
     this.ttl = options.ttl || 86400000; // 24 hours
     this.cleanupInterval = options.cleanupInterval || 3600000; // 1 hour
+    this.disableCleanup = options.disableCleanup !== undefined ? options.disableCleanup : true; // Default to true (disabled)
     this.persistEventsImmediately = options.persistEventsImmediately || false;
     // maxHistoricRuns: null/0 = load all runs (matches SQLite), >0 = safety limit
     this.maxHistoricRuns = options.maxHistoricRuns !== undefined ? options.maxHistoricRuns : null;
@@ -460,12 +463,15 @@ export class PostgresAgentRunner extends AgentRunner {
       avgRunDuration: 0,
     };
     
-    // Start cleanup timer
-    this.startCleanupTimer();
+    // Start cleanup timer (only if cleanup is enabled)
+    if (!this.disableCleanup) {
+      this.startCleanupTimer();
+    }
     
     console.log('[PostgresAgentRunner] Initialized:', {
       ttl: `${this.ttl / 1000}s`,
       cleanupInterval: `${this.cleanupInterval / 1000}s`,
+      cleanupEnabled: !this.disableCleanup,
       maxHistoricRuns: this.maxHistoricRuns,
       redis: this.redis ? 'enabled' : 'disabled',
       debug: this.debug,
@@ -556,12 +562,15 @@ export class PostgresAgentRunner extends AgentRunner {
       // Build a map linking tool call IDs to their initiating message IDs
       const toolCallIdToMessageId = this.buildToolCallToMessageIdMap(completeRuns, 'executeRun');
       
-      // Build set of tool call IDs to filter (deleted + incomplete)
+      // Build set of tool call IDs to filter (only deleted messages, NOT incomplete)
+      // Incomplete tool calls are saved to DB so load_full_tool_result can access them
+      // They will be filtered out when loading historical events
       const deletedToolCallIds = this.buildDeletedToolCallIds(
         completeRuns, 
         toolCallIdToMessageId, 
         deletedMessageIds, 
-        'executeRun'
+        'executeRun',
+        false // Don't filter incomplete tool calls - save them to DB
       );
       
       if (this.debug && toolCallIdToMessageId.size > 0) {
@@ -911,6 +920,81 @@ export class PostgresAgentRunner extends AgentRunner {
           }
         }
       
+      // Fix: Ensure TEXT_MESSAGE_END events are present before RUN_FINISHED
+      // This prevents "Cannot send 'RUN_FINISHED' while text messages are still active" errors
+      // Track active text messages from currentEvents and appendedEvents
+      const activeTextMessages = new Map(); // messageId -> { messageId, runId, threadId, timestamp }
+      
+      // First pass: track active text messages from all events
+      for (const event of [...currentEvents, ...appendedEvents]) {
+        if (event.type === 'TEXT_MESSAGE_START' || event.type === EventType.TEXT_MESSAGE_START) {
+          if (event.messageId) {
+            activeTextMessages.set(event.messageId, {
+              messageId: event.messageId,
+              runId: event.runId || runId,
+              threadId: event.threadId || threadId,
+              timestamp: event.timestamp || Date.now()
+            });
+          }
+        }
+        if (event.type === 'TEXT_MESSAGE_END' || event.type === EventType.TEXT_MESSAGE_END) {
+          if (event.messageId) {
+            activeTextMessages.delete(event.messageId);
+          }
+        }
+      }
+      
+      // Second pass: add synthetic TEXT_MESSAGE_END before RUN_FINISHED in appendedEvents
+      // This ensures they're both emitted AND saved to database
+      const syntheticEndEvents = [];
+      const eventsToEmit = [];
+      
+      for (const event of appendedEvents) {
+        // Before emitting RUN_FINISHED, check for active text messages and add synthetic ends
+        if (event.type === 'RUN_FINISHED' || event.type === EventType.RUN_FINISHED) {
+          // Find all active text messages for this run
+          const activeMessagesForRun = Array.from(activeTextMessages.values()).filter(msg => 
+            !event.runId || msg.runId === event.runId || msg.runId === runId
+          );
+          
+          if (activeMessagesForRun.length > 0) {
+            if (this.debug) {
+              console.log(`[PostgresAgentRunner] Adding ${activeMessagesForRun.length} synthetic TEXT_MESSAGE_END events before RUN_FINISHED for streaming run ${runId}`);
+            }
+            
+            // Add synthetic TEXT_MESSAGE_END events for all active text messages
+            const syntheticTimestamp = event.timestamp ? event.timestamp - 1 : Date.now();
+            for (const activeMsg of activeMessagesForRun) {
+              const syntheticEndEvent = {
+                type: EventType.TEXT_MESSAGE_END,
+                messageId: activeMsg.messageId,
+                runId: activeMsg.runId || event.runId || runId,
+                threadId: activeMsg.threadId || event.threadId || threadId,
+                timestamp: syntheticTimestamp
+              };
+              syntheticEndEvents.push(syntheticEndEvent);
+              eventsToEmit.push(syntheticEndEvent);
+              activeTextMessages.delete(activeMsg.messageId);
+            }
+          }
+        }
+        eventsToEmit.push(event);
+      }
+      
+      // Add synthetic TEXT_MESSAGE_END events to appendedEvents so they're saved to database
+      if (syntheticEndEvents.length > 0) {
+        // Insert synthetic ends before RUN_FINISHED in appendedEvents
+        const runFinishedIndex = appendedEvents.findIndex(e => 
+          e.type === 'RUN_FINISHED' || e.type === EventType.RUN_FINISHED
+        );
+        if (runFinishedIndex >= 0) {
+          appendedEvents.splice(runFinishedIndex, 0, ...syntheticEndEvents);
+        } else {
+          // No RUN_FINISHED found, append at end
+          appendedEvents.push(...syntheticEndEvents);
+        }
+      }
+      
       // Emit finalization events
       // CRITICAL: Filter out RUN_ERROR events when run was stopped by user
       // User-initiated stops should not show error banners on the frontend
@@ -918,7 +1002,7 @@ export class PostgresAgentRunner extends AgentRunner {
       const threadSubject = this.activeSubjects.get(threadId)?.threadSubject;
       let hasEmittedRunFinished = false;
       
-      for (const event of appendedEvents) {
+      for (const event of eventsToEmit) {
         // Skip RUN_ERROR events for stopped runs (user-initiated)
         if (stopRequested && (event.type === 'RUN_ERROR' || event.type === EventType.RUN_ERROR)) {
           continue;
@@ -1139,11 +1223,13 @@ export class PostgresAgentRunner extends AgentRunner {
       }
       
       // Build set of tool call IDs to filter (deleted + incomplete)
+      // Filter incomplete tool calls from historical context for cleaner replay
       const deletedToolCallIds = this.buildDeletedToolCallIds(
         completeRuns, 
         toolCallIdToMessageId, 
         deletedMessageIds, 
-        'loadAndStreamHistory'
+        'loadAndStreamHistory',
+        true // Filter incomplete tool calls from history
       );
       
       
@@ -1256,12 +1342,98 @@ export class PostgresAgentRunner extends AgentRunner {
       // Replace content > 1200 characters with JSON containing toolCallId
       const truncatedEvents = this.truncateToolCallResults(compactedEvents);
       
-      // Emit historic events
+      // Fix: Track active text messages and add synthetic TEXT_MESSAGE_END events before RUN_FINISHED
+      // This prevents "Cannot send 'RUN_FINISHED' while text messages are still active" errors
+      // when loading historical events that may have incomplete message sequences
+      const activeTextMessages = new Map(); // messageId -> { messageId, runId, threadId, timestamp }
+      const eventsWithSyntheticEnds = [];
+      
+      for (const event of truncatedEvents) {
+        // Track TEXT_MESSAGE_START events
+        if (event.type === 'TEXT_MESSAGE_START' || event.type === EventType.TEXT_MESSAGE_START) {
+          if (event.messageId) {
+            activeTextMessages.set(event.messageId, {
+              messageId: event.messageId,
+              runId: event.runId,
+              threadId: event.threadId || threadId,
+              timestamp: event.timestamp || Date.now()
+            });
+          }
+        }
+        
+        // Track TEXT_MESSAGE_END events - remove from active set
+        if (event.type === 'TEXT_MESSAGE_END' || event.type === EventType.TEXT_MESSAGE_END) {
+          if (event.messageId) {
+            activeTextMessages.delete(event.messageId);
+          }
+        }
+        
+        // Before emitting RUN_FINISHED, check for active text messages and add synthetic ends
+        if (event.type === 'RUN_FINISHED' || event.type === EventType.RUN_FINISHED) {
+          // Find all active text messages for this run
+          // If event.runId is set, only close messages from that run
+          // If event.runId is not set, close all active messages (shouldn't happen, but be safe)
+          const activeMessagesForRun = Array.from(activeTextMessages.values()).filter(msg => {
+            if (!event.runId) {
+              // If RUN_FINISHED doesn't have runId, close all active messages
+              return true;
+            }
+            // Match by runId if both have it, or if message doesn't have runId (assume same run)
+            return !msg.runId || msg.runId === event.runId;
+          });
+          
+          if (activeMessagesForRun.length > 0) {
+            if (this.debug) {
+              console.log(`[PostgresAgentRunner] Adding ${activeMessagesForRun.length} synthetic TEXT_MESSAGE_END events before RUN_FINISHED for run ${event.runId || 'unknown'}`);
+            }
+            
+            // Add synthetic TEXT_MESSAGE_END events for all active text messages
+            // Use timestamp from RUN_FINISHED event (or slightly before) to ensure proper ordering
+            const syntheticTimestamp = event.timestamp ? event.timestamp - 1 : Date.now();
+            
+            for (const activeMsg of activeMessagesForRun) {
+              const syntheticEndEvent = {
+                type: EventType.TEXT_MESSAGE_END,
+                messageId: activeMsg.messageId,
+                runId: activeMsg.runId || event.runId,
+                threadId: activeMsg.threadId || event.threadId || threadId,
+                timestamp: syntheticTimestamp
+              };
+              eventsWithSyntheticEnds.push(syntheticEndEvent);
+              
+              // Remove from active set
+              activeTextMessages.delete(activeMsg.messageId);
+            }
+          }
+        }
+        
+        eventsWithSyntheticEnds.push(event);
+      }
+      
+      // Final check: if there are any remaining active text messages after processing all events,
+      // add synthetic ends for them as well (shouldn't happen, but be defensive)
+      if (activeTextMessages.size > 0) {
+        if (this.debug) {
+          console.log(`[PostgresAgentRunner] Adding ${activeTextMessages.size} synthetic TEXT_MESSAGE_END events for remaining active messages at end of history`);
+        }
+        for (const activeMsg of activeTextMessages.values()) {
+          const syntheticEndEvent = {
+            type: EventType.TEXT_MESSAGE_END,
+            messageId: activeMsg.messageId,
+            runId: activeMsg.runId,
+            threadId: activeMsg.threadId || threadId,
+            timestamp: Date.now()
+          };
+          eventsWithSyntheticEnds.push(syntheticEndEvent);
+        }
+      }
+      
+      // Emit historic events (now with synthetic TEXT_MESSAGE_END events added)
       const emittedMessageIds = new Set();
       const emittedRunIds = new Set(); // Track emitted runIds to prevent duplicate RUN_FINISHED
       const toolCallEventsEmitted = [];
       
-      for (const event of truncatedEvents) {
+      for (const event of eventsWithSyntheticEnds) {
         // Log all tool call events before emitting
         if (event.type === 'TOOL_CALL_START' || event.type === 'TOOL_CALL_ARGS' || event.type === 'TOOL_CALL_END' || event.type === 'TOOL_CALL_RESULT') {
           // Look up the associated message ID from the toolCallId
@@ -1289,7 +1461,7 @@ export class PostgresAgentRunner extends AgentRunner {
       }
       
       if (this.debug && toolCallEventsEmitted.length > 0) {
-        console.log(`[PostgresAgentRunner] Loaded ${truncatedEvents.length} events (${toolCallEventsEmitted.length} tool calls) for ${threadId}`);
+        console.log(`[PostgresAgentRunner] Loaded ${eventsWithSyntheticEnds.length} events (${toolCallEventsEmitted.length} tool calls) for ${threadId}`);
       if (this.debug) {
           toolCallEventsEmitted.forEach(evt => {
             const associationInfo = evt.associatedMessageId !== 'none' 
@@ -1481,8 +1653,16 @@ export class PostgresAgentRunner extends AgentRunner {
 
   /**
    * Truncate TOOL_CALL_RESULT and TOOL_CALL_ARGS events with large content for lazy loading
-   * Replaces content > 1200 characters with JSON containing toolCallId
-   * This allows the frontend to lazily load the full content when needed
+   * Replaces content > 1200 characters with JSON containing toolCallId, runId, and instructions
+   * This allows:
+   * - Frontend: Click "Load full content" button to fetch via API
+   * - Agents: Use load_full_tool_result tool to retrieve complete data
+   * 
+   * The truncated content includes:
+   * - toolCallId: For database lookup
+   * - runId: For database lookup
+   * - eventType: TOOL_CALL_RESULT or TOOL_CALL_ARGS
+   * - message: Instructions for agents on how to load full content
    * 
    * @param {Array} events - Array of events to process
    * @param {string} [explicitRunId] - Optional explicit runId to use (for real-time events)
@@ -1563,7 +1743,7 @@ export class PostgresAgentRunner extends AgentRunner {
           runId: explicitRunId || event.runId || null,
           originalLength: contentStr.length,
           eventType: isResult ? 'TOOL_CALL_RESULT' : 'TOOL_CALL_ARGS',
-          message: 'Content truncated for performance. Full content available via lazy loading.'
+          message: `Use load_full_tool_result tool with run_id, tool_call_id, and event_type to retrieve the complete untruncated data.`
         };
         
         const truncatedContentStr = JSON.stringify(truncatedContentObj);
@@ -2163,18 +2343,20 @@ export class PostgresAgentRunner extends AgentRunner {
   
   /**
    * Build set of tool call IDs that should be filtered out
-   * Filters tool calls based on two criteria:
+   * Filters tool calls based on criteria:
    * 1. Tool calls whose initiating message was deleted
-   * 2. Incomplete tool calls (no TOOL_CALL_RESULT event)
+   * 2. Incomplete tool calls (no TOOL_CALL_RESULT event) - optional
+   * 3. Tool calls whose result message was deleted
    * 
    * @param {Array} completeRuns - Array of runs to process
    * @param {Map} toolCallIdToMessageId - Map linking tool calls to their initiating messages
    * @param {Set} deletedMessageIds - Set of deleted message IDs
    * @param {string} context - Context string for debug logging (e.g., 'executeRun', 'loadAndStreamHistory')
+   * @param {boolean} filterIncomplete - Whether to filter incomplete tool calls (default: true)
    * @returns {Set} Set of tool call IDs to filter out
    * @private
    */
-  buildDeletedToolCallIds(completeRuns, toolCallIdToMessageId, deletedMessageIds, context = '') {
+  buildDeletedToolCallIds(completeRuns, toolCallIdToMessageId, deletedMessageIds, context = '', filterIncomplete = true) {
     const contextStr = context ? ` (${context})` : '';
     
     // Build a map of toolCallId -> tool result message ID from TOOL_CALL_RESULT events
@@ -2204,12 +2386,13 @@ export class PostgresAgentRunner extends AgentRunner {
       }
     }
     
-    // Filter incomplete tool calls (those without TOOL_CALL_RESULT) 
-    // OR tool calls whose result message is deleted
+    // Filter incomplete tool calls (those without TOOL_CALL_RESULT) - optional
+    // AND tool calls whose result message is deleted - always filter
     for (const [toolCallId, messageId] of toolCallIdToMessageId.entries()) {
       if (!toolCallIdToResultMessageId.has(toolCallId)) {
-        // No TOOL_CALL_RESULT event exists
-        if (!deletedToolCallIds.has(toolCallId)) {
+        // No TOOL_CALL_RESULT event exists - incomplete tool call
+        // Only filter if filterIncomplete is true
+        if (filterIncomplete && !deletedToolCallIds.has(toolCallId)) {
           deletedToolCallIds.add(toolCallId);
           if (this.debug) {
             // console.log(`[PostgresAgentRunner]${contextStr} Marking toolCallId ${toolCallId} as incomplete (no TOOL_CALL_RESULT event)`);
@@ -2217,6 +2400,7 @@ export class PostgresAgentRunner extends AgentRunner {
         }
       } else {
         // TOOL_CALL_RESULT exists, but check if its message is deleted
+        // Always filter if result message is deleted (regardless of filterIncomplete)
         const resultMessageId = toolCallIdToResultMessageId.get(toolCallId);
         if (resultMessageId && deletedMessageIds.has(resultMessageId)) {
           if (!deletedToolCallIds.has(toolCallId)) {
@@ -2905,9 +3089,18 @@ export class PostgresAgentRunner extends AgentRunner {
    * - Clean up stale runs (stuck in 'running' state > 1 hour)
    * - Clean up stale threads (inactive > TTL)
    * 
+   * Note: This method only starts the timer if cleanup is enabled.
+   * 
    * @private
    */
   startCleanupTimer() {
+    if (this.disableCleanup) {
+      console.log('[PostgresAgentRunner] Cleanup is disabled, skipping cleanup timer initialization');
+      return;
+    }
+    
+    console.log(`[PostgresAgentRunner] Starting cleanup timer (interval: ${this.cleanupInterval / 1000}s, TTL: ${this.ttl / 1000}s)`);
+    
     this.cleanupTimer = setInterval(() => {
       // Clean up stale runs first (more critical)
       this.cleanupStaleRuns().catch(err => {

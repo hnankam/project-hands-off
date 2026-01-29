@@ -71,97 +71,99 @@ def list_jobs(
         - Empty list (count=0) with has_more=False means no jobs match criteria
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Cap limit at 20 when expand_tasks is True to reduce response size
-    effective_limit = min(limit, 20) if expand_tasks else limit
+        # Cap limit at 20 when expand_tasks is True to reduce response size
+        effective_limit = min(limit, 20) if expand_tasks else limit
     
-    # Call the API to get jobs
-    response = client.jobs.list(
-        name=name,
-        expand_tasks=expand_tasks,
-    )
-    
-    # Calculate skip and take based on page number
-    # Page 0: skip 0, take limit (items 0 to limit-1)
-    # Page 1: skip limit, take limit (items limit to 2*limit-1)
-    # Page N: skip N*limit, take limit
-    skip = page * effective_limit
-    
-    # Use islice to skip to the right page and take only the requested number of items
-    # islice(iterator, start, stop) takes items from start to stop-1
-    jobs_iterator = islice(response, skip, skip + effective_limit)
-    
-    jobs_list = []
-    for job in jobs_iterator:
-        # Extract settings
-        settings = None
-        if job.settings:
-            # Convert tasks to JobTaskInfo
-            tasks = None
-            if hasattr(job.settings, 'tasks') and job.settings.tasks:
-                tasks = [
-                    JobTaskInfo(
-                        task_key=t.task_key,
-                        description=getattr(t, 'description', None),
-                        depends_on=[dep.as_dict() for dep in getattr(t, 'depends_on', [])] if hasattr(t, 'depends_on') else None,
-                        notebook_task=t.notebook_task.as_dict() if hasattr(t, 'notebook_task') and t.notebook_task else None,
-                        spark_jar_task=t.spark_jar_task.as_dict() if hasattr(t, 'spark_jar_task') and t.spark_jar_task else None,
-                        spark_python_task=t.spark_python_task.as_dict() if hasattr(t, 'spark_python_task') and t.spark_python_task else None,
-                        spark_submit_task=t.spark_submit_task.as_dict() if hasattr(t, 'spark_submit_task') and t.spark_submit_task else None,
-                        python_wheel_task=t.python_wheel_task.as_dict() if hasattr(t, 'python_wheel_task') and t.python_wheel_task else None,
-                        sql_task=t.sql_task.as_dict() if hasattr(t, 'sql_task') and t.sql_task else None,
-                        dbt_task=t.dbt_task.as_dict() if hasattr(t, 'dbt_task') and t.dbt_task else None,
-                        pipeline_task=t.pipeline_task.as_dict() if hasattr(t, 'pipeline_task') and t.pipeline_task else None,
-                        existing_cluster_id=getattr(t, 'existing_cluster_id', None),
-                        new_cluster=t.new_cluster.as_dict() if hasattr(t, 'new_cluster') and t.new_cluster else None,
-                        timeout_seconds=getattr(t, 'timeout_seconds', None),
-                    )
-                    for t in job.settings.tasks
-                ]
-            
-            settings = JobSettingsInfo(
-                name=getattr(job.settings, 'name', None),
-                description=getattr(job.settings, 'description', None),
-                tags=getattr(job.settings, 'tags', None),
-                tasks=tasks,
-                schedule=job.settings.schedule.as_dict() if hasattr(job.settings, 'schedule') and job.settings.schedule else None,
-                max_concurrent_runs=getattr(job.settings, 'max_concurrent_runs', None),
-                timeout_seconds=getattr(job.settings, 'timeout_seconds', None),
-                email_notifications=job.settings.email_notifications.as_dict() if hasattr(job.settings, 'email_notifications') and job.settings.email_notifications else None,
-                webhook_notifications=job.settings.webhook_notifications.as_dict() if hasattr(job.settings, 'webhook_notifications') and job.settings.webhook_notifications else None,
-                notification_settings=job.settings.notification_settings.as_dict() if hasattr(job.settings, 'notification_settings') and job.settings.notification_settings else None,
-                git_source=job.settings.git_source.as_dict() if hasattr(job.settings, 'git_source') and job.settings.git_source else None,
-                job_clusters=[jc.as_dict() for jc in job.settings.job_clusters] if hasattr(job.settings, 'job_clusters') and job.settings.job_clusters else None,
-                format=getattr(job.settings, 'format', None),
-                run_as=job.settings.run_as.as_dict() if hasattr(job.settings, 'run_as') and job.settings.run_as else None,
-                parameters=[p.as_dict() for p in job.settings.parameters] if hasattr(job.settings, 'parameters') and job.settings.parameters else None,
-            )
-        
-        jobs_list.append(
-            JobInfo(
-                job_id=job.job_id,
-                name=settings.name if settings else None,
-                created_time=job.created_time,
-                creator_user_name=job.creator_user_name,
-                settings=settings,
-                run_as_user_name=getattr(job, 'run_as_user_name', None),
-            )
+        # Call the API to get jobs
+        response = client.jobs.list(
+            name=name,
+            expand_tasks=expand_tasks,
         )
     
-    # Check if there are more results by attempting to peek at the next item
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
-        has_more = False
+        # Calculate skip and take based on page number
+        # Page 0: skip 0, take limit (items 0 to limit-1)
+        # Page 1: skip limit, take limit (items limit to 2*limit-1)
+        # Page N: skip N*limit, take limit
+        skip = page * effective_limit
     
-    return ListJobsResponse(
-        jobs=jobs_list,
-        count=len(jobs_list),
-        has_more=has_more,
-    )
+        # Use islice to skip to the right page and take only the requested number of items
+        # islice(iterator, start, stop) takes items from start to stop-1
+        jobs_iterator = islice(response, skip, skip + effective_limit)
+    
+        jobs_list = []
+        for job in jobs_iterator:
+            # Extract settings
+            settings = None
+            if job.settings:
+                # Convert tasks to JobTaskInfo
+                tasks = None
+                if hasattr(job.settings, 'tasks') and job.settings.tasks:
+                    tasks = [
+                        JobTaskInfo(
+                            task_key=t.task_key,
+                            description=getattr(t, 'description', None),
+                            depends_on=[dep.as_dict() for dep in getattr(t, 'depends_on', [])] if hasattr(t, 'depends_on') else None,
+                            notebook_task=t.notebook_task.as_dict() if hasattr(t, 'notebook_task') and t.notebook_task else None,
+                            spark_jar_task=t.spark_jar_task.as_dict() if hasattr(t, 'spark_jar_task') and t.spark_jar_task else None,
+                            spark_python_task=t.spark_python_task.as_dict() if hasattr(t, 'spark_python_task') and t.spark_python_task else None,
+                            spark_submit_task=t.spark_submit_task.as_dict() if hasattr(t, 'spark_submit_task') and t.spark_submit_task else None,
+                            python_wheel_task=t.python_wheel_task.as_dict() if hasattr(t, 'python_wheel_task') and t.python_wheel_task else None,
+                            sql_task=t.sql_task.as_dict() if hasattr(t, 'sql_task') and t.sql_task else None,
+                            dbt_task=t.dbt_task.as_dict() if hasattr(t, 'dbt_task') and t.dbt_task else None,
+                            pipeline_task=t.pipeline_task.as_dict() if hasattr(t, 'pipeline_task') and t.pipeline_task else None,
+                            existing_cluster_id=getattr(t, 'existing_cluster_id', None),
+                            new_cluster=t.new_cluster.as_dict() if hasattr(t, 'new_cluster') and t.new_cluster else None,
+                            timeout_seconds=getattr(t, 'timeout_seconds', None),
+                        )
+                        for t in job.settings.tasks
+                    ]
+            
+                settings = JobSettingsInfo(
+                    name=getattr(job.settings, 'name', None),
+                    description=getattr(job.settings, 'description', None),
+                    tags=getattr(job.settings, 'tags', None),
+                    tasks=tasks,
+                    schedule=job.settings.schedule.as_dict() if hasattr(job.settings, 'schedule') and job.settings.schedule else None,
+                    max_concurrent_runs=getattr(job.settings, 'max_concurrent_runs', None),
+                    timeout_seconds=getattr(job.settings, 'timeout_seconds', None),
+                    email_notifications=job.settings.email_notifications.as_dict() if hasattr(job.settings, 'email_notifications') and job.settings.email_notifications else None,
+                    webhook_notifications=job.settings.webhook_notifications.as_dict() if hasattr(job.settings, 'webhook_notifications') and job.settings.webhook_notifications else None,
+                    notification_settings=job.settings.notification_settings.as_dict() if hasattr(job.settings, 'notification_settings') and job.settings.notification_settings else None,
+                    git_source=job.settings.git_source.as_dict() if hasattr(job.settings, 'git_source') and job.settings.git_source else None,
+                    job_clusters=[jc.as_dict() for jc in job.settings.job_clusters] if hasattr(job.settings, 'job_clusters') and job.settings.job_clusters else None,
+                    format=getattr(job.settings, 'format', None),
+                    run_as=job.settings.run_as.as_dict() if hasattr(job.settings, 'run_as') and job.settings.run_as else None,
+                    parameters=[p.as_dict() for p in job.settings.parameters] if hasattr(job.settings, 'parameters') and job.settings.parameters else None,
+                )
+        
+            jobs_list.append(
+                JobInfo(
+                    job_id=job.job_id,
+                    name=settings.name if settings else None,
+                    created_time=job.created_time,
+                    creator_user_name=job.creator_user_name,
+                    settings=settings,
+                    run_as_user_name=getattr(job, 'run_as_user_name', None),
+                )
+            )
+    
+        # Check if there are more results by attempting to peek at the next item
+        has_more = False
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListJobsResponse(
+            jobs=jobs_list,
+            count=len(jobs_list),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListJobsResponse(
             jobs=[],
@@ -191,61 +193,63 @@ def get_job(
         JobInfo with complete job details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    job = client.jobs.get(job_id=job_id)
+        job = client.jobs.get(job_id=job_id)
     
-    # Extract settings (same logic as list_jobs)
-    settings = None
-    if job.settings:
-        tasks = None
-        if hasattr(job.settings, 'tasks') and job.settings.tasks:
-            tasks = [
-                JobTaskInfo(
-                    task_key=t.task_key,
-                    description=getattr(t, 'description', None),
-                    depends_on=[dep.as_dict() for dep in getattr(t, 'depends_on', [])] if hasattr(t, 'depends_on') else None,
-                    notebook_task=t.notebook_task.as_dict() if hasattr(t, 'notebook_task') and t.notebook_task else None,
-                    spark_jar_task=t.spark_jar_task.as_dict() if hasattr(t, 'spark_jar_task') and t.spark_jar_task else None,
-                    spark_python_task=t.spark_python_task.as_dict() if hasattr(t, 'spark_python_task') and t.spark_python_task else None,
-                    spark_submit_task=t.spark_submit_task.as_dict() if hasattr(t, 'spark_submit_task') and t.spark_submit_task else None,
-                    python_wheel_task=t.python_wheel_task.as_dict() if hasattr(t, 'python_wheel_task') and t.python_wheel_task else None,
-                    sql_task=t.sql_task.as_dict() if hasattr(t, 'sql_task') and t.sql_task else None,
-                    dbt_task=t.dbt_task.as_dict() if hasattr(t, 'dbt_task') and t.dbt_task else None,
-                    pipeline_task=t.pipeline_task.as_dict() if hasattr(t, 'pipeline_task') and t.pipeline_task else None,
-                    existing_cluster_id=getattr(t, 'existing_cluster_id', None),
-                    new_cluster=t.new_cluster.as_dict() if hasattr(t, 'new_cluster') and t.new_cluster else None,
-                    timeout_seconds=getattr(t, 'timeout_seconds', None),
-                )
-                for t in job.settings.tasks
-            ]
+        # Extract settings (same logic as list_jobs)
+        settings = None
+        if job.settings:
+            tasks = None
+            if hasattr(job.settings, 'tasks') and job.settings.tasks:
+                tasks = [
+                    JobTaskInfo(
+                        task_key=t.task_key,
+                        description=getattr(t, 'description', None),
+                        depends_on=[dep.as_dict() for dep in getattr(t, 'depends_on', [])] if hasattr(t, 'depends_on') else None,
+                        notebook_task=t.notebook_task.as_dict() if hasattr(t, 'notebook_task') and t.notebook_task else None,
+                        spark_jar_task=t.spark_jar_task.as_dict() if hasattr(t, 'spark_jar_task') and t.spark_jar_task else None,
+                        spark_python_task=t.spark_python_task.as_dict() if hasattr(t, 'spark_python_task') and t.spark_python_task else None,
+                        spark_submit_task=t.spark_submit_task.as_dict() if hasattr(t, 'spark_submit_task') and t.spark_submit_task else None,
+                        python_wheel_task=t.python_wheel_task.as_dict() if hasattr(t, 'python_wheel_task') and t.python_wheel_task else None,
+                        sql_task=t.sql_task.as_dict() if hasattr(t, 'sql_task') and t.sql_task else None,
+                        dbt_task=t.dbt_task.as_dict() if hasattr(t, 'dbt_task') and t.dbt_task else None,
+                        pipeline_task=t.pipeline_task.as_dict() if hasattr(t, 'pipeline_task') and t.pipeline_task else None,
+                        existing_cluster_id=getattr(t, 'existing_cluster_id', None),
+                        new_cluster=t.new_cluster.as_dict() if hasattr(t, 'new_cluster') and t.new_cluster else None,
+                        timeout_seconds=getattr(t, 'timeout_seconds', None),
+                    )
+                    for t in job.settings.tasks
+                ]
         
-        settings = JobSettingsInfo(
-            name=getattr(job.settings, 'name', None),
-            description=getattr(job.settings, 'description', None),
-            tags=getattr(job.settings, 'tags', None),
-            tasks=tasks,
-            schedule=job.settings.schedule.as_dict() if hasattr(job.settings, 'schedule') and job.settings.schedule else None,
-            max_concurrent_runs=getattr(job.settings, 'max_concurrent_runs', None),
-            timeout_seconds=getattr(job.settings, 'timeout_seconds', None),
-            email_notifications=job.settings.email_notifications.as_dict() if hasattr(job.settings, 'email_notifications') and job.settings.email_notifications else None,
-            webhook_notifications=job.settings.webhook_notifications.as_dict() if hasattr(job.settings, 'webhook_notifications') and job.settings.webhook_notifications else None,
-            notification_settings=job.settings.notification_settings.as_dict() if hasattr(job.settings, 'notification_settings') and job.settings.notification_settings else None,
-            git_source=job.settings.git_source.as_dict() if hasattr(job.settings, 'git_source') and job.settings.git_source else None,
-            job_clusters=[jc.as_dict() for jc in job.settings.job_clusters] if hasattr(job.settings, 'job_clusters') and job.settings.job_clusters else None,
-            format=getattr(job.settings, 'format', None),
-            run_as=job.settings.run_as.as_dict() if hasattr(job.settings, 'run_as') and job.settings.run_as else None,
-            parameters=[p.as_dict() for p in job.settings.parameters] if hasattr(job.settings, 'parameters') and job.settings.parameters else None,
-        )
+            settings = JobSettingsInfo(
+                name=getattr(job.settings, 'name', None),
+                description=getattr(job.settings, 'description', None),
+                tags=getattr(job.settings, 'tags', None),
+                tasks=tasks,
+                schedule=job.settings.schedule.as_dict() if hasattr(job.settings, 'schedule') and job.settings.schedule else None,
+                max_concurrent_runs=getattr(job.settings, 'max_concurrent_runs', None),
+                timeout_seconds=getattr(job.settings, 'timeout_seconds', None),
+                email_notifications=job.settings.email_notifications.as_dict() if hasattr(job.settings, 'email_notifications') and job.settings.email_notifications else None,
+                webhook_notifications=job.settings.webhook_notifications.as_dict() if hasattr(job.settings, 'webhook_notifications') and job.settings.webhook_notifications else None,
+                notification_settings=job.settings.notification_settings.as_dict() if hasattr(job.settings, 'notification_settings') and job.settings.notification_settings else None,
+                git_source=job.settings.git_source.as_dict() if hasattr(job.settings, 'git_source') and job.settings.git_source else None,
+                job_clusters=[jc.as_dict() for jc in job.settings.job_clusters] if hasattr(job.settings, 'job_clusters') and job.settings.job_clusters else None,
+                format=getattr(job.settings, 'format', None),
+                run_as=job.settings.run_as.as_dict() if hasattr(job.settings, 'run_as') and job.settings.run_as else None,
+                parameters=[p.as_dict() for p in job.settings.parameters] if hasattr(job.settings, 'parameters') and job.settings.parameters else None,
+            )
     
-    return JobInfo(
-        job_id=job.job_id,
-        name=settings.name if settings else None,
-        created_time=job.created_time,
-        creator_user_name=job.creator_user_name,
-        settings=settings,
-        run_as_user_name=getattr(job, 'run_as_user_name', None),
-    )
+        return JobInfo(
+            job_id=job.job_id,
+            name=settings.name if settings else None,
+            created_time=job.created_time,
+            creator_user_name=job.creator_user_name,
+            settings=settings,
+            run_as_user_name=getattr(job, 'run_as_user_name', None),
+        )
+
     except Exception as e:
         return None
 
@@ -302,41 +306,43 @@ def create_job(
         }
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.jobs import Task, CronSchedule, JobEmailNotifications, WebhookNotifications, JobNotificationSettings, JobRunAs, GitSource, JobCluster
+        from databricks.sdk.service.jobs import Task, CronSchedule, JobEmailNotifications, WebhookNotifications, JobNotificationSettings, JobRunAs, GitSource, JobCluster
     
-    # Convert tasks
-    task_objects = []
-    for task_dict in tasks:
-        task_objects.append(Task.from_dict(task_dict))
+        # Convert tasks
+        task_objects = []
+        for task_dict in tasks:
+            task_objects.append(Task.from_dict(task_dict))
     
-    # Convert optional params
-    schedule_obj = CronSchedule.from_dict(schedule) if schedule else None
-    email_obj = JobEmailNotifications.from_dict(email_notifications) if email_notifications else None
-    webhook_obj = WebhookNotifications.from_dict(webhook_notifications) if webhook_notifications else None
-    notification_obj = JobNotificationSettings.from_dict(notification_settings) if notification_settings else None
-    run_as_obj = JobRunAs.from_dict(run_as) if run_as else None
-    git_source_obj = GitSource.from_dict(git_source) if git_source else None
-    job_clusters_obj = [JobCluster.from_dict(jc) for jc in job_clusters] if job_clusters else None
+        # Convert optional params
+        schedule_obj = CronSchedule.from_dict(schedule) if schedule else None
+        email_obj = JobEmailNotifications.from_dict(email_notifications) if email_notifications else None
+        webhook_obj = WebhookNotifications.from_dict(webhook_notifications) if webhook_notifications else None
+        notification_obj = JobNotificationSettings.from_dict(notification_settings) if notification_settings else None
+        run_as_obj = JobRunAs.from_dict(run_as) if run_as else None
+        git_source_obj = GitSource.from_dict(git_source) if git_source else None
+        job_clusters_obj = [JobCluster.from_dict(jc) for jc in job_clusters] if job_clusters else None
     
-    response = client.jobs.create(
-        name=name,
-        tasks=task_objects,
-        schedule=schedule_obj,
-        max_concurrent_runs=max_concurrent_runs,
-        timeout_seconds=timeout_seconds,
-        description=description,
-        tags=tags,
-        git_source=git_source_obj,
-        job_clusters=job_clusters_obj,
-        email_notifications=email_obj,
-        webhook_notifications=webhook_obj,
-        notification_settings=notification_obj,
-        run_as=run_as_obj,
-    )
+        response = client.jobs.create(
+            name=name,
+            tasks=task_objects,
+            schedule=schedule_obj,
+            max_concurrent_runs=max_concurrent_runs,
+            timeout_seconds=timeout_seconds,
+            description=description,
+            tags=tags,
+            git_source=git_source_obj,
+            job_clusters=job_clusters_obj,
+            email_notifications=email_obj,
+            webhook_notifications=webhook_obj,
+            notification_settings=notification_obj,
+            run_as=run_as_obj,
+        )
     
-    return CreateJobResponse(job_id=response.job_id)
+        return CreateJobResponse(job_id=response.job_id)
+
     except Exception as e:
         return CreateJobResponse(
             job_id=None,
@@ -368,19 +374,21 @@ def update_job(
         UpdateJobResponse confirming update
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.jobs import JobSettings
+        from databricks.sdk.service.jobs import JobSettings
     
-    settings_obj = JobSettings.from_dict(new_settings) if new_settings else None
+        settings_obj = JobSettings.from_dict(new_settings) if new_settings else None
     
-    client.jobs.update(
-        job_id=job_id,
-        new_settings=settings_obj,
-        fields_to_remove=fields_to_remove,
-    )
+        client.jobs.update(
+            job_id=job_id,
+            new_settings=settings_obj,
+            fields_to_remove=fields_to_remove,
+        )
     
-    return UpdateJobResponse(job_id=job_id)
+        return UpdateJobResponse(job_id=job_id)
+
     except Exception as e:
         return UpdateJobResponse(
             job_id=job_id,
@@ -410,18 +418,20 @@ def reset_job(
         UpdateJobResponse confirming reset
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.jobs import JobSettings
+        from databricks.sdk.service.jobs import JobSettings
     
-    settings_obj = JobSettings.from_dict(new_settings)
+        settings_obj = JobSettings.from_dict(new_settings)
     
-    client.jobs.reset(
-        job_id=job_id,
-        new_settings=settings_obj,
-    )
+        client.jobs.reset(
+            job_id=job_id,
+            new_settings=settings_obj,
+        )
     
-    return UpdateJobResponse(job_id=job_id, message="Job reset successfully")
+        return UpdateJobResponse(job_id=job_id, message="Job reset successfully")
+
     except Exception as e:
         return UpdateJobResponse(
             job_id=job_id,
@@ -448,11 +458,13 @@ def delete_job(
         DeleteJobResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.jobs.delete(job_id=job_id)
+        client.jobs.delete(job_id=job_id)
     
-    return DeleteJobResponse(job_id=job_id)
+        return DeleteJobResponse(job_id=job_id)
+
     except Exception as e:
         return DeleteJobResponse(
             job_id=job_id,
@@ -500,24 +512,26 @@ def run_now(
         RunNowResponse with run ID
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    response = client.jobs.run_now(
-        job_id=job_id,
-        notebook_params=notebook_params,
-        jar_params=jar_params,
-        python_params=python_params,
-        python_named_params=python_named_params,
-        spark_submit_params=spark_submit_params,
-        sql_params=sql_params,
-        dbt_commands=dbt_commands,
-        idempotency_token=idempotency_token,
-    )
+        response = client.jobs.run_now(
+            job_id=job_id,
+            notebook_params=notebook_params,
+            jar_params=jar_params,
+            python_params=python_params,
+            python_named_params=python_named_params,
+            spark_submit_params=spark_submit_params,
+            sql_params=sql_params,
+            dbt_commands=dbt_commands,
+            idempotency_token=idempotency_token,
+        )
     
-    return RunNowResponse(
-        run_id=response.run_id,
-        number_in_job=response.number_in_job,
-    )
+        return RunNowResponse(
+            run_id=response.run_id,
+            number_in_job=response.number_in_job,
+        )
+
     except Exception as e:
         return RunNowResponse(
             run_id=None,
@@ -562,30 +576,32 @@ def submit_run(
         SubmitRunResponse with run ID
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.jobs import SubmitTask, GitSource, JobEmailNotifications, WebhookNotifications, JobNotificationSettings, JobRunAs
+        from databricks.sdk.service.jobs import SubmitTask, GitSource, JobEmailNotifications, WebhookNotifications, JobNotificationSettings, JobRunAs
     
-    task_objects = [SubmitTask.from_dict(t) for t in tasks]
-    git_source_obj = GitSource.from_dict(git_source) if git_source else None
-    email_obj = JobEmailNotifications.from_dict(email_notifications) if email_notifications else None
-    webhook_obj = WebhookNotifications.from_dict(webhook_notifications) if webhook_notifications else None
-    notification_obj = JobNotificationSettings.from_dict(notification_settings) if notification_settings else None
-    run_as_obj = JobRunAs.from_dict(run_as) if run_as else None
+        task_objects = [SubmitTask.from_dict(t) for t in tasks]
+        git_source_obj = GitSource.from_dict(git_source) if git_source else None
+        email_obj = JobEmailNotifications.from_dict(email_notifications) if email_notifications else None
+        webhook_obj = WebhookNotifications.from_dict(webhook_notifications) if webhook_notifications else None
+        notification_obj = JobNotificationSettings.from_dict(notification_settings) if notification_settings else None
+        run_as_obj = JobRunAs.from_dict(run_as) if run_as else None
     
-    response = client.jobs.submit(
-        run_name=run_name,
-        tasks=task_objects,
-        git_source=git_source_obj,
-        timeout_seconds=timeout_seconds,
-        idempotency_token=idempotency_token,
-        email_notifications=email_obj,
-        webhook_notifications=webhook_obj,
-        notification_settings=notification_obj,
-        run_as=run_as_obj,
-    )
+        response = client.jobs.submit(
+            run_name=run_name,
+            tasks=task_objects,
+            git_source=git_source_obj,
+            timeout_seconds=timeout_seconds,
+            idempotency_token=idempotency_token,
+            email_notifications=email_obj,
+            webhook_notifications=webhook_obj,
+            notification_settings=notification_obj,
+            run_as=run_as_obj,
+        )
     
-    return SubmitRunResponse(run_id=response.run_id)
+        return SubmitRunResponse(run_id=response.run_id)
+
     except Exception as e:
         return SubmitRunResponse(
             run_id=None,
@@ -615,67 +631,69 @@ def get_run(
         RunInfo with complete run details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    run = client.jobs.get_run(
-        run_id=run_id,
-        include_history=include_history,
-    )
-    
-    # Extract state
-    state = None
-    if run.state:
-        state = RunStateInfo(
-            life_cycle_state=run.state.life_cycle_state.value if run.state.life_cycle_state else None,
-            state_message=run.state.state_message,
-            result_state=run.state.result_state.value if run.state.result_state else None,
-            user_cancelled_or_timedout=run.state.user_cancelled_or_timedout,
-            queue_reason=run.state.queue_reason,
+        run = client.jobs.get_run(
+            run_id=run_id,
+            include_history=include_history,
         )
     
-    # Extract tasks
-    tasks = None
-    if run.tasks:
-        tasks = [
-            RunTaskInfo(
-                task_key=t.task_key,
-                run_id=t.run_id,
-                state=RunStateInfo(
-                    life_cycle_state=t.state.life_cycle_state.value if t.state and t.state.life_cycle_state else None,
-                    state_message=t.state.state_message if t.state else None,
-                    result_state=t.state.result_state.value if t.state and t.state.result_state else None,
-                    user_cancelled_or_timedout=t.state.user_cancelled_or_timedout if t.state else None,
-                ) if t.state else None,
-                start_time=t.start_time,
-                end_time=t.end_time,
-                execution_duration=t.execution_duration,
-                cleanup_duration=t.cleanup_duration,
-                setup_duration=t.setup_duration,
-                attempt_number=t.attempt_number,
+        # Extract state
+        state = None
+        if run.state:
+            state = RunStateInfo(
+                life_cycle_state=run.state.life_cycle_state.value if run.state.life_cycle_state else None,
+                state_message=run.state.state_message,
+                result_state=run.state.result_state.value if run.state.result_state else None,
+                user_cancelled_or_timedout=run.state.user_cancelled_or_timedout,
+                queue_reason=run.state.queue_reason,
             )
-            for t in run.tasks
-        ]
     
-    return RunInfo(
-        run_id=run.run_id,
-        job_id=run.job_id,
-        run_name=run.run_name,
-        number_in_job=run.number_in_job,
-        creator_user_name=run.creator_user_name,
-        state=state,
-        start_time=run.start_time,
-        end_time=run.end_time,
-        setup_duration=run.setup_duration,
-        execution_duration=run.execution_duration,
-        cleanup_duration=run.cleanup_duration,
-        run_duration=run.run_duration,
-        run_page_url=run.run_page_url,
-        run_type=run.run_type.value if run.run_type else None,
-        tasks=tasks,
-        git_source=run.git_source.as_dict() if run.git_source else None,
-        cluster_spec=run.cluster_spec.as_dict() if run.cluster_spec else None,
-        trigger=run.trigger.value if run.trigger else None,
-    )
+        # Extract tasks
+        tasks = None
+        if run.tasks:
+            tasks = [
+                RunTaskInfo(
+                    task_key=t.task_key,
+                    run_id=t.run_id,
+                    state=RunStateInfo(
+                        life_cycle_state=t.state.life_cycle_state.value if t.state and t.state.life_cycle_state else None,
+                        state_message=t.state.state_message if t.state else None,
+                        result_state=t.state.result_state.value if t.state and t.state.result_state else None,
+                        user_cancelled_or_timedout=t.state.user_cancelled_or_timedout if t.state else None,
+                    ) if t.state else None,
+                    start_time=t.start_time,
+                    end_time=t.end_time,
+                    execution_duration=t.execution_duration,
+                    cleanup_duration=t.cleanup_duration,
+                    setup_duration=t.setup_duration,
+                    attempt_number=t.attempt_number,
+                )
+                for t in run.tasks
+            ]
+    
+        return RunInfo(
+            run_id=run.run_id,
+            job_id=run.job_id,
+            run_name=run.run_name,
+            number_in_job=run.number_in_job,
+            creator_user_name=run.creator_user_name,
+            state=state,
+            start_time=run.start_time,
+            end_time=run.end_time,
+            setup_duration=run.setup_duration,
+            execution_duration=run.execution_duration,
+            cleanup_duration=run.cleanup_duration,
+            run_duration=run.run_duration,
+            run_page_url=run.run_page_url,
+            run_type=run.run_type.value if run.run_type else None,
+            tasks=tasks,
+            git_source=run.git_source.as_dict() if run.git_source else None,
+            cluster_spec=run.cluster_spec.as_dict() if run.cluster_spec else None,
+            trigger=run.trigger.value if run.trigger else None,
+        )
+
     except Exception as e:
         return None
 
@@ -724,90 +742,92 @@ def list_runs(
         - Filters (job_id, state, time range) apply consistently across all pages
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Cap limit at 20 when expand_tasks is True to reduce response size
-    effective_limit = min(limit, 20) if expand_tasks else limit
+        # Cap limit at 20 when expand_tasks is True to reduce response size
+        effective_limit = min(limit, 20) if expand_tasks else limit
     
-    # Call the API to get runs
-    response = client.jobs.list_runs(
-        job_id=job_id,
-        active_only=active_only,
-        completed_only=completed_only,
-        start_time_from=start_time_from,
-        start_time_to=start_time_to,
-        expand_tasks=expand_tasks,
-    )
-    
-    # Calculate skip and take based on page number
-    skip = page * effective_limit
-    
-    # Use islice to skip to the right page and take only the requested number of items
-    runs_iterator = islice(response, skip, skip + effective_limit)
-    
-    runs_list = []
-    for run in runs_iterator:
-        # Extract state
-        state = None
-        if run.state:
-            state = RunStateInfo(
-                life_cycle_state=run.state.life_cycle_state.value if run.state.life_cycle_state else None,
-                state_message=run.state.state_message,
-                result_state=run.state.result_state.value if run.state.result_state else None,
-                user_cancelled_or_timedout=run.state.user_cancelled_or_timedout,
-                queue_reason=run.state.queue_reason,
-            )
-        
-        # Extract tasks (simplified for list)
-        tasks = None
-        if run.tasks and expand_tasks:
-            tasks = [
-                RunTaskInfo(
-                    task_key=t.task_key,
-                    run_id=t.run_id,
-                    state=RunStateInfo(
-                        life_cycle_state=t.state.life_cycle_state.value if t.state and t.state.life_cycle_state else None,
-                        result_state=t.state.result_state.value if t.state and t.state.result_state else None,
-                    ) if t.state else None,
-                    start_time=t.start_time,
-                    end_time=t.end_time,
-                )
-                for t in run.tasks
-            ]
-        
-        runs_list.append(
-            RunInfo(
-                run_id=run.run_id,
-                job_id=run.job_id,
-                run_name=run.run_name,
-                number_in_job=run.number_in_job,
-                creator_user_name=run.creator_user_name,
-                state=state,
-                start_time=run.start_time,
-                end_time=run.end_time,
-                setup_duration=run.setup_duration,
-                execution_duration=run.execution_duration,
-                cleanup_duration=run.cleanup_duration,
-                run_duration=run.run_duration,
-                run_page_url=run.run_page_url,
-                run_type=run.run_type.value if run.run_type else None,
-                tasks=tasks,
-            )
+        # Call the API to get runs
+        response = client.jobs.list_runs(
+            job_id=job_id,
+            active_only=active_only,
+            completed_only=completed_only,
+            start_time_from=start_time_from,
+            start_time_to=start_time_to,
+            expand_tasks=expand_tasks,
         )
     
-    # Check if there are more results by attempting to peek at the next item
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
-        has_more = False
+        # Calculate skip and take based on page number
+        skip = page * effective_limit
     
-    return ListRunsResponse(
-        runs=runs_list,
-        count=len(runs_list),
-        has_more=has_more,
-    )
+        # Use islice to skip to the right page and take only the requested number of items
+        runs_iterator = islice(response, skip, skip + effective_limit)
+    
+        runs_list = []
+        for run in runs_iterator:
+            # Extract state
+            state = None
+            if run.state:
+                state = RunStateInfo(
+                    life_cycle_state=run.state.life_cycle_state.value if run.state.life_cycle_state else None,
+                    state_message=run.state.state_message,
+                    result_state=run.state.result_state.value if run.state.result_state else None,
+                    user_cancelled_or_timedout=run.state.user_cancelled_or_timedout,
+                    queue_reason=run.state.queue_reason,
+                )
+        
+            # Extract tasks (simplified for list)
+            tasks = None
+            if run.tasks and expand_tasks:
+                tasks = [
+                    RunTaskInfo(
+                        task_key=t.task_key,
+                        run_id=t.run_id,
+                        state=RunStateInfo(
+                            life_cycle_state=t.state.life_cycle_state.value if t.state and t.state.life_cycle_state else None,
+                            result_state=t.state.result_state.value if t.state and t.state.result_state else None,
+                        ) if t.state else None,
+                        start_time=t.start_time,
+                        end_time=t.end_time,
+                    )
+                    for t in run.tasks
+                ]
+        
+            runs_list.append(
+                RunInfo(
+                    run_id=run.run_id,
+                    job_id=run.job_id,
+                    run_name=run.run_name,
+                    number_in_job=run.number_in_job,
+                    creator_user_name=run.creator_user_name,
+                    state=state,
+                    start_time=run.start_time,
+                    end_time=run.end_time,
+                    setup_duration=run.setup_duration,
+                    execution_duration=run.execution_duration,
+                    cleanup_duration=run.cleanup_duration,
+                    run_duration=run.run_duration,
+                    run_page_url=run.run_page_url,
+                    run_type=run.run_type.value if run.run_type else None,
+                    tasks=tasks,
+                )
+            )
+    
+        # Check if there are more results by attempting to peek at the next item
+        has_more = False
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListRunsResponse(
+            runs=runs_list,
+            count=len(runs_list),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListRunsResponse(
             runs=[],
@@ -837,11 +857,13 @@ def cancel_run(
         CancelRunResponse confirming cancellation
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.jobs.cancel_run(run_id=run_id)
+        client.jobs.cancel_run(run_id=run_id)
     
-    return CancelRunResponse(run_id=run_id)
+        return CancelRunResponse(run_id=run_id)
+
     except Exception as e:
         return CancelRunResponse(
             run_id=run_id,
@@ -870,17 +892,19 @@ def cancel_all_runs(
         Dict with cancellation status
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.jobs.cancel_all_runs(
-        job_id=job_id,
-        all_queued_runs=all_queued_runs,
-    )
+        client.jobs.cancel_all_runs(
+            job_id=job_id,
+            all_queued_runs=all_queued_runs,
+        )
     
-    return {
-        "job_id": job_id,
-        "message": "All runs canceled successfully"
-    }
+        return {
+            "job_id": job_id,
+            "message": "All runs canceled successfully"
+        }
+
     except Exception as e:
         return {"error": f"Failed to cancel all runs: {str(e)}"}
 
@@ -904,11 +928,13 @@ def delete_run(
         DeleteRunResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.jobs.delete_run(run_id=run_id)
+        client.jobs.delete_run(run_id=run_id)
     
-    return DeleteRunResponse(run_id=run_id)
+        return DeleteRunResponse(run_id=run_id)
+
     except Exception as e:
         return DeleteRunResponse(
             run_id=run_id,
@@ -956,26 +982,28 @@ def repair_run(
         RepairRunResponse with repair ID
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    response = client.jobs.repair_run(
-        run_id=run_id,
-        rerun_tasks=rerun_tasks,
-        rerun_all_failed_tasks=rerun_all_failed_tasks,
-        rerun_dependent_tasks=rerun_dependent_tasks,
-        notebook_params=notebook_params,
-        jar_params=jar_params,
-        python_params=python_params,
-        python_named_params=python_named_params,
-        spark_submit_params=spark_submit_params,
-        sql_params=sql_params,
-        dbt_commands=dbt_commands,
-    )
+        response = client.jobs.repair_run(
+            run_id=run_id,
+            rerun_tasks=rerun_tasks,
+            rerun_all_failed_tasks=rerun_all_failed_tasks,
+            rerun_dependent_tasks=rerun_dependent_tasks,
+            notebook_params=notebook_params,
+            jar_params=jar_params,
+            python_params=python_params,
+            python_named_params=python_named_params,
+            spark_submit_params=spark_submit_params,
+            sql_params=sql_params,
+            dbt_commands=dbt_commands,
+        )
     
-    return RepairRunResponse(
-        run_id=run_id,
-        repair_id=response.repair_id,
-    )
+        return RepairRunResponse(
+            run_id=run_id,
+            repair_id=response.repair_id,
+        )
+
     except Exception as e:
         return RepairRunResponse(
             run_id=run_id,
@@ -1004,39 +1032,41 @@ def get_run_output(
         RunOutputInfo with output details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    output = client.jobs.get_run_output(run_id=run_id)
+        output = client.jobs.get_run_output(run_id=run_id)
     
-    # Extract run metadata
-    metadata = None
-    if output.metadata:
-        state = None
-        if output.metadata.state:
-            state = RunStateInfo(
-                life_cycle_state=output.metadata.state.life_cycle_state.value if output.metadata.state.life_cycle_state else None,
-                result_state=output.metadata.state.result_state.value if output.metadata.state.result_state else None,
-                state_message=output.metadata.state.state_message,
-            )
+        # Extract run metadata
+        metadata = None
+        if output.metadata:
+            state = None
+            if output.metadata.state:
+                state = RunStateInfo(
+                    life_cycle_state=output.metadata.state.life_cycle_state.value if output.metadata.state.life_cycle_state else None,
+                    result_state=output.metadata.state.result_state.value if output.metadata.state.result_state else None,
+                    state_message=output.metadata.state.state_message,
+                )
         
-        metadata = RunInfo(
-            run_id=output.metadata.run_id,
-            job_id=output.metadata.job_id,
-            state=state,
-            start_time=output.metadata.start_time,
-            end_time=output.metadata.end_time,
-        )
+            metadata = RunInfo(
+                run_id=output.metadata.run_id,
+                job_id=output.metadata.job_id,
+                state=state,
+                start_time=output.metadata.start_time,
+                end_time=output.metadata.end_time,
+            )
     
-    return RunOutputInfo(
-        notebook_output=output.notebook_output.as_dict() if output.notebook_output else None,
-        sql_output=output.sql_output.as_dict() if output.sql_output else None,
-        dbt_output=output.dbt_output.as_dict() if output.dbt_output else None,
-        logs=output.logs,
-        logs_truncated=output.logs_truncated,
-        error=output.error,
-        error_trace=output.error_trace,
-        metadata=metadata,
-    )
+        return RunOutputInfo(
+            notebook_output=output.notebook_output.as_dict() if output.notebook_output else None,
+            sql_output=output.sql_output.as_dict() if output.sql_output else None,
+            dbt_output=output.dbt_output.as_dict() if output.dbt_output else None,
+            logs=output.logs,
+            logs_truncated=output.logs_truncated,
+            error=output.error,
+            error_trace=output.error_trace,
+            metadata=metadata,
+        )
+
     except Exception as e:
         return None
 
@@ -1062,29 +1092,31 @@ def export_run(
         ExportRunResponse with exported views
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.jobs import ViewsToExport
+        from databricks.sdk.service.jobs import ViewsToExport
     
-    views_enum = ViewsToExport(views_to_export) if views_to_export else None
+        views_enum = ViewsToExport(views_to_export) if views_to_export else None
     
-    result = client.jobs.export_run(
-        run_id=run_id,
-        views_to_export=views_enum,
-    )
+        result = client.jobs.export_run(
+            run_id=run_id,
+            views_to_export=views_enum,
+        )
     
-    views = []
-    if result.views:
-        for view in result.views:
-            views.append(
-                ExportRunView(
-                    content=view.content,
-                    name=view.name,
-                    type=view.type.value if view.type else None,
+        views = []
+        if result.views:
+            for view in result.views:
+                views.append(
+                    ExportRunView(
+                        content=view.content,
+                        name=view.name,
+                        type=view.type.value if view.type else None,
+                    )
                 )
-            )
     
-    return ExportRunResponse(views=views)
+        return ExportRunResponse(views=views)
+
     except Exception as e:
         return ExportRunResponse(
             views=[],
@@ -1115,11 +1147,13 @@ def get_job_permissions(
         Dict with permission details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    permissions = client.jobs.get_permissions(job_id=job_id)
+        permissions = client.jobs.get_permissions(job_id=job_id)
     
-    return permissions.as_dict()
+        return permissions.as_dict()
+
     except Exception as e:
         return {"error": f"Failed to get job permissions for {job_id}: {str(e)}"}
 
@@ -1156,18 +1190,20 @@ def set_job_permissions(
         - CAN_MANAGE - Full control (edit, delete, permissions)
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.jobs import JobAccessControlRequest
+        from databricks.sdk.service.jobs import JobAccessControlRequest
     
-    acl_requests = [JobAccessControlRequest.from_dict(acl) for acl in access_control_list]
+        acl_requests = [JobAccessControlRequest.from_dict(acl) for acl in access_control_list]
     
-    permissions = client.jobs.set_permissions(
-        job_id=job_id,
-        access_control_list=acl_requests,
-    )
+        permissions = client.jobs.set_permissions(
+            job_id=job_id,
+            access_control_list=acl_requests,
+        )
     
-    return permissions.as_dict()
+        return permissions.as_dict()
+
     except Exception as e:
         return {"error": f"Failed to set job permissions for {job_id}: {str(e)}"}
 
@@ -1193,18 +1229,20 @@ def update_job_permissions(
         Dict with updated permission details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.jobs import JobAccessControlRequest
+        from databricks.sdk.service.jobs import JobAccessControlRequest
     
-    acl_requests = [JobAccessControlRequest.from_dict(acl) for acl in access_control_list]
+        acl_requests = [JobAccessControlRequest.from_dict(acl) for acl in access_control_list]
     
-    permissions = client.jobs.update_permissions(
-        job_id=job_id,
-        access_control_list=acl_requests,
-    )
+        permissions = client.jobs.update_permissions(
+            job_id=job_id,
+            access_control_list=acl_requests,
+        )
     
-    return permissions.as_dict()
+        return permissions.as_dict()
+
     except Exception as e:
         return {"error": f"Failed to update job permissions for {job_id}: {str(e)}"}
 
@@ -1228,10 +1266,12 @@ def get_job_permission_levels(
         Dict with available permission levels
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    levels = client.jobs.get_permission_levels(job_id=job_id)
+        levels = client.jobs.get_permission_levels(job_id=job_id)
     
-    return levels.as_dict()
+        return levels.as_dict()
+
     except Exception as e:
         return {"error": f"Failed to get job permission levels for {job_id}: {str(e)}"}

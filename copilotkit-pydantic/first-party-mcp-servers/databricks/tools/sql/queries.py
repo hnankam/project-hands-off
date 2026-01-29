@@ -49,54 +49,56 @@ def list_queries(
         - has_more=True indicates more results available
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    response = client.queries.list()
-    skip = page * limit
-    queries_iterator = islice(response, skip, skip + limit)
+        response = client.queries.list()
+        skip = page * limit
+        queries_iterator = islice(response, skip, skip + limit)
     
-    queries = []
-    for query in queries_iterator:
-        query_dict = query.as_dict()
+        queries = []
+        for query in queries_iterator:
+            query_dict = query.as_dict()
         
-        # Convert parameters to list of dicts if present
-        parameters = None
-        if query_dict.get('parameters'):
-            parameters = [p if isinstance(p, dict) else p.as_dict() for p in query_dict['parameters']]
+            # Convert parameters to list of dicts if present
+            parameters = None
+            if query_dict.get('parameters'):
+                parameters = [p if isinstance(p, dict) else p.as_dict() for p in query_dict['parameters']]
         
-        queries.append(QueryInfo(
-            id=query_dict.get('id'),
-            display_name=query_dict.get('display_name'),
-            query_text=query_dict.get('query_text'),
-            description=query_dict.get('description'),
-            warehouse_id=query_dict.get('warehouse_id'),
-            owner_user_name=query_dict.get('owner_user_name'),
-            catalog=query_dict.get('catalog'),
-            schema_name=query_dict.get('schema'),
-            tags=query_dict.get('tags'),
-            parent_path=query_dict.get('parent_path'),
-            lifecycle_state=query_dict.get('lifecycle_state'),
-            run_as_mode=query_dict.get('run_as_mode'),
-            create_time=query_dict.get('create_time'),
-            update_time=query_dict.get('update_time'),
-            last_modifier_user_name=query_dict.get('last_modifier_user_name'),
-            apply_auto_limit=query_dict.get('apply_auto_limit'),
-            parameters=parameters
-        ))
+            queries.append(QueryInfo(
+                id=query_dict.get('id'),
+                display_name=query_dict.get('display_name'),
+                query_text=query_dict.get('query_text'),
+                description=query_dict.get('description'),
+                warehouse_id=query_dict.get('warehouse_id'),
+                owner_user_name=query_dict.get('owner_user_name'),
+                catalog=query_dict.get('catalog'),
+                schema_name=query_dict.get('schema'),
+                tags=query_dict.get('tags'),
+                parent_path=query_dict.get('parent_path'),
+                lifecycle_state=query_dict.get('lifecycle_state'),
+                run_as_mode=query_dict.get('run_as_mode'),
+                create_time=query_dict.get('create_time'),
+                update_time=query_dict.get('update_time'),
+                last_modifier_user_name=query_dict.get('last_modifier_user_name'),
+                apply_auto_limit=query_dict.get('apply_auto_limit'),
+                parameters=parameters
+            ))
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
+        # Check for more results
         has_more = False
-    
-    return ListQueriesResponse(
-        queries=queries,
-        count=len(queries),
-        has_more=has_more,
-    )
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListQueriesResponse(
+            queries=queries,
+            count=len(queries),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListQueriesResponse(
             queries=[],
@@ -119,34 +121,36 @@ def get_query(host_credential_key: str, token_credential_key: str, query_id: str
         QueryInfo with complete query details including SQL text, metadata, and tags, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
-    query = client.queries.get(id=query_id)
-    query_dict = query.as_dict()
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
+        query = client.queries.get(id=query_id)
+        query_dict = query.as_dict()
     
-    # Convert parameters to list of dicts if present
-    parameters = None
-    if query_dict.get('parameters'):
-        parameters = [p if isinstance(p, dict) else p.as_dict() for p in query_dict['parameters']]
+        # Convert parameters to list of dicts if present
+        parameters = None
+        if query_dict.get('parameters'):
+            parameters = [p if isinstance(p, dict) else p.as_dict() for p in query_dict['parameters']]
     
-    return QueryInfo(
-        id=query_dict.get('id'),
-        display_name=query_dict.get('display_name'),
-        query_text=query_dict.get('query_text'),
-        description=query_dict.get('description'),
-        warehouse_id=query_dict.get('warehouse_id'),
-        owner_user_name=query_dict.get('owner_user_name'),
-        catalog=query_dict.get('catalog'),
-        schema_name=query_dict.get('schema'),
-        tags=query_dict.get('tags'),
-        parent_path=query_dict.get('parent_path'),
-        lifecycle_state=query_dict.get('lifecycle_state'),
-        run_as_mode=query_dict.get('run_as_mode'),
-        create_time=query_dict.get('create_time'),
-        update_time=query_dict.get('update_time'),
-        last_modifier_user_name=query_dict.get('last_modifier_user_name'),
-        apply_auto_limit=query_dict.get('apply_auto_limit'),
-        parameters=parameters
-    )
+        return QueryInfo(
+            id=query_dict.get('id'),
+            display_name=query_dict.get('display_name'),
+            query_text=query_dict.get('query_text'),
+            description=query_dict.get('description'),
+            warehouse_id=query_dict.get('warehouse_id'),
+            owner_user_name=query_dict.get('owner_user_name'),
+            catalog=query_dict.get('catalog'),
+            schema_name=query_dict.get('schema'),
+            tags=query_dict.get('tags'),
+            parent_path=query_dict.get('parent_path'),
+            lifecycle_state=query_dict.get('lifecycle_state'),
+            run_as_mode=query_dict.get('run_as_mode'),
+            create_time=query_dict.get('create_time'),
+            update_time=query_dict.get('update_time'),
+            last_modifier_user_name=query_dict.get('last_modifier_user_name'),
+            apply_auto_limit=query_dict.get('apply_auto_limit'),
+            parameters=parameters
+        )
+
     except Exception as e:
         return QueryInfo(
             id=query_id,
@@ -189,30 +193,32 @@ def create_query(
         CreateQueryResponse with the created query details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    query_request = CreateQueryRequestQuery(
-        display_name=display_name,
-        warehouse_id=warehouse_id,
-        query_text=query_text,
-        description=description,
-        catalog=catalog,
-        schema=schema,
-        tags=tags,
-        parent_path=parent_path,
-        run_as_mode=run_as_mode,
-        apply_auto_limit=apply_auto_limit
-    )
+        query_request = CreateQueryRequestQuery(
+            display_name=display_name,
+            warehouse_id=warehouse_id,
+            query_text=query_text,
+            description=description,
+            catalog=catalog,
+            schema=schema,
+            tags=tags,
+            parent_path=parent_path,
+            run_as_mode=run_as_mode,
+            apply_auto_limit=apply_auto_limit
+        )
     
-    created_query = client.queries.create(query=query_request)
+        created_query = client.queries.create(query=query_request)
     
-    return CreateQueryResponse(
-        id=created_query.id,
-        display_name=created_query.display_name,
-        query_text=created_query.query_text,
-        warehouse_id=created_query.warehouse_id,
-        status=f"Query '{display_name}' created successfully"
-    )
+        return CreateQueryResponse(
+            id=created_query.id,
+            display_name=created_query.display_name,
+            query_text=created_query.query_text,
+            warehouse_id=created_query.warehouse_id,
+            status=f"Query '{display_name}' created successfully"
+        )
+
     except Exception as e:
         return CreateQueryResponse(
             id=None,
@@ -256,63 +262,65 @@ def update_query(
         UpdateQueryResponse with the updated query details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Build update mask based on provided parameters
-    update_fields = []
-    update_dict = {}
+        # Build update mask based on provided parameters
+        update_fields = []
+        update_dict = {}
     
-    if display_name is not None:
-        update_fields.append("display_name")
-        update_dict["display_name"] = display_name
-    if query_text is not None:
-        update_fields.append("query_text")
-        update_dict["query_text"] = query_text
-    if description is not None:
-        update_fields.append("description")
-        update_dict["description"] = description
-    if warehouse_id is not None:
-        update_fields.append("warehouse_id")
-        update_dict["warehouse_id"] = warehouse_id
-    if catalog is not None:
-        update_fields.append("catalog")
-        update_dict["catalog"] = catalog
-    if schema is not None:
-        update_fields.append("schema")
-        update_dict["schema"] = schema
-    if tags is not None:
-        update_fields.append("tags")
-        update_dict["tags"] = tags
-    if run_as_mode is not None:
-        update_fields.append("run_as_mode")
-        update_dict["run_as_mode"] = run_as_mode
-    if apply_auto_limit is not None:
-        update_fields.append("apply_auto_limit")
-        update_dict["apply_auto_limit"] = apply_auto_limit
+        if display_name is not None:
+            update_fields.append("display_name")
+            update_dict["display_name"] = display_name
+        if query_text is not None:
+            update_fields.append("query_text")
+            update_dict["query_text"] = query_text
+        if description is not None:
+            update_fields.append("description")
+            update_dict["description"] = description
+        if warehouse_id is not None:
+            update_fields.append("warehouse_id")
+            update_dict["warehouse_id"] = warehouse_id
+        if catalog is not None:
+            update_fields.append("catalog")
+            update_dict["catalog"] = catalog
+        if schema is not None:
+            update_fields.append("schema")
+            update_dict["schema"] = schema
+        if tags is not None:
+            update_fields.append("tags")
+            update_dict["tags"] = tags
+        if run_as_mode is not None:
+            update_fields.append("run_as_mode")
+            update_dict["run_as_mode"] = run_as_mode
+        if apply_auto_limit is not None:
+            update_fields.append("apply_auto_limit")
+            update_dict["apply_auto_limit"] = apply_auto_limit
     
-    if not update_fields:
-            return UpdateQueryResponse(
-                id=query_id,
-                status="failed",
-                error_message="At least one field must be provided for update",
-            )
+        if not update_fields:
+                return UpdateQueryResponse(
+                    id=query_id,
+                    status="failed",
+                    error_message="At least one field must be provided for update",
+                )
     
-    update_mask = ",".join(update_fields)
-    query_request = UpdateQueryRequestQuery(**update_dict)
+        update_mask = ",".join(update_fields)
+        query_request = UpdateQueryRequestQuery(**update_dict)
     
-    updated_query = client.queries.update(
-        id=query_id,
-        update_mask=update_mask,
-        query=query_request
-    )
+        updated_query = client.queries.update(
+            id=query_id,
+            update_mask=update_mask,
+            query=query_request
+        )
     
-    return UpdateQueryResponse(
-        id=updated_query.id,
-        display_name=updated_query.display_name,
-        query_text=updated_query.query_text,
-        update_time=updated_query.update_time,
-        status=f"Query '{query_id}' updated successfully"
-    )
+        return UpdateQueryResponse(
+            id=updated_query.id,
+            display_name=updated_query.display_name,
+            query_text=updated_query.query_text,
+            update_time=updated_query.update_time,
+            status=f"Query '{query_id}' updated successfully"
+        )
+
     except Exception as e:
         return UpdateQueryResponse(
             id=query_id,
@@ -338,14 +346,16 @@ def delete_query(host_credential_key: str, token_credential_key: str, query_id: 
         DeleteQueryResponse confirming the deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.queries.delete(id=query_id)
+        client.queries.delete(id=query_id)
     
-    return DeleteQueryResponse(
-        id=query_id,
-        status=f"Query '{query_id}' moved to trash (recoverable for 30 days)"
-    )
+        return DeleteQueryResponse(
+            id=query_id,
+            status=f"Query '{query_id}' moved to trash (recoverable for 30 days)"
+        )
+
     except Exception as e:
         return DeleteQueryResponse(
             id=query_id,
@@ -386,43 +396,45 @@ def list_query_visualizations(
         - has_more=True indicates more results available
     """
     try:
-    from itertools import islice
+
+        from itertools import islice
     
-    client = get_workspace_client(host_credential_key, token_credential_key)
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    response = client.queries.list_visualizations(id=query_id)
+        response = client.queries.list_visualizations(id=query_id)
     
-    skip = page * limit
-    visualizations_iterator = islice(response, skip, skip + limit)
+        skip = page * limit
+        visualizations_iterator = islice(response, skip, skip + limit)
     
-    visualizations = []
-    for viz in visualizations_iterator:
-        viz_dict = viz.as_dict()
-        visualizations.append(VisualizationInfo(
-            id=viz_dict.get('id'),
-            query_id=viz_dict.get('query_id'),
-            type=viz_dict.get('type'),
-            display_name=viz_dict.get('display_name'),
-            create_time=viz_dict.get('create_time'),
-            update_time=viz_dict.get('update_time'),
-            serialized_options=viz_dict.get('serialized_options'),
-            serialized_query_plan=viz_dict.get('serialized_query_plan')
-        ))
+        visualizations = []
+        for viz in visualizations_iterator:
+            viz_dict = viz.as_dict()
+            visualizations.append(VisualizationInfo(
+                id=viz_dict.get('id'),
+                query_id=viz_dict.get('query_id'),
+                type=viz_dict.get('type'),
+                display_name=viz_dict.get('display_name'),
+                create_time=viz_dict.get('create_time'),
+                update_time=viz_dict.get('update_time'),
+                serialized_options=viz_dict.get('serialized_options'),
+                serialized_query_plan=viz_dict.get('serialized_query_plan')
+            ))
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
+        # Check for more results
         has_more = False
-    
-    return ListVisualizationsResponse(
-        query_id=query_id,
-        visualizations=visualizations,
-        count=len(visualizations),
-        has_more=has_more,
-    )
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListVisualizationsResponse(
+            query_id=query_id,
+            visualizations=visualizations,
+            count=len(visualizations),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListVisualizationsResponse(
             query_id=query_id,

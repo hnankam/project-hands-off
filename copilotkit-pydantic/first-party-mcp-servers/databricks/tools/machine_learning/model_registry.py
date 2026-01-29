@@ -152,21 +152,23 @@ def list_registry_models(
         ListModelsResponse with registered models
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    models = []
-    next_token = None
+        models = []
+        next_token = None
     
-    for model in client.model_registry.list_models(
-        max_results=max_results,
-        page_token=page_token,
-    ):
-        models.append(_convert_to_registered_model(model))
+        for model in client.model_registry.list_models(
+            max_results=max_results,
+            page_token=page_token,
+        ):
+            models.append(_convert_to_registered_model(model))
     
-    return ListModelsResponse(
-        models=models,
-        next_page_token=next_token,
-    )
+        return ListModelsResponse(
+            models=models,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return ListModelsResponse(
             models=[],
@@ -194,11 +196,13 @@ def get_registry_model(
         RegisteredModelModel with model details, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    model = client.model_registry.get_model(name=name)
+        model = client.model_registry.get_model(name=name)
     
-    return _convert_to_registered_model(model.registered_model_databricks)
+        return _convert_to_registered_model(model.registered_model_databricks)
+
     except Exception as e:
         return None
 
@@ -227,23 +231,25 @@ def create_registry_model(
         CreateModelResponse with created model
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Convert tags dictionary to list of ModelTag
-    tag_list = None
-    if tags:
-        from databricks.sdk.service.ml import ModelTag
-        tag_list = [ModelTag(key=k, value=v) for k, v in tags.items()]
+        # Convert tags dictionary to list of ModelTag
+        tag_list = None
+        if tags:
+            from databricks.sdk.service.ml import ModelTag
+            tag_list = [ModelTag(key=k, value=v) for k, v in tags.items()]
     
-    model = client.model_registry.create_model(
-        name=name,
-        description=description,
-        tags=tag_list,
-    )
+        model = client.model_registry.create_model(
+            name=name,
+            description=description,
+            tags=tag_list,
+        )
     
-    return CreateModelResponse(
-        model=_convert_to_registered_model(model.registered_model),
-    )
+        return CreateModelResponse(
+            model=_convert_to_registered_model(model.registered_model),
+        )
+
     except Exception as e:
         return CreateModelResponse(
             model=None,
@@ -272,14 +278,16 @@ def update_registry_model(
         UpdateModelResponse confirming update
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.model_registry.update_model(
-        name=name,
-        description=description,
-    )
+        client.model_registry.update_model(
+            name=name,
+            description=description,
+        )
     
-    return UpdateModelResponse()
+        return UpdateModelResponse()
+
     except Exception as e:
         return UpdateModelResponse(
             error_message=f"Failed to update registry model: {str(e)}",
@@ -305,13 +313,15 @@ def delete_registry_model(
         DeleteModelResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.model_registry.delete_model(name=name)
+        client.model_registry.delete_model(name=name)
     
-    return DeleteModelResponse(
-        model_name=name,
-    )
+        return DeleteModelResponse(
+            model_name=name,
+        )
+
     except Exception as e:
         return DeleteModelResponse(
             model_name=None,
@@ -351,25 +361,27 @@ def create_model_version(
         CreateModelVersionResponse with created version
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Convert tags dictionary to list of ModelVersionTag
-    tag_list = None
-    if tags:
-        from databricks.sdk.service.ml import ModelVersionTag
-        tag_list = [ModelVersionTag(key=k, value=v) for k, v in tags.items()]
+        # Convert tags dictionary to list of ModelVersionTag
+        tag_list = None
+        if tags:
+            from databricks.sdk.service.ml import ModelVersionTag
+            tag_list = [ModelVersionTag(key=k, value=v) for k, v in tags.items()]
     
-    version = client.model_registry.create_model_version(
-        name=name,
-        source=source,
-        run_id=run_id,
-        description=description,
-        tags=tag_list,
-    )
+        version = client.model_registry.create_model_version(
+            name=name,
+            source=source,
+            run_id=run_id,
+            description=description,
+            tags=tag_list,
+        )
     
-    return CreateModelVersionResponse(
-        model_version=_convert_to_model_version(version.model_version),
-    )
+        return CreateModelVersionResponse(
+            model_version=_convert_to_model_version(version.model_version),
+        )
+
     except Exception as e:
         return CreateModelVersionResponse(
             model_version=None,
@@ -398,14 +410,16 @@ def get_model_version(
         ModelVersionModel with version details, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    version = client.model_registry.get_model_version(
-        name=name,
-        version=version,
-    )
+        version = client.model_registry.get_model_version(
+            name=name,
+            version=version,
+        )
     
-    return _convert_to_model_version(version.model_version)
+        return _convert_to_model_version(version.model_version)
+
     except Exception as e:
         return None
 
@@ -433,15 +447,17 @@ def update_model_version(
         UpdateModelVersionResponse confirming update
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.model_registry.update_model_version(
-        name=name,
-        version=version,
-        description=description,
-    )
+        client.model_registry.update_model_version(
+            name=name,
+            version=version,
+            description=description,
+        )
     
-    return UpdateModelVersionResponse()
+        return UpdateModelVersionResponse()
+
     except Exception as e:
         return UpdateModelVersionResponse(
             error_message=f"Failed to update model version: {str(e)}",
@@ -469,17 +485,19 @@ def delete_model_version(
         DeleteModelVersionResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.model_registry.delete_model_version(
-        name=name,
-        version=version,
-    )
+        client.model_registry.delete_model_version(
+            name=name,
+            version=version,
+        )
     
-    return DeleteModelVersionResponse(
-        model_name=name,
-        version=version,
-    )
+        return DeleteModelVersionResponse(
+            model_name=name,
+            version=version,
+        )
+
     except Exception as e:
         return DeleteModelVersionResponse(
             model_name=None,
@@ -514,23 +532,25 @@ def search_model_versions(
         ListModelVersionsResponse with matching versions
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    versions = []
-    next_token = None
+        versions = []
+        next_token = None
     
-    for version in client.model_registry.search_model_versions(
-        filter=filter,
-        max_results=max_results,
-        order_by=order_by,
-        page_token=page_token,
-    ):
-        versions.append(_convert_to_model_version(version))
+        for version in client.model_registry.search_model_versions(
+            filter=filter,
+            max_results=max_results,
+            order_by=order_by,
+            page_token=page_token,
+        ):
+            versions.append(_convert_to_model_version(version))
     
-    return ListModelVersionsResponse(
-        model_versions=versions,
-        next_page_token=next_token,
-    )
+        return ListModelVersionsResponse(
+            model_versions=versions,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return ListModelVersionsResponse(
             model_versions=[],
@@ -560,18 +580,20 @@ def get_latest_model_versions(
         ListModelVersionsResponse with latest versions
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    versions = client.model_registry.get_latest_versions(
-        name=name,
-        stages=stages,
-    )
+        versions = client.model_registry.get_latest_versions(
+            name=name,
+            stages=stages,
+        )
     
-    version_list = [_convert_to_model_version(v) for v in versions.model_versions]
+        version_list = [_convert_to_model_version(v) for v in versions.model_versions]
     
-    return ListModelVersionsResponse(
-        model_versions=version_list,
-    )
+        return ListModelVersionsResponse(
+            model_versions=version_list,
+        )
+
     except Exception as e:
         return ListModelVersionsResponse(
             model_versions=[],
@@ -611,19 +633,21 @@ def transition_model_stage(
         TransitionStageResponse with updated version
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    result = client.model_registry.transition_stage(
-        name=name,
-        version=version,
-        stage=stage,
-        archive_existing_versions=archive_existing_versions,
-        comment=comment,
-    )
+        result = client.model_registry.transition_stage(
+            name=name,
+            version=version,
+            stage=stage,
+            archive_existing_versions=archive_existing_versions,
+            comment=comment,
+        )
     
-    return TransitionStageResponse(
-        model_version=_convert_to_model_version(result.model_version),
-    )
+        return TransitionStageResponse(
+            model_version=_convert_to_model_version(result.model_version),
+        )
+
     except Exception as e:
         return TransitionStageResponse(
             model_version=None,
@@ -657,18 +681,20 @@ def create_transition_request(
         CreateTransitionRequestResponse with request details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    result = client.model_registry.create_transition_request(
-        name=name,
-        version=version,
-        stage=stage,
-        comment=comment,
-    )
+        result = client.model_registry.create_transition_request(
+            name=name,
+            version=version,
+            stage=stage,
+            comment=comment,
+        )
     
-    return CreateTransitionRequestResponse(
-        request=_convert_to_transition_request(result.request) if hasattr(result, 'request') else TransitionRequestModel(),
-    )
+        return CreateTransitionRequestResponse(
+            request=_convert_to_transition_request(result.request) if hasattr(result, 'request') else TransitionRequestModel(),
+        )
+
     except Exception as e:
         return CreateTransitionRequestResponse(
             request=None,
@@ -704,17 +730,19 @@ def approve_transition_request(
         ApproveTransitionRequestResponse confirming approval
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.model_registry.approve_transition_request(
-        name=name,
-        version=version,
-        stage=stage,
-        archive_existing_versions=archive_existing_versions,
-        comment=comment,
-    )
+        client.model_registry.approve_transition_request(
+            name=name,
+            version=version,
+            stage=stage,
+            archive_existing_versions=archive_existing_versions,
+            comment=comment,
+        )
     
-    return ApproveTransitionRequestResponse()
+        return ApproveTransitionRequestResponse()
+
     except Exception as e:
         return ApproveTransitionRequestResponse(
             error_message=f"Failed to approve transition request: {str(e)}",
@@ -746,18 +774,20 @@ def reject_transition_request(
         ApproveTransitionRequestResponse confirming rejection
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.model_registry.reject_transition_request(
-        name=name,
-        version=version,
-        stage=stage,
-        comment=comment,
-    )
+        client.model_registry.reject_transition_request(
+            name=name,
+            version=version,
+            stage=stage,
+            comment=comment,
+        )
     
-    return ApproveTransitionRequestResponse(
-        message="Transition request rejected successfully"
-    )
+        return ApproveTransitionRequestResponse(
+            message="Transition request rejected successfully"
+        )
+
     except Exception as e:
         return ApproveTransitionRequestResponse(
             error_message=f"Failed to reject transition request: {str(e)}",
@@ -792,17 +822,19 @@ def create_model_comment(
         CreateCommentResponse with created comment
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    result = client.model_registry.create_comment(
-        name=name,
-        version=version,
-        comment=comment,
-    )
+        result = client.model_registry.create_comment(
+            name=name,
+            version=version,
+            comment=comment,
+        )
     
-    return CreateCommentResponse(
-        comment=_convert_to_comment(result.comment),
-    )
+        return CreateCommentResponse(
+            comment=_convert_to_comment(result.comment),
+        )
+
     except Exception as e:
         return CreateCommentResponse(
             comment=None,
@@ -831,14 +863,16 @@ def update_model_comment(
         UpdateCommentResponse confirming update
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.model_registry.update_comment(
-        id=comment_id,
-        comment=comment,
-    )
+        client.model_registry.update_comment(
+            id=comment_id,
+            comment=comment,
+        )
     
-    return UpdateCommentResponse()
+        return UpdateCommentResponse()
+
     except Exception as e:
         return UpdateCommentResponse(
             error_message=f"Failed to update model comment: {str(e)}",
@@ -864,13 +898,15 @@ def delete_model_comment(
         DeleteCommentResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.model_registry.delete_comment(id=comment_id)
+        client.model_registry.delete_comment(id=comment_id)
     
-    return DeleteCommentResponse(
-        comment_id=comment_id,
-    )
+        return DeleteCommentResponse(
+            comment_id=comment_id,
+        )
+
     except Exception as e:
         return DeleteCommentResponse(
             comment_id=None,
@@ -905,15 +941,17 @@ def set_model_tag(
         SetTagResponse confirming tag set
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.model_registry.set_model_tag(
-        name=name,
-        key=key,
-        value=value,
-    )
+        client.model_registry.set_model_tag(
+            name=name,
+            key=key,
+            value=value,
+        )
     
-    return SetTagResponse()
+        return SetTagResponse()
+
     except Exception as e:
         return SetTagResponse(
             error_message=f"Failed to set model tag: {str(e)}",
@@ -941,14 +979,16 @@ def delete_model_tag(
         DeleteTagResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.model_registry.delete_model_tag(
-        name=name,
-        key=key,
-    )
+        client.model_registry.delete_model_tag(
+            name=name,
+            key=key,
+        )
     
-    return DeleteTagResponse()
+        return DeleteTagResponse()
+
     except Exception as e:
         return DeleteTagResponse(
             error_message=f"Failed to delete model tag: {str(e)}",
@@ -980,16 +1020,18 @@ def set_model_version_tag(
         SetTagResponse confirming tag set
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.model_registry.set_model_version_tag(
-        name=name,
-        version=version,
-        key=key,
-        value=value,
-    )
+        client.model_registry.set_model_version_tag(
+            name=name,
+            version=version,
+            key=key,
+            value=value,
+        )
     
-    return SetTagResponse()
+        return SetTagResponse()
+
     except Exception as e:
         return SetTagResponse(
             error_message=f"Failed to set model version tag: {str(e)}",
@@ -1019,15 +1061,17 @@ def delete_model_version_tag(
         DeleteTagResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.model_registry.delete_model_version_tag(
-        name=name,
-        version=version,
-        key=key,
-    )
+        client.model_registry.delete_model_version_tag(
+            name=name,
+            version=version,
+            key=key,
+        )
     
-    return DeleteTagResponse()
+        return DeleteTagResponse()
+
     except Exception as e:
         return DeleteTagResponse(
             error_message=f"Failed to delete model version tag: {str(e)}",
@@ -1068,30 +1112,32 @@ def create_registry_webhook(
         CreateWebhookResponse with created webhook
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Convert events to enum
-    from databricks.sdk.service.ml import RegistryWebhookEvent, HttpUrlSpec, JobSpec, RegistryWebhookStatus
+        # Convert events to enum
+        from databricks.sdk.service.ml import RegistryWebhookEvent, HttpUrlSpec, JobSpec, RegistryWebhookStatus
     
-    event_enums = [RegistryWebhookEvent(event) for event in events]
-    status_enum = RegistryWebhookStatus(status)
+        event_enums = [RegistryWebhookEvent(event) for event in events]
+        status_enum = RegistryWebhookStatus(status)
     
-    # Create specs
-    http_spec = HttpUrlSpec(url=http_url) if http_url else None
-    job_spec = JobSpec(job_id=job_id) if job_id else None
+        # Create specs
+        http_spec = HttpUrlSpec(url=http_url) if http_url else None
+        job_spec = JobSpec(job_id=job_id) if job_id else None
     
-    result = client.model_registry.create_webhook(
-        events=event_enums,
-        http_url_spec=http_spec,
-        job_spec=job_spec,
-        model_name=model_name,
-        description=description,
-        status=status_enum,
-    )
+        result = client.model_registry.create_webhook(
+            events=event_enums,
+            http_url_spec=http_spec,
+            job_spec=job_spec,
+            model_name=model_name,
+            description=description,
+            status=status_enum,
+        )
     
-    return CreateWebhookResponse(
-        webhook=_convert_to_webhook(result.webhook),
-    )
+        return CreateWebhookResponse(
+            webhook=_convert_to_webhook(result.webhook),
+        )
+
     except Exception as e:
         return CreateWebhookResponse(
             webhook=None,
@@ -1128,39 +1174,41 @@ def update_registry_webhook(
         UpdateWebhookResponse confirming update
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Convert optional parameters
-    event_enums = None
-    if events:
-        from databricks.sdk.service.ml import RegistryWebhookEvent
-        event_enums = [RegistryWebhookEvent(event) for event in events]
+        # Convert optional parameters
+        event_enums = None
+        if events:
+            from databricks.sdk.service.ml import RegistryWebhookEvent
+            event_enums = [RegistryWebhookEvent(event) for event in events]
     
-    status_enum = None
-    if status:
-        from databricks.sdk.service.ml import RegistryWebhookStatus
-        status_enum = RegistryWebhookStatus(status)
+        status_enum = None
+        if status:
+            from databricks.sdk.service.ml import RegistryWebhookStatus
+            status_enum = RegistryWebhookStatus(status)
     
-    http_spec = None
-    if http_url:
-        from databricks.sdk.service.ml import HttpUrlSpec
-        http_spec = HttpUrlSpec(url=http_url)
+        http_spec = None
+        if http_url:
+            from databricks.sdk.service.ml import HttpUrlSpec
+            http_spec = HttpUrlSpec(url=http_url)
     
-    job_spec = None
-    if job_id:
-        from databricks.sdk.service.ml import JobSpec
-        job_spec = JobSpec(job_id=job_id)
+        job_spec = None
+        if job_id:
+            from databricks.sdk.service.ml import JobSpec
+            job_spec = JobSpec(job_id=job_id)
     
-    client.model_registry.update_webhook(
-        id=webhook_id,
-        events=event_enums,
-        http_url_spec=http_spec,
-        job_spec=job_spec,
-        description=description,
-        status=status_enum,
-    )
+        client.model_registry.update_webhook(
+            id=webhook_id,
+            events=event_enums,
+            http_url_spec=http_spec,
+            job_spec=job_spec,
+            description=description,
+            status=status_enum,
+        )
     
-    return UpdateWebhookResponse()
+        return UpdateWebhookResponse()
+
     except Exception as e:
         return UpdateWebhookResponse(
             error_message=f"Failed to update registry webhook: {str(e)}",
@@ -1186,13 +1234,15 @@ def delete_registry_webhook(
         DeleteWebhookResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.model_registry.delete_webhook(id=webhook_id)
+        client.model_registry.delete_webhook(id=webhook_id)
     
-    return DeleteWebhookResponse(
-        webhook_id=webhook_id,
-    )
+        return DeleteWebhookResponse(
+            webhook_id=webhook_id,
+        )
+
     except Exception as e:
         return DeleteWebhookResponse(
             webhook_id=None,
@@ -1221,21 +1271,23 @@ def list_registry_webhooks(
         ListWebhooksResponse with webhooks
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    webhooks = []
-    next_token = None
+        webhooks = []
+        next_token = None
     
-    for webhook in client.model_registry.list_webhooks(
-        model_name=model_name,
-        page_token=page_token,
-    ):
-        webhooks.append(_convert_to_webhook(webhook))
+        for webhook in client.model_registry.list_webhooks(
+            model_name=model_name,
+            page_token=page_token,
+        ):
+            webhooks.append(_convert_to_webhook(webhook))
     
-    return ListWebhooksResponse(
-        webhooks=webhooks,
-        next_page_token=next_token,
-    )
+        return ListWebhooksResponse(
+            webhooks=webhooks,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return ListWebhooksResponse(
             webhooks=[],

@@ -78,22 +78,24 @@ def create_account_metastore(
         - Region must match the cloud provider region format
     """
     try:
-    client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
+
+        client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
-    from databricks.sdk.service.catalog import CreateAccountsMetastore
+        from databricks.sdk.service.catalog import CreateAccountsMetastore
     
-    # Create metastore spec from config
-    metastore_spec = CreateAccountsMetastore.from_dict(metastore_config)
+        # Create metastore spec from config
+        metastore_spec = CreateAccountsMetastore.from_dict(metastore_config)
     
-    # Create the metastore
-    response = client.metastores.create(metastore_info=metastore_spec)
+        # Create the metastore
+        response = client.metastores.create(metastore_info=metastore_spec)
     
-    # Extract metastore info from response
-    metastore_info = response.metastore_info if hasattr(response, 'metastore_info') else response
+        # Extract metastore info from response
+        metastore_info = response.metastore_info if hasattr(response, 'metastore_info') else response
     
-    return CreateAccountMetastoreResponse(
-        metastore=_convert_to_metastore_info(metastore_info),
-    )
+        return CreateAccountMetastoreResponse(
+            metastore=_convert_to_metastore_info(metastore_info),
+        )
+
     except Exception as e:
         return CreateAccountMetastoreResponse(
             metastore=None,
@@ -122,17 +124,19 @@ def get_account_metastore(
         GetAccountMetastoreResponse with metastore details
     """
     try:
-    client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
+
+        client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
-    # Get the metastore
-    response = client.metastores.get(metastore_id=metastore_id)
+        # Get the metastore
+        response = client.metastores.get(metastore_id=metastore_id)
     
-    # Extract metastore info from response
-    metastore_info = response.metastore_info if hasattr(response, 'metastore_info') else response
+        # Extract metastore info from response
+        metastore_info = response.metastore_info if hasattr(response, 'metastore_info') else response
     
-    return GetAccountMetastoreResponse(
-        metastore=_convert_to_metastore_info(metastore_info),
-    )
+        return GetAccountMetastoreResponse(
+            metastore=_convert_to_metastore_info(metastore_info),
+        )
+
     except Exception as e:
         return GetAccountMetastoreResponse(
             metastore=None,
@@ -172,32 +176,34 @@ def list_account_metastores(
         - has_more=True indicates more results available
     """
     try:
-    from itertools import islice
+
+        from itertools import islice
     
-    client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
+        client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
-    response = client.metastores.list()
+        response = client.metastores.list()
     
-    skip = page * limit
-    metastores_iterator = islice(response, skip, skip + limit)
+        skip = page * limit
+        metastores_iterator = islice(response, skip, skip + limit)
     
-    metastores = []
-    for metastore in metastores_iterator:
-        metastores.append(_convert_to_metastore_info(metastore))
+        metastores = []
+        for metastore in metastores_iterator:
+            metastores.append(_convert_to_metastore_info(metastore))
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
+        # Check for more results
         has_more = False
-    
-    return ListAccountMetastoresResponse(
-        metastores=metastores,
-        count=len(metastores),
-        has_more=has_more,
-    )
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListAccountMetastoresResponse(
+            metastores=metastores,
+            count=len(metastores),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListAccountMetastoresResponse(
             metastores=[],
@@ -230,25 +236,27 @@ def update_account_metastore(
         UpdateAccountMetastoreResponse with updated metastore info
     """
     try:
-    client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
+
+        client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
-    from databricks.sdk.service.catalog import UpdateAccountsMetastore
+        from databricks.sdk.service.catalog import UpdateAccountsMetastore
     
-    # Create update spec from config
-    update_spec = UpdateAccountsMetastore.from_dict(metastore_config)
+        # Create update spec from config
+        update_spec = UpdateAccountsMetastore.from_dict(metastore_config)
     
-    # Update the metastore
-    response = client.metastores.update(
-        metastore_id=metastore_id,
-        metastore_info=update_spec,
-    )
+        # Update the metastore
+        response = client.metastores.update(
+            metastore_id=metastore_id,
+            metastore_info=update_spec,
+        )
     
-    # Extract metastore info from response
-    metastore_info = response.metastore_info if hasattr(response, 'metastore_info') else response
+        # Extract metastore info from response
+        metastore_info = response.metastore_info if hasattr(response, 'metastore_info') else response
     
-    return UpdateAccountMetastoreResponse(
-        metastore=_convert_to_metastore_info(metastore_info),
-    )
+        return UpdateAccountMetastoreResponse(
+            metastore=_convert_to_metastore_info(metastore_info),
+        )
+
     except Exception as e:
         return UpdateAccountMetastoreResponse(
             metastore=None,
@@ -287,17 +295,19 @@ def delete_account_metastore(
         - This operation cannot be undone
     """
     try:
-    client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
+
+        client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
-    # Delete the metastore
-    client.metastores.delete(
-        metastore_id=metastore_id,
-        force=force,
-    )
+        # Delete the metastore
+        client.metastores.delete(
+            metastore_id=metastore_id,
+            force=force,
+        )
     
-    return DeleteAccountMetastoreResponse(
-        metastore_id=metastore_id,
-    )
+        return DeleteAccountMetastoreResponse(
+            metastore_id=metastore_id,
+        )
+
     except Exception as e:
         return DeleteAccountMetastoreResponse(
             metastore_id=metastore_id,

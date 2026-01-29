@@ -1,0 +1,227 @@
+# =============================================================================
+# MCP Servers - Docker Compose Configuration
+# =============================================================================
+#
+# This file orchestrates all first-party MCP servers as individual containers.
+# Each server runs on a dedicated port for isolation and scalability.
+#
+# Port Allocation:
+#   - GitHub:       8101
+#   - Jira:         8102
+#   - Confluence:   8103
+#   - Databricks:   8104
+#   - Microsoft365: 8105
+#
+# Usage:
+#   Development: docker-compose up -d
+#   Production:  docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# =============================================================================
+
+version: '3.8'
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  mcp-network:
+    driver: bridge
+
+# =============================================================================
+# Services
+# =============================================================================
+services:
+  # ---------------------------------------------------------------------------
+  # GitHub MCP Server
+  # ---------------------------------------------------------------------------
+  github-mcp:
+    build:
+      context: .
+      dockerfile: github/Dockerfile
+      target: development
+    container_name: github-mcp
+    restart: unless-stopped
+    ports:
+      - "8101:8101"
+    environment:
+      - PORT=8101
+      - MCP_SERVER_NAME=github
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_OTHER_PARAMS=${DB_OTHER_PARAMS:-sslmode=require}
+      - ENCRYPTION_MASTER_SECRET=${ENCRYPTION_MASTER_SECRET}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN}
+      - LOGFIRE_ENABLED=${LOGFIRE_ENABLED:-false}
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # Jira MCP Server
+  # ---------------------------------------------------------------------------
+  jira-mcp:
+    build:
+      context: .
+      dockerfile: jira/Dockerfile
+      target: development
+    container_name: jira-mcp
+    restart: unless-stopped
+    ports:
+      - "8102:8102"
+    environment:
+      - PORT=8102
+      - MCP_SERVER_NAME=jira
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_OTHER_PARAMS=${DB_OTHER_PARAMS:-sslmode=require}
+      - ENCRYPTION_MASTER_SECRET=${ENCRYPTION_MASTER_SECRET}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN}
+      - LOGFIRE_ENABLED=${LOGFIRE_ENABLED:-false}
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # Confluence MCP Server
+  # ---------------------------------------------------------------------------
+  confluence-mcp:
+    build:
+      context: .
+      dockerfile: confluence/Dockerfile
+      target: development
+    container_name: confluence-mcp
+    restart: unless-stopped
+    ports:
+      - "8103:8103"
+    environment:
+      - PORT=8103
+      - MCP_SERVER_NAME=confluence
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_OTHER_PARAMS=${DB_OTHER_PARAMS:-sslmode=require}
+      - ENCRYPTION_MASTER_SECRET=${ENCRYPTION_MASTER_SECRET}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN}
+      - LOGFIRE_ENABLED=${LOGFIRE_ENABLED:-false}
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # Databricks MCP Server
+  # ---------------------------------------------------------------------------
+  databricks-mcp:
+    build:
+      context: .
+      dockerfile: databricks/Dockerfile
+      target: development
+    container_name: databricks-mcp
+    restart: unless-stopped
+    ports:
+      - "8104:8104"
+    environment:
+      - PORT=8104
+      - MCP_SERVER_NAME=databricks
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_OTHER_PARAMS=${DB_OTHER_PARAMS:-sslmode=require}
+      - ENCRYPTION_MASTER_SECRET=${ENCRYPTION_MASTER_SECRET}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN}
+      - LOGFIRE_ENABLED=${LOGFIRE_ENABLED:-false}
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # Microsoft 365 MCP Server
+  # ---------------------------------------------------------------------------
+  microsoft365-mcp:
+    build:
+      context: .
+      dockerfile: microsoft365/Dockerfile
+      target: development
+    container_name: microsoft365-mcp
+    restart: unless-stopped
+    ports:
+      - "8105:8105"
+    environment:
+      - PORT=8105
+      - MCP_SERVER_NAME=microsoft365
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_OTHER_PARAMS=${DB_OTHER_PARAMS:-sslmode=require}
+      - ENCRYPTION_MASTER_SECRET=${ENCRYPTION_MASTER_SECRET}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN}
+      - LOGFIRE_ENABLED=${LOGFIRE_ENABLED:-false}
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# =============================================================================
+# Volumes
+# =============================================================================
+# No persistent volumes needed for stateless MCP servers
+
+# =============================================================================
+# Configuration Notes
+# =============================================================================
+#
+# Environment Variables:
+#   Required:
+#     - DB_HOST, DB_DATABASE, DB_USERNAME, DB_PASSWORD
+#     - ENCRYPTION_MASTER_SECRET
+#   Optional:
+#     - LOGFIRE_TOKEN, LOGFIRE_ENABLED
+#     - DB_OTHER_PARAMS
+#
+# Health Checks:
+#   - Each server has a basic Python health check
+#   - Interval: 30 seconds
+#   - Timeout: 10 seconds
+#   - Retries: 3
+#
+# Networking:
+#   - All servers on shared 'mcp-network'
+#   - Can communicate internally
+#   - Exposed ports for external access
+#
+# =============================================================================

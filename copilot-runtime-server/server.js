@@ -48,15 +48,16 @@ import {SqliteAgentRunner} from "@copilotkitnext/sqlite-runner";
 
 import { 
   PORT, 
-  AGENT_BASE_URL, 
+  PYDANTIC_SERVICE_URL,
   BODY_LIMIT_MB, 
-  RATE_LIMIT_WINDOW_MS, 
-  RATE_LIMIT_MAX, 
   REQUEST_TIMEOUT_MS, 
   HEADERS_TIMEOUT_MS, 
   TRUST_PROXY,
   DEBUG,
-  AGENT_RUNNER_TRANSFORM_ERRORS
+  AGENT_RUNNER_TRANSFORM_ERRORS,
+  AGENT_RUNNER_DISABLE_CLEANUP,
+  AGENT_RUNNER_THREAD_TTL,
+  AGENT_RUNNER_CLEANUP_INTERVAL
 } from './config/index.js';
 
 // Runner configuration
@@ -162,7 +163,7 @@ function getCachedAgent(context) {
     }
   }
   
-  const url = `${AGENT_BASE_URL}/agent/${agentType}/${modelType}`;
+  const url = `${PYDANTIC_SERVICE_URL}/agent/${agentType}/${modelType}`;
   const headers = {
     'x-copilot-agent-type': agentType,
     'x-copilot-model-type': modelType,
@@ -268,7 +269,7 @@ async function createCopilotKitRuntime() {
   
   // Create default HttpAgent pointing to Python backend
   const defaultAgent = new HttpAgent({
-    url: `${AGENT_BASE_URL}/agent/${defaultAgentType}/${defaultModelType}`,
+    url: `${PYDANTIC_SERVICE_URL}/agent/${defaultAgentType}/${defaultModelType}`,
     headers: {
       'x-copilot-agent-type': defaultAgentType,
       'x-copilot-model-type': defaultModelType,
@@ -290,8 +291,9 @@ async function createCopilotKitRuntime() {
     log('Using PostgresAgentRunner');
     runner = new PostgresAgentRunner({
       pool: getPool(),
-      ttl: 86400000,        // 24 hours
-      cleanupInterval: 3600000, // 1 hour
+      ttl: AGENT_RUNNER_THREAD_TTL,
+      cleanupInterval: AGENT_RUNNER_CLEANUP_INTERVAL,
+      disableCleanup: AGENT_RUNNER_DISABLE_CLEANUP,
       persistEventsImmediately: true, // Persist events immediately for data durability
       maxHistoricRuns: parseInt(process.env.AGENT_RUNNER_MAX_HISTORIC_RUNS) || 1000,  // Max runs to load (safety limit, set to 0/null to load all - matches SQLite)
       debug: DEBUG,         // Verbose logging in development only
@@ -1131,7 +1133,7 @@ const app = express();
       log(`   - /api/admin/base-instructions`);
       log(`   - /api/admin/usage`);
       log('');
-      log(`Python Backend: ${AGENT_BASE_URL}`);
+      log(`Python Backend: ${PYDANTIC_SERVICE_URL}`);
       log('═══════════════════════════════════════════════════════════════════');
     });
 

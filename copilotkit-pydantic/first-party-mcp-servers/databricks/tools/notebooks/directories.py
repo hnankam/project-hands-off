@@ -58,37 +58,38 @@ def list_directories(
     from itertools import islice
     
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    items_list = []
-    has_more = False
+        items_list = []
+        has_more = False
     
         # List only immediate children (no recursive flag)
         items = client.workspace.list(path)
-        
+    
         # Calculate pagination
         skip = page * limit
         collected = 0
         skipped = 0
-        
+    
         for item in items:
             # Include all items (directories, notebooks, files, etc.)
             if not item.object_type:
                 continue
-                
+            
             # Skip items for previous pages
             if skipped < skip:
                 skipped += 1
                 continue
-            
+        
             # Check if we've collected enough
             if collected >= limit:
                 has_more = True
                 break
-            
+        
             item_type = item.object_type.value
             language = item.language.value if item.language else None
-            
+        
             items_list.append(DirectoryInfo(
                 path=item.path,
                 object_type=item_type,
@@ -100,14 +101,15 @@ def list_directories(
                 modified_at=item.modified_at
             ))
             collected += 1
-    
-    return ListDirectoriesResponse(
-        path=path,
-        recursive=False,
-        items=items_list,
-        count=len(items_list),
-        has_more=has_more,
-    )
+
+        return ListDirectoriesResponse(
+            path=path,
+            recursive=False,
+            items=items_list,
+            count=len(items_list),
+            has_more=has_more,
+        )
+
     except Exception as e:
         return ListDirectoriesResponse(
             path=path,
@@ -137,15 +139,17 @@ def create_directory(
         DirectoryCreateResponse indicating success
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # mkdirs automatically creates parent directories
-    client.workspace.mkdirs(path=path)
+        # mkdirs automatically creates parent directories
+        client.workspace.mkdirs(path=path)
     
-    return DirectoryCreateResponse(
-        path=path,
-        status=f"Directory '{path}' created successfully"
-    )
+        return DirectoryCreateResponse(
+            path=path,
+            status=f"Directory '{path}' created successfully"
+        )
+
     except Exception as e:
         return DirectoryCreateResponse(
             path=None,
@@ -173,15 +177,17 @@ def delete_directory(
         DirectoryDeleteResponse indicating success
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.workspace.delete(path=path, recursive=recursive)
+        client.workspace.delete(path=path, recursive=recursive)
     
-    return DirectoryDeleteResponse(
-        path=path,
-        recursive=recursive,
-        status=f"Directory '{path}' deleted successfully"
-    )
+        return DirectoryDeleteResponse(
+            path=path,
+            recursive=recursive,
+            status=f"Directory '{path}' deleted successfully"
+        )
+
     except Exception as e:
         return DirectoryDeleteResponse(
             path=None,
@@ -208,19 +214,21 @@ def get_directory_info(
         DirectoryInfoResponse with directory metadata
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    status = client.workspace.get_status(path=path)
-    status_dict = status.as_dict()
+        status = client.workspace.get_status(path=path)
+        status_dict = status.as_dict()
     
-    return DirectoryInfoResponse(
-        path=status_dict.get('path'),
-        object_id=status_dict.get('object_id'),
-        resource_id=status_dict.get('resource_id'),
-        object_type=status_dict.get('object_type', 'DIRECTORY'),
-        created_at=status_dict.get('created_at'),
-        modified_at=status_dict.get('modified_at')
-    )
+        return DirectoryInfoResponse(
+            path=status_dict.get('path'),
+            object_id=status_dict.get('object_id'),
+            resource_id=status_dict.get('resource_id'),
+            object_type=status_dict.get('object_type', 'DIRECTORY'),
+            created_at=status_dict.get('created_at'),
+            modified_at=status_dict.get('modified_at')
+        )
+
     except Exception as e:
         return DirectoryInfoResponse(
             path=None,
@@ -256,60 +264,62 @@ def get_directory_tree(
         DirectoryTreeResponse with nested tree structure
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    def build_tree(current_path: str, current_depth: int) -> DirectoryTreeNode:
-        """Recursively build directory tree."""
-        # Get the name from the path
-        name = current_path.split('/')[-1] or "root"
+        def build_tree(current_path: str, current_depth: int) -> DirectoryTreeNode:
+            """Recursively build directory tree."""
+            # Get the name from the path
+            name = current_path.split('/')[-1] or "root"
         
-        # Create node for current directory
-        node = DirectoryTreeNode(
-            name=name,
-            path=current_path,
-            type="DIRECTORY",
-            children=[]
-        )
+            # Create node for current directory
+            node = DirectoryTreeNode(
+                name=name,
+                path=current_path,
+                type="DIRECTORY",
+                children=[]
+            )
         
-        # Stop if max depth reached
-        if current_depth >= max_depth:
-            return node
+            # Stop if max depth reached
+            if current_depth >= max_depth:
+                return node
         
-        # List contents
-        try:
-            items = client.workspace.list(current_path, recursive=False)
+            # List contents
+            try:
+                items = client.workspace.list(current_path, recursive=False)
             
-            for item in items:
-                if item.object_type:
-                    item_type = item.object_type.value
-                    item_name = item.path.split('/')[-1]
+                for item in items:
+                    if item.object_type:
+                        item_type = item.object_type.value
+                        item_name = item.path.split('/')[-1]
                     
-                    if item_type == 'DIRECTORY':
-                        # Recursively build subtree
-                        child_node = build_tree(item.path, current_depth + 1)
-                        node.children.append(child_node)
-                    else:
-                        # Add leaf node (notebook or file)
-                        leaf = DirectoryTreeNode(
-                            name=item_name,
-                            path=item.path,
-                            type=item_type,
-                            children=None
-                        )
-                        node.children.append(leaf)
-        except Exception:
-            # No permission or doesn't exist
-            pass
+                        if item_type == 'DIRECTORY':
+                            # Recursively build subtree
+                            child_node = build_tree(item.path, current_depth + 1)
+                            node.children.append(child_node)
+                        else:
+                            # Add leaf node (notebook or file)
+                            leaf = DirectoryTreeNode(
+                                name=item_name,
+                                path=item.path,
+                                type=item_type,
+                                children=None
+                            )
+                            node.children.append(leaf)
+            except Exception:
+                # No permission or doesn't exist
+                pass
         
-        return node
+            return node
     
-    tree = build_tree(path, 0)
+        tree = build_tree(path, 0)
     
-    return DirectoryTreeResponse(
-        path=path,
-        max_depth=max_depth,
-        tree=tree
-    )
+        return DirectoryTreeResponse(
+            path=path,
+            max_depth=max_depth,
+            tree=tree
+        )
+
     except Exception as e:
         return DirectoryTreeResponse(
             path=path,
@@ -339,28 +349,29 @@ def get_directory_stats(
         DirectoryStatsResponse with counts and breakdowns for current level
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    total_notebooks = 0
-    total_directories = 0
-    total_files = 0
-    total_size = 0
-    language_counts = {
-        'PYTHON': 0,
-        'SQL': 0,
-        'SCALA': 0,
-        'R': 0
-    }
-    
+        total_notebooks = 0
+        total_directories = 0
+        total_files = 0
+        total_size = 0
+        language_counts = {
+            'PYTHON': 0,
+            'SQL': 0,
+            'SCALA': 0,
+            'R': 0
+        }
+
         # List only immediate children (no recursive flag)
         items = client.workspace.list(path)
-        
+    
         for item in items:
             if not item.object_type:
                 continue
-                
-            item_type = item.object_type.value
             
+            item_type = item.object_type.value
+        
             if item_type == 'NOTEBOOK':
                 total_notebooks += 1
                 if item.language:
@@ -371,20 +382,21 @@ def get_directory_stats(
                 total_directories += 1
             elif item_type in ['FILE', 'LIBRARY', 'REPO', 'DASHBOARD']:
                 total_files += 1
-            
+        
             # Add size if available
             if item.size:
                 total_size += item.size
     
-    return DirectoryStatsResponse(
-        path=path,
-        recursive=False,
-        total_notebooks=total_notebooks,
-        total_directories=total_directories,
-        total_files=total_files,
-        language_breakdown=LanguageBreakdown(**language_counts),
-        total_size_bytes=total_size
-    )
+        return DirectoryStatsResponse(
+            path=path,
+            recursive=False,
+            total_notebooks=total_notebooks,
+            total_directories=total_directories,
+            total_files=total_files,
+            language_breakdown=LanguageBreakdown(**language_counts),
+            total_size_bytes=total_size
+        )
+
     except Exception as e:
         return DirectoryStatsResponse(
             path=path,
@@ -421,19 +433,21 @@ def search_directories(
         DirectorySearchResponse with matching directories at current level
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Compile regex pattern
-    flags = 0 if case_sensitive else re.IGNORECASE
-    try:
-        regex = re.compile(pattern, flags)
-    except re.error:
-        # If pattern is not valid regex, escape it and search as literal
-        regex = re.compile(re.escape(pattern), flags)
-    
-    results = []
-    
-        # List only immediate children (no recursive flag)
+        # Compile regex pattern
+        flags = 0 if case_sensitive else re.IGNORECASE
+        try:
+            regex = re.compile(pattern, flags)
+
+        except re.error:
+            # If pattern is not valid regex, escape it and search as literal
+            regex = re.compile(re.escape(pattern), flags)
+        
+        results = []
+        
+            # List only immediate children (no recursive flag)
         items = client.workspace.list(path)
         
         for item in items:
@@ -456,14 +470,14 @@ def search_directories(
                         created_at=item.created_at,
                         modified_at=item.modified_at
                     ))
-    
-    return DirectorySearchResponse(
-        path=path,
-        pattern=pattern,
-        recursive=False,
-        results=results,
-        total_matches=len(results)
-    )
+        
+        return DirectorySearchResponse(
+            path=path,
+            pattern=pattern,
+            recursive=False,
+            results=results,
+            total_matches=len(results)
+        )
     except Exception as e:
         return DirectorySearchResponse(
             path=path,

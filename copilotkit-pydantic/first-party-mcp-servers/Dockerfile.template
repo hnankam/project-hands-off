@@ -1,0 +1,112 @@
+# =============================================================================
+# MCP Server Dockerfile Template
+# =============================================================================
+#
+# This is a template for building individual MCP server Docker images.
+# Each MCP server (GitHub, Jira, Confluence, etc.) uses this template.
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Base image with Python
+# -----------------------------------------------------------------------------
+FROM python:3.11-slim as base
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd -r mcpuser && useradd -r -g mcpuser mcpuser
+
+# Set working directory
+WORKDIR /app
+
+# -----------------------------------------------------------------------------
+# Stage 2: Dependencies installation
+# -----------------------------------------------------------------------------
+FROM base as dependencies
+
+# Copy shared module first
+COPY shared/ /app/shared/
+
+# Copy service-specific requirements
+# NOTE: ARG MCP_SERVER_NAME should be passed during build
+ARG MCP_SERVER_NAME
+COPY ${MCP_SERVER_NAME}/requirements.txt /app/requirements.txt
+
+# Install dependencies
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# -----------------------------------------------------------------------------
+# Stage 3: Production image
+# -----------------------------------------------------------------------------
+FROM dependencies as production
+
+ARG MCP_SERVER_NAME
+
+# Copy server code
+COPY ${MCP_SERVER_NAME}/ /app/${MCP_SERVER_NAME}/
+
+# Set ownership
+RUN chown -R mcpuser:mcpuser /app
+
+# Switch to non-root user
+USER mcpuser
+
+# Set Python path to include shared and server modules
+ENV PYTHONPATH="/app:/app/shared:/app/${MCP_SERVER_NAME}"
+
+# Expose default port (will be overridden per server)
+ARG PORT=8100
+ENV PORT=${PORT}
+EXPOSE ${PORT}
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)"
+
+# Entry point
+WORKDIR /app/${MCP_SERVER_NAME}
+CMD ["python", "server.py"]
+
+# -----------------------------------------------------------------------------
+# Stage 4: Development image
+# -----------------------------------------------------------------------------
+FROM dependencies as development
+
+ARG MCP_SERVER_NAME
+
+# Install development dependencies
+RUN pip install --no-cache-dir pytest black ruff ipython
+
+# Copy server code
+COPY ${MCP_SERVER_NAME}/ /app/${MCP_SERVER_NAME}/
+
+# Set ownership
+RUN chown -R mcpuser:mcpuser /app
+
+# Switch to non-root user
+USER mcpuser
+
+# Set Python path
+ENV PYTHONPATH="/app:/app/shared:/app/${MCP_SERVER_NAME}"
+
+# Expose port
+ARG PORT=8100
+ENV PORT=${PORT}
+EXPOSE ${PORT}
+
+# Entry point with auto-reload
+WORKDIR /app/${MCP_SERVER_NAME}
+CMD ["python", "server.py"]

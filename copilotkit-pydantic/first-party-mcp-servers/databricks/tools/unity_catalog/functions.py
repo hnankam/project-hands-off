@@ -132,37 +132,39 @@ def list_functions(
         ListFunctionsResponse with list of functions and pagination info
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Cap limit at 20 when include_browse is True to reduce response size
-    effective_limit = min(limit, 20) if include_browse else limit
+        # Cap limit at 20 when include_browse is True to reduce response size
+        effective_limit = min(limit, 20) if include_browse else limit
     
-    response = client.functions.list(
-        catalog_name=catalog_name,
-        schema_name=schema_name,
-        include_browse=include_browse,
-    )
+        response = client.functions.list(
+            catalog_name=catalog_name,
+            schema_name=schema_name,
+            include_browse=include_browse,
+        )
     
-    skip = page * effective_limit
-    functions_iterator = islice(response, skip, skip + effective_limit)
+        skip = page * effective_limit
+        functions_iterator = islice(response, skip, skip + effective_limit)
     
-    functions_list = []
-    for function in functions_iterator:
-        functions_list.append(_convert_function_to_model(function))
+        functions_list = []
+        for function in functions_iterator:
+            functions_list.append(_convert_function_to_model(function))
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
+        # Check for more results
         has_more = False
-    
-    return ListFunctionsResponse(
-        functions=functions_list,
-        count=len(functions_list),
-        has_more=has_more,
-    )
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListFunctionsResponse(
+            functions=functions_list,
+            count=len(functions_list),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListFunctionsResponse(
             functions=[],
@@ -194,14 +196,16 @@ def get_function(
         FunctionInfoModel with complete function details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    function = client.functions.get(
-        name=name,
-        include_browse=include_browse,
-    )
+        function = client.functions.get(
+            name=name,
+            include_browse=include_browse,
+        )
     
-    return _convert_function_to_model(function)
+        return _convert_function_to_model(function)
+
     except Exception as e:
         return FunctionInfoModel(
             full_name=name,
@@ -272,33 +276,17 @@ def create_function(
         CreateFunctionResponse with created function information
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.catalog import (
-        CreateFunction, FunctionParameterInfos, FunctionParameterInfo,
-        ColumnTypeName, CreateFunctionRoutineBody, CreateFunctionParameterStyle,
-        CreateFunctionSqlDataAccess, CreateFunctionSecurityType
-    )
+        from databricks.sdk.service.catalog import (
+            CreateFunction, FunctionParameterInfos, FunctionParameterInfo,
+            ColumnTypeName, CreateFunctionRoutineBody, CreateFunctionParameterStyle,
+            CreateFunctionSqlDataAccess, CreateFunctionSecurityType
+        )
     
-    # Convert input_params to SDK objects
-    input_params_obj = FunctionParameterInfos(
-        parameters=[
-            FunctionParameterInfo(
-                name=param["name"],
-                type_text=param["type_text"],
-                type_name=ColumnTypeName(param["type_name"]),
-                type_json=param.get("type_json"),
-                position=param["position"],
-                comment=param.get("comment"),
-            )
-            for param in input_params
-        ]
-    )
-    
-    # Convert return_params to SDK objects if provided
-    return_params_obj = None
-    if return_params:
-        return_params_obj = FunctionParameterInfos(
+        # Convert input_params to SDK objects
+        input_params_obj = FunctionParameterInfos(
             parameters=[
                 FunctionParameterInfo(
                     name=param["name"],
@@ -308,38 +296,56 @@ def create_function(
                     position=param["position"],
                     comment=param.get("comment"),
                 )
-                for param in return_params
+                for param in input_params
             ]
         )
     
-    function_info = CreateFunction(
-        name=name,
-        catalog_name=catalog_name,
-        schema_name=schema_name,
-        input_params=input_params_obj,
-        data_type=ColumnTypeName(data_type),
-        full_data_type=full_data_type,
-        routine_body=CreateFunctionRoutineBody(routine_body),
-        routine_definition=routine_definition,
-        parameter_style=CreateFunctionParameterStyle(parameter_style),
-        is_deterministic=is_deterministic,
-        sql_data_access=CreateFunctionSqlDataAccess(sql_data_access),
-        is_null_call=is_null_call,
-        security_type=CreateFunctionSecurityType(security_type),
-        specific_name=specific_name,
-        comment=comment,
-        external_language=external_language,
-        external_name=external_name,
-        properties=properties,
-        return_params=return_params_obj,
-        sql_path=sql_path,
-    )
+        # Convert return_params to SDK objects if provided
+        return_params_obj = None
+        if return_params:
+            return_params_obj = FunctionParameterInfos(
+                parameters=[
+                    FunctionParameterInfo(
+                        name=param["name"],
+                        type_text=param["type_text"],
+                        type_name=ColumnTypeName(param["type_name"]),
+                        type_json=param.get("type_json"),
+                        position=param["position"],
+                        comment=param.get("comment"),
+                    )
+                    for param in return_params
+                ]
+            )
     
-    function = client.functions.create(function_info=function_info)
+        function_info = CreateFunction(
+            name=name,
+            catalog_name=catalog_name,
+            schema_name=schema_name,
+            input_params=input_params_obj,
+            data_type=ColumnTypeName(data_type),
+            full_data_type=full_data_type,
+            routine_body=CreateFunctionRoutineBody(routine_body),
+            routine_definition=routine_definition,
+            parameter_style=CreateFunctionParameterStyle(parameter_style),
+            is_deterministic=is_deterministic,
+            sql_data_access=CreateFunctionSqlDataAccess(sql_data_access),
+            is_null_call=is_null_call,
+            security_type=CreateFunctionSecurityType(security_type),
+            specific_name=specific_name,
+            comment=comment,
+            external_language=external_language,
+            external_name=external_name,
+            properties=properties,
+            return_params=return_params_obj,
+            sql_path=sql_path,
+        )
     
-    return CreateFunctionResponse(
-        function_info=_convert_function_to_model(function),
-    )
+        function = client.functions.create(function_info=function_info)
+    
+        return CreateFunctionResponse(
+            function_info=_convert_function_to_model(function),
+        )
+
     except Exception as e:
         return CreateFunctionResponse(
             function_info=None,
@@ -370,14 +376,16 @@ def delete_function(
         DeleteFunctionResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.functions.delete(
-        name=name,
-        force=force,
-    )
+        client.functions.delete(
+            name=name,
+            force=force,
+        )
     
-    return DeleteFunctionResponse(name=name)
+        return DeleteFunctionResponse(name=name)
+
     except Exception as e:
         return DeleteFunctionResponse(
             name=name,
@@ -407,16 +415,18 @@ def update_function_owner(
         UpdateFunctionResponse with updated function information
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    function = client.functions.update(
-        name=name,
-        owner=owner,
-    )
+        function = client.functions.update(
+            name=name,
+            owner=owner,
+        )
     
-    return UpdateFunctionResponse(
-        function_info=_convert_function_to_model(function),
-    )
+        return UpdateFunctionResponse(
+            function_info=_convert_function_to_model(function),
+        )
+
     except Exception as e:
         return UpdateFunctionResponse(
             function_info=None,

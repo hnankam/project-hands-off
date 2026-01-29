@@ -123,31 +123,33 @@ def list_pipelines(
         - Filter expression applies consistently across all pages
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    response = client.pipelines.list_pipelines(
-        filter=filter,
-    )
+        response = client.pipelines.list_pipelines(
+            filter=filter,
+        )
     
-    skip = page * limit
-    pipelines_iterator = islice(response, skip, skip + limit)
+        skip = page * limit
+        pipelines_iterator = islice(response, skip, skip + limit)
     
-    pipelines = []
-    for pipeline in pipelines_iterator:
-        pipelines.append(_convert_to_pipeline_info(pipeline))
+        pipelines = []
+        for pipeline in pipelines_iterator:
+            pipelines.append(_convert_to_pipeline_info(pipeline))
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
+        # Check for more results
         has_more = False
-    
-    return ListPipelinesResponse(
-        pipelines=pipelines,
-        has_more=has_more,
-    )
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListPipelinesResponse(
+            pipelines=pipelines,
+            has_more=has_more,
+        )
     except Exception as e:
         return ListPipelinesResponse(
             pipelines=[],
@@ -176,11 +178,13 @@ def get_pipeline(
         PipelineInfoModel with pipeline details, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    pipeline = client.pipelines.get(pipeline_id=pipeline_id)
+        pipeline = client.pipelines.get(pipeline_id=pipeline_id)
     
-    return _convert_to_pipeline_info(pipeline)
+        return _convert_to_pipeline_info(pipeline)
+
     except Exception as e:
         return PipelineInfoModel(
             pipeline_id=pipeline_id,
@@ -234,48 +238,50 @@ def create_pipeline(
         CreatePipelineResponse with pipeline ID
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.pipelines import PipelineLibrary, NotebookLibrary, PipelineCluster
+        from databricks.sdk.service.pipelines import PipelineLibrary, NotebookLibrary, PipelineCluster
     
-    # Convert libraries if provided
-    lib_objects = None
-    if libraries:
-        lib_objects = []
-        for lib in libraries:
-            if "notebook" in lib:
-                lib_objects.append(PipelineLibrary(
-                    notebook=NotebookLibrary(path=lib["notebook"]["path"])
-                ))
+        # Convert libraries if provided
+        lib_objects = None
+        if libraries:
+            lib_objects = []
+            for lib in libraries:
+                if "notebook" in lib:
+                    lib_objects.append(PipelineLibrary(
+                        notebook=NotebookLibrary(path=lib["notebook"]["path"])
+                    ))
     
-    # Convert clusters if provided
-    cluster_objects = None
-    if clusters:
-        from databricks.sdk.service.pipelines import PipelineCluster
-        cluster_objects = []
-        for cluster in clusters:
-            cluster_objects.append(PipelineCluster(**cluster))
+        # Convert clusters if provided
+        cluster_objects = None
+        if clusters:
+            from databricks.sdk.service.pipelines import PipelineCluster
+            cluster_objects = []
+            for cluster in clusters:
+                cluster_objects.append(PipelineCluster(**cluster))
     
-    pipeline = client.pipelines.create(
-        name=name,
-        storage=storage,
-        configuration=configuration,
-        target=target,
-        catalog=catalog,
-        schema=schema,
-        continuous=continuous,
-        development=development,
-        photon=photon,
-        serverless=serverless,
-        channel=channel,
-        edition=edition,
-        libraries=lib_objects,
-        clusters=cluster_objects,
-    )
+        pipeline = client.pipelines.create(
+            name=name,
+            storage=storage,
+            configuration=configuration,
+            target=target,
+            catalog=catalog,
+            schema=schema,
+            continuous=continuous,
+            development=development,
+            photon=photon,
+            serverless=serverless,
+            channel=channel,
+            edition=edition,
+            libraries=lib_objects,
+            clusters=cluster_objects,
+        )
     
-    return CreatePipelineResponse(
-        pipeline_id=pipeline.pipeline_id,
-    )
+        return CreatePipelineResponse(
+            pipeline_id=pipeline.pipeline_id,
+        )
+
     except Exception as e:
         return CreatePipelineResponse(
             pipeline_id=None,
@@ -329,45 +335,47 @@ def update_pipeline(
         UpdatePipelineResponse confirming update
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Convert libraries if provided
-    lib_objects = None
-    if libraries:
-        from databricks.sdk.service.pipelines import PipelineLibrary, NotebookLibrary
-        lib_objects = []
-        for lib in libraries:
-            if "notebook" in lib:
-                lib_objects.append(PipelineLibrary(
-                    notebook=NotebookLibrary(path=lib["notebook"]["path"])
-                ))
+        # Convert libraries if provided
+        lib_objects = None
+        if libraries:
+            from databricks.sdk.service.pipelines import PipelineLibrary, NotebookLibrary
+            lib_objects = []
+            for lib in libraries:
+                if "notebook" in lib:
+                    lib_objects.append(PipelineLibrary(
+                        notebook=NotebookLibrary(path=lib["notebook"]["path"])
+                    ))
     
-    # Convert clusters if provided
-    cluster_objects = None
-    if clusters:
-        from databricks.sdk.service.pipelines import PipelineCluster
-        cluster_objects = []
-        for cluster in clusters:
-            cluster_objects.append(PipelineCluster(**cluster))
+        # Convert clusters if provided
+        cluster_objects = None
+        if clusters:
+            from databricks.sdk.service.pipelines import PipelineCluster
+            cluster_objects = []
+            for cluster in clusters:
+                cluster_objects.append(PipelineCluster(**cluster))
     
-    client.pipelines.update(
-        pipeline_id=pipeline_id,
-        name=name,
-        configuration=configuration,
-        target=target,
-        catalog=catalog,
-        schema=schema,
-        continuous=continuous,
-        development=development,
-        photon=photon,
-        serverless=serverless,
-        channel=channel,
-        edition=edition,
-        libraries=lib_objects,
-        clusters=cluster_objects,
-    )
+        client.pipelines.update(
+            pipeline_id=pipeline_id,
+            name=name,
+            configuration=configuration,
+            target=target,
+            catalog=catalog,
+            schema=schema,
+            continuous=continuous,
+            development=development,
+            photon=photon,
+            serverless=serverless,
+            channel=channel,
+            edition=edition,
+            libraries=lib_objects,
+            clusters=cluster_objects,
+        )
     
-    return UpdatePipelineResponse()
+        return UpdatePipelineResponse()
+
     except Exception as e:
         return UpdatePipelineResponse(
             error_message=f"Failed to update pipeline: {str(e)}",
@@ -394,13 +402,15 @@ def delete_pipeline(
         DeletePipelineResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.pipelines.delete(pipeline_id=pipeline_id)
+        client.pipelines.delete(pipeline_id=pipeline_id)
     
-    return DeletePipelineResponse(
-        pipeline_id=pipeline_id,
-    )
+        return DeletePipelineResponse(
+            pipeline_id=pipeline_id,
+        )
+
     except Exception as e:
         return DeletePipelineResponse(
             pipeline_id=pipeline_id,
@@ -438,18 +448,20 @@ def start_pipeline_update(
         StartUpdateResponse with update ID
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    update = client.pipelines.start_update(
-        pipeline_id=pipeline_id,
-        full_refresh=full_refresh,
-        full_refresh_selection=full_refresh_selection,
-        refresh_selection=refresh_selection,
-    )
+        update = client.pipelines.start_update(
+            pipeline_id=pipeline_id,
+            full_refresh=full_refresh,
+            full_refresh_selection=full_refresh_selection,
+            refresh_selection=refresh_selection,
+        )
     
-    return StartUpdateResponse(
-        update_id=update.update_id,
-    )
+        return StartUpdateResponse(
+            update_id=update.update_id,
+        )
+
     except Exception as e:
         return StartUpdateResponse(
             update_id=None,
@@ -477,13 +489,15 @@ def stop_pipeline(
         StopPipelineResponse confirming stop
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.pipelines.stop(pipeline_id=pipeline_id)
+        client.pipelines.stop(pipeline_id=pipeline_id)
     
-    return StopPipelineResponse(
-        pipeline_id=pipeline_id,
-    )
+        return StopPipelineResponse(
+            pipeline_id=pipeline_id,
+        )
+
     except Exception as e:
         return StopPipelineResponse(
             pipeline_id=pipeline_id,
@@ -511,13 +525,15 @@ def reset_pipeline(
         ResetPipelineResponse confirming reset
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.pipelines.reset(pipeline_id=pipeline_id)
+        client.pipelines.reset(pipeline_id=pipeline_id)
     
-    return ResetPipelineResponse(
-        pipeline_id=pipeline_id,
-    )
+        return ResetPipelineResponse(
+            pipeline_id=pipeline_id,
+        )
+
     except Exception as e:
         return ResetPipelineResponse(
             pipeline_id=pipeline_id,
@@ -561,31 +577,33 @@ def list_pipeline_updates(
         - has_more=True indicates more results available
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    response = client.pipelines.list_updates(
-        pipeline_id=pipeline_id,
-    )
+        response = client.pipelines.list_updates(
+            pipeline_id=pipeline_id,
+        )
     
-    skip = page * limit
-    updates_iterator = islice(response, skip, skip + limit)
+        skip = page * limit
+        updates_iterator = islice(response, skip, skip + limit)
     
-    updates = []
-    for update in updates_iterator:
-        updates.append(_convert_to_update_info(update))
+        updates = []
+        for update in updates_iterator:
+            updates.append(_convert_to_update_info(update))
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
+        # Check for more results
         has_more = False
-    
-    return ListUpdatesResponse(
-        updates=updates,
-        has_more=has_more,
-    )
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListUpdatesResponse(
+            updates=updates,
+            has_more=has_more,
+        )
     except Exception as e:
         return ListUpdatesResponse(
             updates=[],
@@ -616,14 +634,16 @@ def get_pipeline_update(
         UpdateInfoModel with update details, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    update = client.pipelines.get_update(
-        pipeline_id=pipeline_id,
-        update_id=update_id,
-    )
+        update = client.pipelines.get_update(
+            pipeline_id=pipeline_id,
+            update_id=update_id,
+        )
     
-    return _convert_to_update_info(update)
+        return _convert_to_update_info(update)
+
     except Exception as e:
         return UpdateInfoModel(
             pipeline_id=pipeline_id,

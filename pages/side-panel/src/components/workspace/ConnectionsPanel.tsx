@@ -24,7 +24,7 @@ export const ConnectionsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
 
   const loadConnections = useCallback(async () => {
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/connections`, {
         credentials: 'include',
       });
@@ -72,7 +72,7 @@ export const ConnectionsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
     if (!confirm(`Disconnect "${connectionName}"?`)) return;
 
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/connections/${connectionId}`, {
         method: 'DELETE',
         credentials: 'include',
@@ -102,7 +102,7 @@ export const ConnectionsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
       const left = window.screenX + (window.outerWidth - width) / 2;
       const top = window.screenY + (window.outerHeight - height) / 2;
       
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       
       const popup = window.open(
         `${baseURL}/api/oauth/${service}/authorize`,

@@ -81,7 +81,7 @@ export const GmailItemsModal: React.FC<GmailItemsModalProps> = ({
     setError(null);
 
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/connections/${connectionId}/gmail/emails?maxResults=50`, {
         credentials: 'include',
       });
@@ -109,7 +109,7 @@ export const GmailItemsModal: React.FC<GmailItemsModalProps> = ({
     setError(null);
 
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const params = new URLSearchParams({
         maxResults: '50',
         pageToken: nextPageToken,
@@ -146,7 +146,7 @@ export const GmailItemsModal: React.FC<GmailItemsModalProps> = ({
     setHasMore(false);
 
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const params = new URLSearchParams({
         maxResults: '50',
         query: query,
@@ -185,7 +185,7 @@ export const GmailItemsModal: React.FC<GmailItemsModalProps> = ({
     setLoadingContent(prev => new Set(prev).add(emailId));
 
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const threadCount = getThreadMessageCount(threadId);
       const isThread = threadCount > 1;
 

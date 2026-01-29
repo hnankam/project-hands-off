@@ -124,21 +124,23 @@ def list_experiments(
         ListExperimentsResponse with experiments and pagination
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    experiments = []
-    next_token = None
+        experiments = []
+        next_token = None
     
-    for experiment in client.experiments.list_experiments(
-        max_results=max_results,
-        page_token=page_token,
-    ):
-        experiments.append(_convert_to_experiment_model(experiment))
+        for experiment in client.experiments.list_experiments(
+            max_results=max_results,
+            page_token=page_token,
+        ):
+            experiments.append(_convert_to_experiment_model(experiment))
     
-    return ListExperimentsResponse(
-        experiments=experiments,
-        next_page_token=next_token,
-    )
+        return ListExperimentsResponse(
+            experiments=experiments,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return ListExperimentsResponse(
             experiments=[],
@@ -167,11 +169,13 @@ def get_experiment(
         ExperimentModel with experiment details, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    experiment = client.experiments.get_experiment(experiment_id=experiment_id)
+        experiment = client.experiments.get_experiment(experiment_id=experiment_id)
     
-    return _convert_to_experiment_model(experiment)
+        return _convert_to_experiment_model(experiment)
+
     except Exception as e:
         return None
 
@@ -195,13 +199,15 @@ def get_experiment_by_name(
         ExperimentModel with experiment details, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    experiment = client.experiments.get_experiment_by_name(
-        experiment_name=experiment_name
-    )
+        experiment = client.experiments.get_experiment_by_name(
+            experiment_name=experiment_name
+        )
     
-    return _convert_to_experiment_model(experiment)
+        return _convert_to_experiment_model(experiment)
+
     except Exception as e:
         return None
 
@@ -230,23 +236,25 @@ def create_experiment(
         CreateExperimentResponse with experiment ID
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Convert tags dictionary to list of ExperimentTag
-    tag_list = None
-    if tags:
-        from databricks.sdk.service.ml import ExperimentTag
-        tag_list = [ExperimentTag(key=k, value=v) for k, v in tags.items()]
+        # Convert tags dictionary to list of ExperimentTag
+        tag_list = None
+        if tags:
+            from databricks.sdk.service.ml import ExperimentTag
+            tag_list = [ExperimentTag(key=k, value=v) for k, v in tags.items()]
     
-    experiment = client.experiments.create_experiment(
-        name=name,
-        artifact_location=artifact_location,
-        tags=tag_list,
-    )
+        experiment = client.experiments.create_experiment(
+            name=name,
+            artifact_location=artifact_location,
+            tags=tag_list,
+        )
     
-    return CreateExperimentResponse(
-        experiment_id=experiment.experiment_id,
-    )
+        return CreateExperimentResponse(
+            experiment_id=experiment.experiment_id,
+        )
+
     except Exception as e:
         return CreateExperimentResponse(
             experiment_id=None,
@@ -276,14 +284,16 @@ def update_experiment(
         UpdateExperimentResponse confirming update
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.experiments.update_experiment(
-        experiment_id=experiment_id,
-        new_name=new_name,
-    )
+        client.experiments.update_experiment(
+            experiment_id=experiment_id,
+            new_name=new_name,
+        )
     
-    return UpdateExperimentResponse()
+        return UpdateExperimentResponse()
+
     except Exception as e:
         return UpdateExperimentResponse(
             error_message=f"Failed to update experiment: {str(e)}",
@@ -310,13 +320,15 @@ def delete_experiment(
         DeleteExperimentResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.experiments.delete_experiment(experiment_id=experiment_id)
+        client.experiments.delete_experiment(experiment_id=experiment_id)
     
-    return DeleteExperimentResponse(
-        experiment_id=experiment_id,
-    )
+        return DeleteExperimentResponse(
+            experiment_id=experiment_id,
+        )
+
     except Exception as e:
         return DeleteExperimentResponse(
             experiment_id=None,
@@ -343,13 +355,15 @@ def restore_experiment(
         UpdateExperimentResponse confirming restoration
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.experiments.restore_experiment(experiment_id=experiment_id)
+        client.experiments.restore_experiment(experiment_id=experiment_id)
     
-    return UpdateExperimentResponse(
-        message="Experiment restored successfully"
-    )
+        return UpdateExperimentResponse(
+            message="Experiment restored successfully"
+        )
+
     except Exception as e:
         return UpdateExperimentResponse(
             error_message=f"Failed to restore experiment: {str(e)}",
@@ -382,23 +396,25 @@ def search_experiments(
         ListExperimentsResponse with matching experiments
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    experiments = []
-    next_token = None
+        experiments = []
+        next_token = None
     
-    for experiment in client.experiments.search_experiments(
-        filter=filter,
-        max_results=max_results,
-        order_by=order_by,
-        page_token=page_token,
-    ):
-        experiments.append(_convert_to_experiment_model(experiment))
+        for experiment in client.experiments.search_experiments(
+            filter=filter,
+            max_results=max_results,
+            order_by=order_by,
+            page_token=page_token,
+        ):
+            experiments.append(_convert_to_experiment_model(experiment))
     
-    return ListExperimentsResponse(
-        experiments=experiments,
-        next_page_token=next_token,
-    )
+        return ListExperimentsResponse(
+            experiments=experiments,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return ListExperimentsResponse(
             experiments=[],
@@ -437,24 +453,26 @@ def create_experiment_run(
         CreateRunResponse with run information
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Convert tags dictionary to list of RunTag
-    tag_list = None
-    if tags:
-        from databricks.sdk.service.ml import RunTag
-        tag_list = [RunTag(key=k, value=v) for k, v in tags.items()]
+        # Convert tags dictionary to list of RunTag
+        tag_list = None
+        if tags:
+            from databricks.sdk.service.ml import RunTag
+            tag_list = [RunTag(key=k, value=v) for k, v in tags.items()]
     
-    run = client.experiments.create_run(
-        experiment_id=experiment_id,
-        run_name=run_name,
-        start_time=start_time,
-        tags=tag_list,
-    )
+        run = client.experiments.create_run(
+            experiment_id=experiment_id,
+            run_name=run_name,
+            start_time=start_time,
+            tags=tag_list,
+        )
     
-    return CreateRunResponse(
-        run=_convert_to_run_model(run.run),
-    )
+        return CreateRunResponse(
+            run=_convert_to_run_model(run.run),
+        )
+
     except Exception as e:
         return CreateRunResponse(
             run=None,
@@ -481,11 +499,13 @@ def get_experiment_run(
         RunModel with run details, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    run = client.experiments.get_run(run_id=run_id)
+        run = client.experiments.get_run(run_id=run_id)
     
-    return _convert_to_run_model(run.run)
+        return _convert_to_run_model(run.run)
+
     except Exception as e:
         return None
 
@@ -515,24 +535,26 @@ def update_experiment_run(
         UpdateRunResponse with updated run info
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Convert status string to enum if provided
-    status_enum = None
-    if status:
-        from databricks.sdk.service.ml import UpdateRunStatus
-        status_enum = UpdateRunStatus(status)
+        # Convert status string to enum if provided
+        status_enum = None
+        if status:
+            from databricks.sdk.service.ml import UpdateRunStatus
+            status_enum = UpdateRunStatus(status)
     
-    run = client.experiments.update_run(
-        run_id=run_id,
-        status=status_enum,
-        run_name=run_name,
-        end_time=end_time,
-    )
+        run = client.experiments.update_run(
+            run_id=run_id,
+            status=status_enum,
+            run_name=run_name,
+            end_time=end_time,
+        )
     
-    return UpdateRunResponse(
-        run=_convert_to_run_model(run.run_info) if hasattr(run, 'run_info') else RunModel(),
-    )
+        return UpdateRunResponse(
+            run=_convert_to_run_model(run.run_info) if hasattr(run, 'run_info') else RunModel(),
+        )
+
     except Exception as e:
         return UpdateRunResponse(
             run=None,
@@ -560,13 +582,15 @@ def delete_experiment_run(
         DeleteRunResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.experiments.delete_run(run_id=run_id)
+        client.experiments.delete_run(run_id=run_id)
     
-    return DeleteRunResponse(
-        run_id=run_id,
-    )
+        return DeleteRunResponse(
+            run_id=run_id,
+        )
+
     except Exception as e:
         return DeleteRunResponse(
             run_id=None,
@@ -593,13 +617,15 @@ def restore_experiment_run(
         UpdateRunResponse confirming restoration
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.experiments.restore_run(run_id=run_id)
+        client.experiments.restore_run(run_id=run_id)
     
-    return UpdateRunResponse(
-        message="Run restored successfully"
-    )
+        return UpdateRunResponse(
+            message="Run restored successfully"
+        )
+
     except Exception as e:
         return UpdateRunResponse(
             error_message=f"Failed to restore experiment run: {str(e)}",
@@ -634,24 +660,26 @@ def search_experiment_runs(
         SearchRunsResponse with matching runs
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    runs = []
-    next_token = None
+        runs = []
+        next_token = None
     
-    for run in client.experiments.search_runs(
-        experiment_ids=experiment_ids,
-        filter=filter,
-        max_results=max_results,
-        order_by=order_by,
-        page_token=page_token,
-    ):
-        runs.append(_convert_to_run_model(run))
+        for run in client.experiments.search_runs(
+            experiment_ids=experiment_ids,
+            filter=filter,
+            max_results=max_results,
+            order_by=order_by,
+            page_token=page_token,
+        ):
+            runs.append(_convert_to_run_model(run))
     
-    return SearchRunsResponse(
-        runs=runs,
-        next_page_token=next_token,
-    )
+        return SearchRunsResponse(
+            runs=runs,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return SearchRunsResponse(
             runs=[],
@@ -692,17 +720,19 @@ def log_metric(
         LogMetricResponse confirming logging
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.experiments.log_metric(
-        run_id=run_id,
-        key=key,
-        value=value,
-        timestamp=timestamp,
-        step=step,
-    )
+        client.experiments.log_metric(
+            run_id=run_id,
+            key=key,
+            value=value,
+            timestamp=timestamp,
+            step=step,
+        )
     
-    return LogMetricResponse()
+        return LogMetricResponse()
+
     except Exception as e:
         return LogMetricResponse(
             error_message=f"Failed to log metric: {str(e)}",
@@ -733,15 +763,17 @@ def log_param(
         LogParamResponse confirming logging
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.experiments.log_param(
-        run_id=run_id,
-        key=key,
-        value=value,
-    )
+        client.experiments.log_param(
+            run_id=run_id,
+            key=key,
+            value=value,
+        )
     
-    return LogParamResponse()
+        return LogParamResponse()
+
     except Exception as e:
         return LogParamResponse(
             error_message=f"Failed to log parameter: {str(e)}",
@@ -776,15 +808,17 @@ def set_experiment_tag(
         SetExperimentTagResponse confirming tag set
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.experiments.set_experiment_tag(
-        experiment_id=experiment_id,
-        key=key,
-        value=value,
-    )
+        client.experiments.set_experiment_tag(
+            experiment_id=experiment_id,
+            key=key,
+            value=value,
+        )
     
-    return SetExperimentTagResponse()
+        return SetExperimentTagResponse()
+
     except Exception as e:
         return SetExperimentTagResponse(
             error_message=f"Failed to set experiment tag: {str(e)}",
@@ -815,15 +849,17 @@ def set_run_tag(
         SetRunTagResponse confirming tag set
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.experiments.set_tag(
-        run_id=run_id,
-        key=key,
-        value=value,
-    )
+        client.experiments.set_tag(
+            run_id=run_id,
+            key=key,
+            value=value,
+        )
     
-    return SetRunTagResponse()
+        return SetRunTagResponse()
+
     except Exception as e:
         return SetRunTagResponse(
             error_message=f"Failed to set run tag: {str(e)}",
@@ -852,16 +888,18 @@ def delete_run_tag(
         SetRunTagResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.experiments.delete_tag(
-        run_id=run_id,
-        key=key,
-    )
+        client.experiments.delete_tag(
+            run_id=run_id,
+            key=key,
+        )
     
-    return SetRunTagResponse(
-        message="Run tag deleted successfully"
-    )
+        return SetRunTagResponse(
+            message="Run tag deleted successfully"
+        )
+
     except Exception as e:
         return SetRunTagResponse(
             error_message=f"Failed to delete run tag: {str(e)}",

@@ -255,7 +255,7 @@ vim .env
 | `PORT` | `3001` | Server port |
 | `NODE_ENV` | `development` | Environment (development/production) |
 | `DEBUG` | `true` (dev) | Enable verbose logging |
-| `AGENT_BASE_URL` | `http://localhost:8001` | Python backend URL |
+| `PYDANTIC_SERVICE_URL` | `http://localhost:8001` | Python backend URL |
 
 #### Database
 

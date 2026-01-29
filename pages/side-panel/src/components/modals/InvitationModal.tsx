@@ -31,7 +31,7 @@ export const InvitationModal: React.FC<InvitationModalProps> = ({
   onClose,
   onSubmit,
   isLight,
-  apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001',
+  apiBaseUrl = process.env.CEB_API_URL || 'http://localhost:3001',
 }) => {
   const [invitationId, setInvitationId] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);

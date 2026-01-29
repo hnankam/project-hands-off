@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Debug mode configuration (default: true in development, false in production)
-DEBUG = True #os.getenv("DEBUG", "false").lower() in {"1", "true", "yes"}
+# Debug mode configuration (default: false in production)
+DEBUG = os.getenv("DEBUG", "false").lower() in {"1", "true", "yes"}
 
 def setup_logging() -> logging.Logger:
     """Configure and return the application logger."""
@@ -84,3 +84,34 @@ REDIS_SSL = os.getenv("REDIS_SSL", "false").lower() in {"1", "true", "yes"}
 REDIS_MAX_CONNECTIONS = int(os.getenv("REDIS_MAX_CONNECTIONS", "50"))
 REDIS_SOCKET_TIMEOUT = int(os.getenv("REDIS_SOCKET_TIMEOUT", "5"))
 REDIS_SOCKET_CONNECT_TIMEOUT = int(os.getenv("REDIS_SOCKET_CONNECT_TIMEOUT", "5"))
+
+# Encryption configuration
+# Master secret for credential encryption (REQUIRED in production)
+ENCRYPTION_MASTER_SECRET = os.getenv("ENCRYPTION_MASTER_SECRET", "")
+
+# Environment detection
+IS_PRODUCTION = os.getenv("PYTHON_ENV", "").lower() == "production" or os.getenv("NODE_ENV", "").lower() == "production"
+
+# Validate critical configuration in production
+def validate_production_config():
+    """Validate that critical configuration is set in production."""
+    if IS_PRODUCTION:
+        if not ENCRYPTION_MASTER_SECRET or ENCRYPTION_MASTER_SECRET == "default-secret-change-in-production":
+            raise ValueError(
+                "ENCRYPTION_MASTER_SECRET must be set to a secure value in production. "
+                "Generate a strong secret with: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
+            )
+        
+        if DEBUG:
+            logger.warning("⚠️  DEBUG mode is enabled in production! This exposes sensitive information.")
+        
+        if not REDIS_ENABLED:
+            logger.warning("⚠️  Redis is disabled in production! Multi-instance deployment is not supported.")
+
+# Run validation on module import
+try:
+    validate_production_config()
+except ValueError as e:
+    logger.error(f"❌ Production configuration validation failed: {e}")
+    if IS_PRODUCTION:
+        raise

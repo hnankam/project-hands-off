@@ -98,21 +98,23 @@ def list_features(
         ListFeaturesResponse with features
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    features = []
-    next_token = None
+        features = []
+        next_token = None
     
-    for feature in client.feature_engineering.list_features(
-        page_size=page_size,
-        page_token=page_token,
-    ):
-        features.append(_convert_to_feature(feature))
+        for feature in client.feature_engineering.list_features(
+            page_size=page_size,
+            page_token=page_token,
+        ):
+            features.append(_convert_to_feature(feature))
     
-    return ListFeaturesResponse(
-        features=features,
-        next_page_token=next_token,
-    )
+        return ListFeaturesResponse(
+            features=features,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return ListFeaturesResponse(
             features=[],
@@ -140,11 +142,13 @@ def get_feature(
         FeatureModel with feature details, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    feature = client.feature_engineering.get_feature(full_name=full_name)
+        feature = client.feature_engineering.get_feature(full_name=full_name)
     
-    return _convert_to_feature(feature)
+        return _convert_to_feature(feature)
+
     except Exception as e:
         return None
 
@@ -179,27 +183,29 @@ def create_feature(
         CreateFeatureResponse with created feature
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.ml import Feature
+        from databricks.sdk.service.ml import Feature
     
-    feature_spec = Feature(
-        full_name=full_name,
-        feature_type=feature_type,
-        data_type=data_type,
-        description=description,
-        kafka_config_name=kafka_config_name,
-    )
+        feature_spec = Feature(
+            full_name=full_name,
+            feature_type=feature_type,
+            data_type=data_type,
+            description=description,
+            kafka_config_name=kafka_config_name,
+        )
     
-    if config:
-        for key, value in config.items():
-            setattr(feature_spec, key, value)
+        if config:
+            for key, value in config.items():
+                setattr(feature_spec, key, value)
     
-    feature = client.feature_engineering.create_feature(feature=feature_spec)
+        feature = client.feature_engineering.create_feature(feature=feature_spec)
     
-    return CreateFeatureResponse(
-        feature=_convert_to_feature(feature),
-    )
+        return CreateFeatureResponse(
+            feature=_convert_to_feature(feature),
+        )
+
     except Exception as e:
         return CreateFeatureResponse(
             feature=None,
@@ -232,28 +238,30 @@ def update_feature(
         UpdateFeatureResponse with updated feature
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.ml import Feature
+        from databricks.sdk.service.ml import Feature
     
-    feature_spec = Feature(
-        full_name=full_name,
-        description=description,
-    )
+        feature_spec = Feature(
+            full_name=full_name,
+            description=description,
+        )
     
-    if config:
-        for key, value in config.items():
-            setattr(feature_spec, key, value)
+        if config:
+            for key, value in config.items():
+                setattr(feature_spec, key, value)
     
-    feature = client.feature_engineering.update_feature(
-        full_name=full_name,
-        feature=feature_spec,
-        update_mask=update_mask,
-    )
+        feature = client.feature_engineering.update_feature(
+            full_name=full_name,
+            feature=feature_spec,
+            update_mask=update_mask,
+        )
     
-    return UpdateFeatureResponse(
-        feature=_convert_to_feature(feature),
-    )
+        return UpdateFeatureResponse(
+            feature=_convert_to_feature(feature),
+        )
+
     except Exception as e:
         return UpdateFeatureResponse(
             feature=None,
@@ -280,13 +288,15 @@ def delete_feature(
         DeleteFeatureResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.feature_engineering.delete_feature(full_name=full_name)
+        client.feature_engineering.delete_feature(full_name=full_name)
     
-    return DeleteFeatureResponse(
-        full_name=full_name,
-    )
+        return DeleteFeatureResponse(
+            full_name=full_name,
+        )
+
     except Exception as e:
         return DeleteFeatureResponse(
             full_name=None,
@@ -319,21 +329,23 @@ def list_kafka_configs(
         ListKafkaConfigsResponse with Kafka configs
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    configs = []
-    next_token = None
+        configs = []
+        next_token = None
     
-    for config in client.feature_engineering.list_kafka_configs(
-        page_size=page_size,
-        page_token=page_token,
-    ):
-        configs.append(_convert_to_kafka_config(config))
+        for config in client.feature_engineering.list_kafka_configs(
+            page_size=page_size,
+            page_token=page_token,
+        ):
+            configs.append(_convert_to_kafka_config(config))
     
-    return ListKafkaConfigsResponse(
-        kafka_configs=configs,
-        next_page_token=next_token,
-    )
+        return ListKafkaConfigsResponse(
+            kafka_configs=configs,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return ListKafkaConfigsResponse(
             kafka_configs=[],
@@ -361,11 +373,13 @@ def get_kafka_config(
         KafkaConfigModel with config details, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    config = client.feature_engineering.get_kafka_config(name=name)
+        config = client.feature_engineering.get_kafka_config(name=name)
     
-    return _convert_to_kafka_config(config)
+        return _convert_to_kafka_config(config)
+
     except Exception as e:
         return None
 
@@ -400,29 +414,31 @@ def create_kafka_config(
         CreateKafkaConfigResponse with created config
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.ml import KafkaConfig
+        from databricks.sdk.service.ml import KafkaConfig
     
-    kafka_spec = KafkaConfig(
-        name=name,
-        topic=topic,
-        bootstrap_servers=bootstrap_servers,
-        security_protocol=security_protocol,
-        sasl_mechanism=sasl_mechanism,
-    )
+        kafka_spec = KafkaConfig(
+            name=name,
+            topic=topic,
+            bootstrap_servers=bootstrap_servers,
+            security_protocol=security_protocol,
+            sasl_mechanism=sasl_mechanism,
+        )
     
-    if config:
-        for key, value in config.items():
-            setattr(kafka_spec, key, value)
+        if config:
+            for key, value in config.items():
+                setattr(kafka_spec, key, value)
     
-    kafka_config = client.feature_engineering.create_kafka_config(
-        kafka_config=kafka_spec
-    )
+        kafka_config = client.feature_engineering.create_kafka_config(
+            kafka_config=kafka_spec
+        )
     
-    return CreateKafkaConfigResponse(
-        kafka_config=_convert_to_kafka_config(kafka_config),
-    )
+        return CreateKafkaConfigResponse(
+            kafka_config=_convert_to_kafka_config(kafka_config),
+        )
+
     except Exception as e:
         return CreateKafkaConfigResponse(
             kafka_config=None,
@@ -461,33 +477,35 @@ def update_kafka_config(
         UpdateKafkaConfigResponse with updated config
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.ml import KafkaConfig, FieldMask
+        from databricks.sdk.service.ml import KafkaConfig, FieldMask
     
-    kafka_spec = KafkaConfig(
-        name=name,
-        topic=topic,
-        bootstrap_servers=bootstrap_servers,
-        security_protocol=security_protocol,
-        sasl_mechanism=sasl_mechanism,
-    )
+        kafka_spec = KafkaConfig(
+            name=name,
+            topic=topic,
+            bootstrap_servers=bootstrap_servers,
+            security_protocol=security_protocol,
+            sasl_mechanism=sasl_mechanism,
+        )
     
-    if config:
-        for key, value in config.items():
-            setattr(kafka_spec, key, value)
+        if config:
+            for key, value in config.items():
+                setattr(kafka_spec, key, value)
     
-    field_mask = FieldMask(paths=update_mask)
+        field_mask = FieldMask(paths=update_mask)
     
-    kafka_config = client.feature_engineering.update_kafka_config(
-        name=name,
-        kafka_config=kafka_spec,
-        update_mask=field_mask,
-    )
+        kafka_config = client.feature_engineering.update_kafka_config(
+            name=name,
+            kafka_config=kafka_spec,
+            update_mask=field_mask,
+        )
     
-    return UpdateKafkaConfigResponse(
-        kafka_config=_convert_to_kafka_config(kafka_config),
-    )
+        return UpdateKafkaConfigResponse(
+            kafka_config=_convert_to_kafka_config(kafka_config),
+        )
+
     except Exception as e:
         return UpdateKafkaConfigResponse(
             kafka_config=None,
@@ -514,13 +532,15 @@ def delete_kafka_config(
         DeleteKafkaConfigResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.feature_engineering.delete_kafka_config(name=name)
+        client.feature_engineering.delete_kafka_config(name=name)
     
-    return DeleteKafkaConfigResponse(
-        name=name,
-    )
+        return DeleteKafkaConfigResponse(
+            name=name,
+        )
+
     except Exception as e:
         return DeleteKafkaConfigResponse(
             name=None,
@@ -555,22 +575,24 @@ def list_materialized_features(
         ListMaterializedFeaturesResponse with materialized features
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    mat_features = []
-    next_token = None
+        mat_features = []
+        next_token = None
     
-    for mat_feature in client.feature_engineering.list_materialized_features(
-        feature_name=feature_name,
-        page_size=page_size,
-        page_token=page_token,
-    ):
-        mat_features.append(_convert_to_materialized_feature(mat_feature))
+        for mat_feature in client.feature_engineering.list_materialized_features(
+            feature_name=feature_name,
+            page_size=page_size,
+            page_token=page_token,
+        ):
+            mat_features.append(_convert_to_materialized_feature(mat_feature))
     
-    return ListMaterializedFeaturesResponse(
-        materialized_features=mat_features,
-        next_page_token=next_token,
-    )
+        return ListMaterializedFeaturesResponse(
+            materialized_features=mat_features,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return ListMaterializedFeaturesResponse(
             materialized_features=[],
@@ -598,13 +620,15 @@ def get_materialized_feature(
         MaterializedFeatureModel with details, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    mat_feature = client.feature_engineering.get_materialized_feature(
-        materialized_feature_id=materialized_feature_id
-    )
+        mat_feature = client.feature_engineering.get_materialized_feature(
+            materialized_feature_id=materialized_feature_id
+        )
     
-    return _convert_to_materialized_feature(mat_feature)
+        return _convert_to_materialized_feature(mat_feature)
+
     except Exception as e:
         return None
 
@@ -637,28 +661,30 @@ def create_materialized_feature(
         CreateMaterializedFeatureResponse with created materialized feature
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.ml import MaterializedFeature
+        from databricks.sdk.service.ml import MaterializedFeature
     
-    mat_spec = MaterializedFeature(
-        feature_name=feature_name,
-        destination_table=destination_table,
-        schedule=schedule,
-        pipeline_state=pipeline_state,
-    )
+        mat_spec = MaterializedFeature(
+            feature_name=feature_name,
+            destination_table=destination_table,
+            schedule=schedule,
+            pipeline_state=pipeline_state,
+        )
     
-    if config:
-        for key, value in config.items():
-            setattr(mat_spec, key, value)
+        if config:
+            for key, value in config.items():
+                setattr(mat_spec, key, value)
     
-    mat_feature = client.feature_engineering.create_materialized_feature(
-        materialized_feature=mat_spec
-    )
+        mat_feature = client.feature_engineering.create_materialized_feature(
+            materialized_feature=mat_spec
+        )
     
-    return CreateMaterializedFeatureResponse(
-        materialized_feature=_convert_to_materialized_feature(mat_feature),
-    )
+        return CreateMaterializedFeatureResponse(
+            materialized_feature=_convert_to_materialized_feature(mat_feature),
+        )
+
     except Exception as e:
         return CreateMaterializedFeatureResponse(
             materialized_feature=None,
@@ -689,26 +715,28 @@ def batch_create_materialized_features(
         BatchCreateMaterializedFeaturesResponse with created features
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.ml import CreateMaterializedFeatureRequest
+        from databricks.sdk.service.ml import CreateMaterializedFeatureRequest
     
-    request_objects = []
-    for req in requests:
-        request_objects.append(CreateMaterializedFeatureRequest(**req))
+        request_objects = []
+        for req in requests:
+            request_objects.append(CreateMaterializedFeatureRequest(**req))
     
-    result = client.feature_engineering.batch_create_materialized_features(
-        requests=request_objects
-    )
+        result = client.feature_engineering.batch_create_materialized_features(
+            requests=request_objects
+        )
     
-    mat_features = []
-    if hasattr(result, 'materialized_features') and result.materialized_features:
-        for mat_feature in result.materialized_features:
-            mat_features.append(_convert_to_materialized_feature(mat_feature))
+        mat_features = []
+        if hasattr(result, 'materialized_features') and result.materialized_features:
+            for mat_feature in result.materialized_features:
+                mat_features.append(_convert_to_materialized_feature(mat_feature))
     
-    return BatchCreateMaterializedFeaturesResponse(
-        materialized_features=mat_features,
-    )
+        return BatchCreateMaterializedFeaturesResponse(
+            materialized_features=mat_features,
+        )
+
     except Exception as e:
         return BatchCreateMaterializedFeaturesResponse(
             materialized_features=[],
@@ -744,29 +772,31 @@ def update_materialized_feature(
         UpdateMaterializedFeatureResponse with updated feature
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.ml import MaterializedFeature
+        from databricks.sdk.service.ml import MaterializedFeature
     
-    mat_spec = MaterializedFeature(
-        materialized_feature_id=materialized_feature_id,
-        pipeline_state=pipeline_state,
-        schedule=schedule,
-    )
+        mat_spec = MaterializedFeature(
+            materialized_feature_id=materialized_feature_id,
+            pipeline_state=pipeline_state,
+            schedule=schedule,
+        )
     
-    if config:
-        for key, value in config.items():
-            setattr(mat_spec, key, value)
+        if config:
+            for key, value in config.items():
+                setattr(mat_spec, key, value)
     
-    mat_feature = client.feature_engineering.update_materialized_feature(
-        materialized_feature_id=materialized_feature_id,
-        materialized_feature=mat_spec,
-        update_mask=update_mask,
-    )
+        mat_feature = client.feature_engineering.update_materialized_feature(
+            materialized_feature_id=materialized_feature_id,
+            materialized_feature=mat_spec,
+            update_mask=update_mask,
+        )
     
-    return UpdateMaterializedFeatureResponse(
-        materialized_feature=_convert_to_materialized_feature(mat_feature),
-    )
+        return UpdateMaterializedFeatureResponse(
+            materialized_feature=_convert_to_materialized_feature(mat_feature),
+        )
+
     except Exception as e:
         return UpdateMaterializedFeatureResponse(
             materialized_feature=None,
@@ -793,15 +823,17 @@ def delete_materialized_feature(
         DeleteMaterializedFeatureResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.feature_engineering.delete_materialized_feature(
-        materialized_feature_id=materialized_feature_id
-    )
+        client.feature_engineering.delete_materialized_feature(
+            materialized_feature_id=materialized_feature_id
+        )
     
-    return DeleteMaterializedFeatureResponse(
-        materialized_feature_id=materialized_feature_id,
-    )
+        return DeleteMaterializedFeatureResponse(
+            materialized_feature_id=materialized_feature_id,
+        )
+
     except Exception as e:
         return DeleteMaterializedFeatureResponse(
             materialized_feature_id=None,

@@ -57,7 +57,7 @@ export const SlackItemsModal: React.FC<SlackItemsModalProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/connections/${connectionId}/slack/messages?limit=100`, {
         credentials: 'include',
       });
@@ -120,7 +120,7 @@ export const SlackItemsModal: React.FC<SlackItemsModalProps> = ({
     setLoadingThreads(prev => new Set(prev).add(threadKey));
 
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(
         `${baseURL}/api/workspace/connections/${connectionId}/slack/thread/${message.channelId}/${message.ts}`,
         { credentials: 'include' },

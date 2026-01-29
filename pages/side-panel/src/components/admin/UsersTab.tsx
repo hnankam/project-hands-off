@@ -215,7 +215,7 @@ useEffect(() => {
   const loadMembers = async (orgId: string) => {
     try {
       // Use custom endpoint that includes banned status
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/auth/org-members-with-status?organizationId=${orgId}`, {
         credentials: 'include',
       });
@@ -456,7 +456,7 @@ useEffect(() => {
 
     try {
       // Use custom invitation endpoint that supports team assignments
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/invitations/create`, {
         method: 'POST',
         headers: {

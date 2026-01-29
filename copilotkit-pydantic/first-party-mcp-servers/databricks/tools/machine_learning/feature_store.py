@@ -62,21 +62,23 @@ def list_online_stores(
         ListOnlineStoresResponse with online stores
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    stores = []
-    next_token = None
+        stores = []
+        next_token = None
     
-    for store in client.feature_store.list_online_stores(
-        page_size=page_size,
-        page_token=page_token,
-    ):
-        stores.append(_convert_to_online_store(store))
+        for store in client.feature_store.list_online_stores(
+            page_size=page_size,
+            page_token=page_token,
+        ):
+            stores.append(_convert_to_online_store(store))
     
-    return ListOnlineStoresResponse(
-        online_stores=stores,
-        next_page_token=next_token,
-    )
+        return ListOnlineStoresResponse(
+            online_stores=stores,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return ListOnlineStoresResponse(
             online_stores=[],
@@ -104,11 +106,13 @@ def get_online_store(
         OnlineStoreModel with store details, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    store = client.feature_store.get_online_store(name=name)
+        store = client.feature_store.get_online_store(name=name)
     
-    return _convert_to_online_store(store)
+        return _convert_to_online_store(store)
+
     except Exception as e:
         return None
 
@@ -140,29 +144,31 @@ def create_online_store(
         CreateOnlineStoreResponse with created store
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Create OnlineStore object
-    from databricks.sdk.service.ml import OnlineStore
+        # Create OnlineStore object
+        from databricks.sdk.service.ml import OnlineStore
     
-    online_store_spec = OnlineStore(
-        name=name,
-        storage_type=storage_type,
-        region=region,
-    )
+        online_store_spec = OnlineStore(
+            name=name,
+            storage_type=storage_type,
+            region=region,
+        )
     
-    # Add config if provided
-    if config:
-        for key, value in config.items():
-            setattr(online_store_spec, key, value)
+        # Add config if provided
+        if config:
+            for key, value in config.items():
+                setattr(online_store_spec, key, value)
     
-    store = client.feature_store.create_online_store(
-        online_store=online_store_spec
-    )
+        store = client.feature_store.create_online_store(
+            online_store=online_store_spec
+        )
     
-    return CreateOnlineStoreResponse(
-        online_store=_convert_to_online_store(store),
-    )
+        return CreateOnlineStoreResponse(
+            online_store=_convert_to_online_store(store),
+        )
+
     except Exception as e:
         return CreateOnlineStoreResponse(
             online_store=None,
@@ -197,31 +203,33 @@ def update_online_store(
         UpdateOnlineStoreResponse with updated store
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Create OnlineStore object with updates
-    from databricks.sdk.service.ml import OnlineStore
+        # Create OnlineStore object with updates
+        from databricks.sdk.service.ml import OnlineStore
     
-    online_store_spec = OnlineStore(
-        name=name,
-        storage_type=storage_type,
-        region=region,
-    )
+        online_store_spec = OnlineStore(
+            name=name,
+            storage_type=storage_type,
+            region=region,
+        )
     
-    # Add config if provided
-    if config:
-        for key, value in config.items():
-            setattr(online_store_spec, key, value)
+        # Add config if provided
+        if config:
+            for key, value in config.items():
+                setattr(online_store_spec, key, value)
     
-    store = client.feature_store.update_online_store(
-        name=name,
-        online_store=online_store_spec,
-        update_mask=update_mask,
-    )
+        store = client.feature_store.update_online_store(
+            name=name,
+            online_store=online_store_spec,
+            update_mask=update_mask,
+        )
     
-    return UpdateOnlineStoreResponse(
-        online_store=_convert_to_online_store(store),
-    )
+        return UpdateOnlineStoreResponse(
+            online_store=_convert_to_online_store(store),
+        )
+
     except Exception as e:
         return UpdateOnlineStoreResponse(
             online_store=None,
@@ -249,13 +257,15 @@ def delete_online_store(
         DeleteOnlineStoreResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.feature_store.delete_online_store(name=name)
+        client.feature_store.delete_online_store(name=name)
     
-    return DeleteOnlineStoreResponse(
-        name=name,
-    )
+        return DeleteOnlineStoreResponse(
+            name=name,
+        )
+
     except Exception as e:
         return DeleteOnlineStoreResponse(
             name=None,
@@ -295,26 +305,28 @@ def publish_table(
         PublishTableResponse confirming publication
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Create PublishSpec
-    from databricks.sdk.service.ml import PublishSpec
+        # Create PublishSpec
+        from databricks.sdk.service.ml import PublishSpec
     
-    publish_spec = PublishSpec(
-        online_table_name=online_table_name,
-        primary_keys=primary_keys,
-        timeseries_key=timeseries_key,
-        timestamp_key=timestamp_key,
-    )
+        publish_spec = PublishSpec(
+            online_table_name=online_table_name,
+            primary_keys=primary_keys,
+            timeseries_key=timeseries_key,
+            timestamp_key=timestamp_key,
+        )
     
-    result = client.feature_store.publish_table(
-        source_table_name=source_table_name,
-        publish_spec=publish_spec,
-    )
+        result = client.feature_store.publish_table(
+            source_table_name=source_table_name,
+            publish_spec=publish_spec,
+        )
     
-    return PublishTableResponse(
-        online_table_name=online_table_name,
-    )
+        return PublishTableResponse(
+            online_table_name=online_table_name,
+        )
+
     except Exception as e:
         return PublishTableResponse(
             online_table_name=None,
@@ -342,15 +354,17 @@ def delete_online_table(
         DeleteOnlineTableResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.feature_store.delete_online_table(
-        online_table_name=online_table_name
-    )
+        client.feature_store.delete_online_table(
+            online_table_name=online_table_name
+        )
     
-    return DeleteOnlineTableResponse(
-        online_table_name=online_table_name,
-    )
+        return DeleteOnlineTableResponse(
+            online_table_name=online_table_name,
+        )
+
     except Exception as e:
         return DeleteOnlineTableResponse(
             online_table_name=None,

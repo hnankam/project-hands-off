@@ -80,36 +80,38 @@ def list_schemas(
         ListSchemasResponse with list of schemas and pagination info
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Cap limit at 20 when include_browse is True to reduce response size
-    effective_limit = min(limit, 20) if include_browse else limit
+        # Cap limit at 20 when include_browse is True to reduce response size
+        effective_limit = min(limit, 20) if include_browse else limit
     
-    response = client.schemas.list(
-        catalog_name=catalog_name,
-        include_browse=include_browse,
-    )
+        response = client.schemas.list(
+            catalog_name=catalog_name,
+            include_browse=include_browse,
+        )
     
-    skip = page * effective_limit
-    schemas_iterator = islice(response, skip, skip + effective_limit)
+        skip = page * effective_limit
+        schemas_iterator = islice(response, skip, skip + effective_limit)
     
-    schemas_list = []
-    for schema in schemas_iterator:
-        schemas_list.append(_convert_schema_to_model(schema))
+        schemas_list = []
+        for schema in schemas_iterator:
+            schemas_list.append(_convert_schema_to_model(schema))
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
+        # Check for more results
         has_more = False
-    
-    return ListSchemasResponse(
-        schemas=schemas_list,
-        count=len(schemas_list),
-        has_more=has_more,
-    )
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListSchemasResponse(
+            schemas=schemas_list,
+            count=len(schemas_list),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListSchemasResponse(
             schemas=[],
@@ -141,14 +143,16 @@ def get_schema(
         SchemaInfoModel with complete schema details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    schema = client.schemas.get(
-        full_name=full_name,
-        include_browse=include_browse,
-    )
+        schema = client.schemas.get(
+            full_name=full_name,
+            include_browse=include_browse,
+        )
     
-    return _convert_schema_to_model(schema)
+        return _convert_schema_to_model(schema)
+
     except Exception as e:
         return SchemaInfoModel(
             full_name=full_name,
@@ -189,19 +193,21 @@ def create_schema(
         CreateSchemaResponse with created schema information
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    schema = client.schemas.create(
-        name=name,
-        catalog_name=catalog_name,
-        comment=comment,
-        properties=properties,
-        storage_root=storage_root,
-    )
+        schema = client.schemas.create(
+            name=name,
+            catalog_name=catalog_name,
+            comment=comment,
+            properties=properties,
+            storage_root=storage_root,
+        )
     
-    return CreateSchemaResponse(
-        schema_info=_convert_schema_to_model(schema),
-    )
+        return CreateSchemaResponse(
+            schema_info=_convert_schema_to_model(schema),
+        )
+
     except Exception as e:
         return CreateSchemaResponse(
             schema_info=None,
@@ -239,14 +245,16 @@ def delete_schema(
             print(f"Schema not found or cannot be deleted: {e}")
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.schemas.delete(
-        full_name=full_name,
-        force=force,
-    )
+        client.schemas.delete(
+            full_name=full_name,
+            force=force,
+        )
     
-    return DeleteSchemaResponse(full_name=full_name)
+        return DeleteSchemaResponse(full_name=full_name)
+
     except Exception as e:
         return DeleteSchemaResponse(
             full_name=full_name,
@@ -286,26 +294,28 @@ def update_schema(
         UpdateSchemaResponse with updated schema information
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Convert enable_predictive_optimization string to enum if provided
-    enable_pred_opt = None
-    if enable_predictive_optimization:
-        from databricks.sdk.service.catalog import EnablePredictiveOptimization
-        enable_pred_opt = EnablePredictiveOptimization(enable_predictive_optimization)
+        # Convert enable_predictive_optimization string to enum if provided
+        enable_pred_opt = None
+        if enable_predictive_optimization:
+            from databricks.sdk.service.catalog import EnablePredictiveOptimization
+            enable_pred_opt = EnablePredictiveOptimization(enable_predictive_optimization)
     
-    schema = client.schemas.update(
-        full_name=full_name,
-        new_name=new_name,
-        comment=comment,
-        owner=owner,
-        properties=properties,
-        enable_predictive_optimization=enable_pred_opt,
-    )
+        schema = client.schemas.update(
+            full_name=full_name,
+            new_name=new_name,
+            comment=comment,
+            owner=owner,
+            properties=properties,
+            enable_predictive_optimization=enable_pred_opt,
+        )
     
-    return UpdateSchemaResponse(
-        schema_info=_convert_schema_to_model(schema),
-    )
+        return UpdateSchemaResponse(
+            schema_info=_convert_schema_to_model(schema),
+        )
+
     except Exception as e:
         return UpdateSchemaResponse(
             schema_info=None,

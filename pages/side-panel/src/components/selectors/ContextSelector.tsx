@@ -371,7 +371,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
 
     setLoadingWorkspace(true);
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
 
       // Fetch notes
       if (onNotesChange) {
@@ -1099,7 +1099,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
       // If callback for full notes is provided, fetch content
       if (onNotesWithContentChange && newSelection.length > 0) {
         try {
-          const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+          const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
           const response = await fetch(`${baseURL}/api/workspace/notes/bulk`, {
             method: 'POST',
             credentials: 'include',
@@ -1136,7 +1136,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
       // ✅ SECURITY: Fetch metadata only (no secrets/passwords)
       if (onCredentialsWithMetadataChange && newSelection.length > 0) {
         try {
-          const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+          const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
           // Changed endpoint from /bulk to /metadata
           const response = await fetch(`${baseURL}/api/workspace/credentials/metadata`, {
             method: 'POST',

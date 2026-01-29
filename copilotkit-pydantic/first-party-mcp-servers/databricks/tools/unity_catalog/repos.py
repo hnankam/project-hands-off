@@ -51,42 +51,44 @@ def list_repos(
         - path_prefix filter applies consistently across all pages
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    response = client.repos.list(
-        path_prefix=path_prefix,
-    )
-    
-    skip = page * limit
-    repos_iterator = islice(response, skip, skip + limit)
-    
-    repos_list = []
-    for repo in repos_iterator:
-        repos_list.append(
-            RepoInfo(
-                id=repo.id,
-                path=repo.path,
-                url=repo.url,
-                provider=repo.provider,
-                branch=repo.branch,
-                head_commit_id=repo.head_commit_id,
-                sparse_checkout=repo.sparse_checkout.as_dict() if repo.sparse_checkout else None,
-            )
+        response = client.repos.list(
+            path_prefix=path_prefix,
         )
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
-        has_more = False
+        skip = page * limit
+        repos_iterator = islice(response, skip, skip + limit)
     
-    return ListReposResponse(
-        repos=repos_list,
-        count=len(repos_list),
-        has_more=has_more,
-    )
+        repos_list = []
+        for repo in repos_iterator:
+            repos_list.append(
+                RepoInfo(
+                    id=repo.id,
+                    path=repo.path,
+                    url=repo.url,
+                    provider=repo.provider,
+                    branch=repo.branch,
+                    head_commit_id=repo.head_commit_id,
+                    sparse_checkout=repo.sparse_checkout.as_dict() if repo.sparse_checkout else None,
+                )
+            )
+    
+        # Check for more results
+        has_more = False
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListReposResponse(
+            repos=repos_list,
+            count=len(repos_list),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListReposResponse(
             repos=[],
@@ -115,19 +117,21 @@ def get_repo(
         RepoInfo with repository details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    repo = client.repos.get(repo_id=repo_id)
+        repo = client.repos.get(repo_id=repo_id)
     
-    return RepoInfo(
-        id=repo.id,
-        path=repo.path,
-        url=repo.url,
-        provider=repo.provider,
-        branch=repo.branch,
-        head_commit_id=repo.head_commit_id,
-        sparse_checkout=repo.sparse_checkout.as_dict() if repo.sparse_checkout else None,
-    )
+        return RepoInfo(
+            id=repo.id,
+            path=repo.path,
+            url=repo.url,
+            provider=repo.provider,
+            branch=repo.branch,
+            head_commit_id=repo.head_commit_id,
+            sparse_checkout=repo.sparse_checkout.as_dict() if repo.sparse_checkout else None,
+        )
+
     except Exception as e:
         print(f"Error getting repo: {e}")
         return None
@@ -167,21 +171,23 @@ def create_repo(
         - awsCodeCommit
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    repo = client.repos.create(
-        url=url,
-        provider=provider,
-        path=path,
-    )
+        repo = client.repos.create(
+            url=url,
+            provider=provider,
+            path=path,
+        )
     
-    return CreateRepoResponse(
-        id=repo.id,
-        path=repo.path,
-        url=repo.url,
-        provider=repo.provider,
-        branch=repo.branch,
-    )
+        return CreateRepoResponse(
+            id=repo.id,
+            path=repo.path,
+            url=repo.url,
+            provider=repo.provider,
+            branch=repo.branch,
+        )
+
     except Exception as e:
         return CreateRepoResponse(
             id=None,
@@ -222,23 +228,25 @@ def update_repo(
         - To pull latest changes, call update with the current branch name
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.repos.update(
-        repo_id=repo_id,
-        branch=branch,
-        tag=tag,
-    )
+        client.repos.update(
+            repo_id=repo_id,
+            branch=branch,
+            tag=tag,
+        )
     
-    # Get updated repo info
-    repo = client.repos.get(repo_id=repo_id)
+        # Get updated repo info
+        repo = client.repos.get(repo_id=repo_id)
     
-    return UpdateRepoResponse(
-        repo_id=repo_id,
-        branch=repo.branch,
-        tag=tag if tag else None,
-        head_commit_id=repo.head_commit_id,
-    )
+        return UpdateRepoResponse(
+            repo_id=repo_id,
+            branch=repo.branch,
+            tag=tag if tag else None,
+            head_commit_id=repo.head_commit_id,
+        )
+
     except Exception as e:
         return UpdateRepoResponse(
             repo_id=repo_id,
@@ -269,11 +277,13 @@ def delete_repo(
         DeleteRepoResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.repos.delete(repo_id=repo_id)
+        client.repos.delete(repo_id=repo_id)
     
-    return DeleteRepoResponse(repo_id=repo_id)
+        return DeleteRepoResponse(repo_id=repo_id)
+
     except Exception as e:
         return DeleteRepoResponse(
             repo_id=repo_id,
@@ -301,11 +311,13 @@ def get_repo_permissions(
         Dict with permission details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    permissions = client.repos.get_permissions(repo_id=repo_id)
+        permissions = client.repos.get_permissions(repo_id=repo_id)
     
-    return permissions.as_dict()
+        return permissions.as_dict()
+
     except Exception as e:
         return {"error": f"Failed to get repo permissions: {str(e)}"}
 
@@ -338,21 +350,23 @@ def set_repo_permissions(
         }
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.workspace import RepoAccessControlRequest
+        from databricks.sdk.service.workspace import RepoAccessControlRequest
     
-    # Convert dicts to SDK objects
-    acl_requests = []
-    for acl in access_control_list:
-        acl_requests.append(RepoAccessControlRequest.from_dict(acl))
+        # Convert dicts to SDK objects
+        acl_requests = []
+        for acl in access_control_list:
+            acl_requests.append(RepoAccessControlRequest.from_dict(acl))
     
-    permissions = client.repos.set_permissions(
-        repo_id=repo_id,
-        access_control_list=acl_requests,
-    )
+        permissions = client.repos.set_permissions(
+            repo_id=repo_id,
+            access_control_list=acl_requests,
+        )
     
-    return permissions.as_dict()
+        return permissions.as_dict()
+
     except Exception as e:
         return {"error": f"Failed to set repo permissions: {str(e)}"}
 
@@ -379,21 +393,23 @@ def update_repo_permissions(
         Dict with updated permission details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.workspace import RepoAccessControlRequest
+        from databricks.sdk.service.workspace import RepoAccessControlRequest
     
-    # Convert dicts to SDK objects
-    acl_requests = []
-    for acl in access_control_list:
-        acl_requests.append(RepoAccessControlRequest.from_dict(acl))
+        # Convert dicts to SDK objects
+        acl_requests = []
+        for acl in access_control_list:
+            acl_requests.append(RepoAccessControlRequest.from_dict(acl))
     
-    permissions = client.repos.update_permissions(
-        repo_id=repo_id,
-        access_control_list=acl_requests,
-    )
+        permissions = client.repos.update_permissions(
+            repo_id=repo_id,
+            access_control_list=acl_requests,
+        )
     
-    return permissions.as_dict()
+        return permissions.as_dict()
+
     except Exception as e:
         return {"error": f"Failed to update repo permissions: {str(e)}"}
 
@@ -417,11 +433,13 @@ def get_repo_permission_levels(
         Dict with available permission levels
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    levels = client.repos.get_permission_levels(repo_id=repo_id)
+        levels = client.repos.get_permission_levels(repo_id=repo_id)
     
-    return levels.as_dict()
+        return levels.as_dict()
+
     except Exception as e:
         return {"error": f"Failed to get repo permission levels: {str(e)}"}
 

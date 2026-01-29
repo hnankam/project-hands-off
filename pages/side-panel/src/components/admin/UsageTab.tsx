@@ -15,7 +15,7 @@ import {
 } from 'recharts';
 import { OrganizationSelector, TeamSelector, ModelMultiSelector } from './selectors';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_BASE_URL = process.env.CEB_API_URL || 'http://localhost:3001';
 
 interface Organization {
   id: string;

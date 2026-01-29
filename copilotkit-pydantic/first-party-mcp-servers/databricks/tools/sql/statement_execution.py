@@ -70,37 +70,39 @@ def execute_statement(
         ExecuteStatementResponse with statement_id, status, and optionally results
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Convert parameters to SDK format
-    sdk_parameters = None
-    if parameters:
-        sdk_parameters = [
-            StatementParameterListItem(
-                name=p.name,
-                value=p.value,
-                type=p.type
-            )
-            for p in parameters
-        ]
+        # Convert parameters to SDK format
+        sdk_parameters = None
+        if parameters:
+            sdk_parameters = [
+                StatementParameterListItem(
+                    name=p.name,
+                    value=p.value,
+                    type=p.type
+                )
+                for p in parameters
+            ]
     
-    # Execute statement
-    response = client.statement_execution.execute_statement(
-        statement=statement,
-        warehouse_id=warehouse_id,
-        wait_timeout=wait_timeout,
-        on_wait_timeout=ExecuteStatementRequestOnWaitTimeout(on_wait_timeout) if on_wait_timeout else None,
-        format=Format(format) if format else None,
-        disposition=Disposition(disposition) if disposition else None,
-        catalog=catalog,
-        schema=schema,
-        parameters=sdk_parameters,
-        row_limit=row_limit,
-        byte_limit=byte_limit
-    )
+        # Execute statement
+        response = client.statement_execution.execute_statement(
+            statement=statement,
+            warehouse_id=warehouse_id,
+            wait_timeout=wait_timeout,
+            on_wait_timeout=ExecuteStatementRequestOnWaitTimeout(on_wait_timeout) if on_wait_timeout else None,
+            format=Format(format) if format else None,
+            disposition=Disposition(disposition) if disposition else None,
+            catalog=catalog,
+            schema=schema,
+            parameters=sdk_parameters,
+            row_limit=row_limit,
+            byte_limit=byte_limit
+        )
     
-    # Convert to Pydantic models
-    return _convert_statement_response(response)
+        # Convert to Pydantic models
+        return _convert_statement_response(response)
+
     except Exception as e:
         return ExecuteStatementResponse(
             statement_id=None,
@@ -133,9 +135,11 @@ def get_statement(
         StatementResponse with current status and results (if completed)
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
-    response = client.statement_execution.get_statement(statement_id=statement_id)
-    return _convert_statement_response(response)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
+        response = client.statement_execution.get_statement(statement_id=statement_id)
+        return _convert_statement_response(response)
+
     except Exception as e:
         return StatementResponse(
             statement_id=statement_id,
@@ -165,12 +169,14 @@ def get_statement_result_chunk(
         ResultData with the requested chunk, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
-    result = client.statement_execution.get_statement_result_chunk_n(
-        statement_id=statement_id,
-        chunk_index=chunk_index
-    )
-    return _convert_result_data(result)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
+        result = client.statement_execution.get_statement_result_chunk_n(
+            statement_id=statement_id,
+            chunk_index=chunk_index
+        )
+        return _convert_result_data(result)
+
     except Exception as e:
         return None
 
@@ -198,13 +204,15 @@ def cancel_execution(
         CancelExecutionResponse confirming the cancel request was received
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
-    client.statement_execution.cancel_execution(statement_id=statement_id)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
+        client.statement_execution.cancel_execution(statement_id=statement_id)
     
-    return CancelExecutionResponse(
-        statement_id=statement_id,
-        message=f"Cancel request sent for statement {statement_id}. Poll with get_statement() to confirm cancellation."
-    )
+        return CancelExecutionResponse(
+            statement_id=statement_id,
+            message=f"Cancel request sent for statement {statement_id}. Poll with get_statement() to confirm cancellation."
+        )
+
     except Exception as e:
         return CancelExecutionResponse(
             statement_id=statement_id,

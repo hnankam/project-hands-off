@@ -13,7 +13,7 @@ import { ssoClient } from "@better-auth/sso/client";
 
 // Constants
 const DEFAULT_API_URL = "http://localhost:3001";
-const baseURL = import.meta.env.VITE_API_URL || DEFAULT_API_URL;
+const baseURL = process.env.CEB_API_URL || DEFAULT_API_URL;
 
 /**
  * Better Auth client instance

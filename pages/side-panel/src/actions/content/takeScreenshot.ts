@@ -250,7 +250,7 @@ async function uploadAndBuildManifest(
       // Register screenshot in workspace if userId is available and upload succeeded
       if (hostedUrl && userId) {
         try {
-          const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+          const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
           const response = await fetch(`${baseURL}/api/workspace/files/register`, {
             method: 'POST',
             credentials: 'include',

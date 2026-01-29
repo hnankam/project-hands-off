@@ -106,12 +106,14 @@ async def lifespan(app: FastAPI):
     await close_redis_connection()
 
 
-# Create FastAPI application with lifespan
+# Create FastAPI application with lifespan and request size limits
 app = FastAPI(
     title="Pydantic AI Agent Server",
     description="AI Agent Server with multi-agent support and Ably Pub/Sub usage streaming",
     version="2.0.0",
     lifespan=lifespan,
+    # Set maximum request body size (30MB default)
+    max_request_size=int(os.getenv("MAX_REQUEST_SIZE_MB", "30")) * 1024 * 1024,
 )
 
 # Instrument FastAPI with Logfire

@@ -71,7 +71,7 @@ interface DeploymentsTabProps {
   onSuccess: (message: string) => void;
 }
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8001';
+const BACKEND_URL = process.env.CEB_BACKEND_URL || 'http://localhost:8001';
 const AUTO_REFRESH_INTERVAL_MS = 30000;
 
 const AgentIcon = () => (

@@ -38,7 +38,7 @@ export const SelectorsBar: React.FC<SelectorsBarProps> = ({
   React.useEffect(() => {
     const fetchAgents = async () => {
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/config/agents`, {
+        const response = await fetch(`${process.env.CEB_API_URL || 'http://localhost:3001'}/api/config/agents`, {
           credentials: 'include',
         });
         if (response.ok) {

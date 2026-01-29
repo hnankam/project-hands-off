@@ -616,7 +616,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
   const loadFiles = useCallback(async () => {
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/files`, {
         credentials: 'include',
       });
@@ -633,7 +633,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
   const loadFolders = useCallback(async () => {
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/folders`, {
         credentials: 'include',
       });
@@ -707,7 +707,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
       const storageUrl = await getDownloadURL(uploadTask.snapshot.ref);
 
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/files/register`, {
         method: 'POST',
         credentials: 'include',
@@ -785,7 +785,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     if (!newFolderName.trim()) return;
 
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const folderPath = currentFolder ? `${currentFolder}/${newFolderName.trim()}` : newFolderName.trim();
       
       const response = await fetch(`${baseURL}/api/workspace/folders`, {
@@ -822,7 +822,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
     setDeleting(true);
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/files/${fileToDelete.id}`, {
         method: 'DELETE',
         credentials: 'include',
@@ -856,7 +856,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
     setDeleting(true);
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const encodedPath = encodeURIComponent(folderToDelete.path);
       const response = await fetch(`${baseURL}/api/workspace/folders/${encodedPath}?deleteFiles=${deleteFilesInFolder}`, {
         method: 'DELETE',
@@ -937,7 +937,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
   const confirmBulkDelete = async () => {
     setDeleting(true);
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
 
       // Delete files
       if (selectedFiles.size > 0) {
@@ -1011,7 +1011,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
     setMoving(true);
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/files/${fileToMove.id}`, {
         method: 'PUT',
         credentials: 'include',
@@ -1053,7 +1053,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
     setMoving(true);
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
 
       // Move files
       if (selectedFiles.size > 0) {
@@ -1118,7 +1118,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     }
 
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/files/${fileId}`, {
         method: 'PUT',
         credentials: 'include',
@@ -1288,7 +1288,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     setLoadingPreviews(newLoadingPreviews);
 
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/files/${fileId}/content`, {
         credentials: 'include',
       });
@@ -1331,7 +1331,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
         console.log('[Workspace] Storage URL is a data URI, fetching full content from API');
         
         // Fetch full content from the API endpoint
-        const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
         const response = await fetch(`${baseURL}/api/workspace/files/${file.id}/content`, {
           credentials: 'include',
         });

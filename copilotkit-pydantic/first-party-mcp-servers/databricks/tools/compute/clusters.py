@@ -62,108 +62,110 @@ def list_clusters(
         - Empty list (count=0) with has_more=False means no clusters match criteria
     """
     try:
-    # Cap limit at maximum page size
-    limit = min(limit, 10)
+
+        # Cap limit at maximum page size
+        limit = min(limit, 10)
     
-    client = get_workspace_client(host_credential_key, token_credential_key)
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Get clusters iterator
-    response = client.clusters.list()
+        # Get clusters iterator
+        response = client.clusters.list()
     
-    # For filtering and pagination, we need to iterate through all clusters
-    # Skip filtered items based on page number, then collect up to limit
-    skip_count = page * limit
-    collected = 0
-    skipped = 0
-    has_more = False
+        # For filtering and pagination, we need to iterate through all clusters
+        # Skip filtered items based on page number, then collect up to limit
+        skip_count = page * limit
+        collected = 0
+        skipped = 0
+        has_more = False
     
-    clusters_list = []
-    for cluster in response:
-        # Apply name filter if specified (case-insensitive partial match)
-        if cluster_name and cluster.cluster_name:
-            if cluster_name.lower() not in cluster.cluster_name.lower():
+        clusters_list = []
+        for cluster in response:
+            # Apply name filter if specified (case-insensitive partial match)
+            if cluster_name and cluster.cluster_name:
+                if cluster_name.lower() not in cluster.cluster_name.lower():
+                    continue
+        
+            # Skip items for previous pages
+            if skipped < skip_count:
+                skipped += 1
                 continue
         
-        # Skip items for previous pages
-        if skipped < skip_count:
-            skipped += 1
-            continue
+            # Collect this cluster if we haven't reached the limit
+            if collected >= limit:
+                # We found one more filtered item beyond our limit
+                # This means has_more = True, so we can break
+                has_more = True
+                break
         
-        # Collect this cluster if we haven't reached the limit
-        if collected >= limit:
-            # We found one more filtered item beyond our limit
-            # This means has_more = True, so we can break
-            has_more = True
-            break
+            # Extract state
+            state = None
+            if cluster.state:
+                state = ClusterStateInfo(
+                    state=cluster.state.value if hasattr(cluster.state, 'value') else str(cluster.state),
+                    state_message=cluster.state_message,
+                )
         
-        # Extract state
-        state = None
-        if cluster.state:
-            state = ClusterStateInfo(
-                state=cluster.state.value if hasattr(cluster.state, 'value') else str(cluster.state),
-                state_message=cluster.state_message,
+            # Extract autoscale
+            autoscale = None
+            if cluster.autoscale:
+                autoscale = AutoScaleInfo(
+                    min_workers=cluster.autoscale.min_workers,
+                    max_workers=cluster.autoscale.max_workers,
+                )
+        
+            clusters_list.append(
+                ClusterInfo(
+                    cluster_id=cluster.cluster_id,
+                    cluster_name=cluster.cluster_name,
+                    spark_version=cluster.spark_version,
+                    node_type_id=cluster.node_type_id,
+                    driver_node_type_id=cluster.driver_node_type_id,
+                    num_workers=cluster.num_workers,
+                    autoscale=autoscale,
+                    autotermination_minutes=cluster.autotermination_minutes,
+                    state=state,
+                    creator_user_name=cluster.creator_user_name,
+                    start_time=cluster.start_time,
+                    terminated_time=cluster.terminated_time,
+                    last_restarted_time=cluster.last_restarted_time,
+                    cluster_cores=cluster.cluster_cores,
+                    cluster_memory_mb=cluster.cluster_memory_mb,
+                    spark_context_id=cluster.spark_context_id,
+                    jdbc_port=cluster.jdbc_port,
+                    cluster_source=cluster.cluster_source.value if cluster.cluster_source else None,
+                    instance_pool_id=cluster.instance_pool_id,
+                    driver_instance_pool_id=cluster.driver_instance_pool_id,
+                    policy_id=cluster.policy_id,
+                    enable_elastic_disk=cluster.enable_elastic_disk,
+                    enable_local_disk_encryption=cluster.enable_local_disk_encryption,
+                    data_security_mode=cluster.data_security_mode.value if cluster.data_security_mode else None,
+                    runtime_engine=cluster.runtime_engine.value if cluster.runtime_engine else None,
+                    single_user_name=cluster.single_user_name,
+                    is_single_node=cluster.is_single_node,
+                    spark_conf=cluster.spark_conf,
+                    spark_env_vars=cluster.spark_env_vars,
+                    custom_tags=cluster.custom_tags,
+                    init_scripts=[script.as_dict() for script in cluster.init_scripts] if cluster.init_scripts else None,
+                    docker_image=cluster.docker_image.as_dict() if cluster.docker_image else None,
+                    ssh_public_keys=cluster.ssh_public_keys,
+                    aws_attributes=cluster.aws_attributes.as_dict() if cluster.aws_attributes else None,
+                    azure_attributes=cluster.azure_attributes.as_dict() if cluster.azure_attributes else None,
+                    gcp_attributes=cluster.gcp_attributes.as_dict() if cluster.gcp_attributes else None,
+                    cluster_log_conf=cluster.cluster_log_conf.as_dict() if cluster.cluster_log_conf else None,
+                    termination_reason=cluster.termination_reason.as_dict() if cluster.termination_reason else None,
+                )
             )
-        
-        # Extract autoscale
-        autoscale = None
-        if cluster.autoscale:
-            autoscale = AutoScaleInfo(
-                min_workers=cluster.autoscale.min_workers,
-                max_workers=cluster.autoscale.max_workers,
-            )
-        
-        clusters_list.append(
-            ClusterInfo(
-                cluster_id=cluster.cluster_id,
-                cluster_name=cluster.cluster_name,
-                spark_version=cluster.spark_version,
-                node_type_id=cluster.node_type_id,
-                driver_node_type_id=cluster.driver_node_type_id,
-                num_workers=cluster.num_workers,
-                autoscale=autoscale,
-                autotermination_minutes=cluster.autotermination_minutes,
-                state=state,
-                creator_user_name=cluster.creator_user_name,
-                start_time=cluster.start_time,
-                terminated_time=cluster.terminated_time,
-                last_restarted_time=cluster.last_restarted_time,
-                cluster_cores=cluster.cluster_cores,
-                cluster_memory_mb=cluster.cluster_memory_mb,
-                spark_context_id=cluster.spark_context_id,
-                jdbc_port=cluster.jdbc_port,
-                cluster_source=cluster.cluster_source.value if cluster.cluster_source else None,
-                instance_pool_id=cluster.instance_pool_id,
-                driver_instance_pool_id=cluster.driver_instance_pool_id,
-                policy_id=cluster.policy_id,
-                enable_elastic_disk=cluster.enable_elastic_disk,
-                enable_local_disk_encryption=cluster.enable_local_disk_encryption,
-                data_security_mode=cluster.data_security_mode.value if cluster.data_security_mode else None,
-                runtime_engine=cluster.runtime_engine.value if cluster.runtime_engine else None,
-                single_user_name=cluster.single_user_name,
-                is_single_node=cluster.is_single_node,
-                spark_conf=cluster.spark_conf,
-                spark_env_vars=cluster.spark_env_vars,
-                custom_tags=cluster.custom_tags,
-                init_scripts=[script.as_dict() for script in cluster.init_scripts] if cluster.init_scripts else None,
-                docker_image=cluster.docker_image.as_dict() if cluster.docker_image else None,
-                ssh_public_keys=cluster.ssh_public_keys,
-                aws_attributes=cluster.aws_attributes.as_dict() if cluster.aws_attributes else None,
-                azure_attributes=cluster.azure_attributes.as_dict() if cluster.azure_attributes else None,
-                gcp_attributes=cluster.gcp_attributes.as_dict() if cluster.gcp_attributes else None,
-                cluster_log_conf=cluster.cluster_log_conf.as_dict() if cluster.cluster_log_conf else None,
-                termination_reason=cluster.termination_reason.as_dict() if cluster.termination_reason else None,
-            )
+            collected += 1
+    
+        # If we exited the loop normally (not via break), has_more is already False
+        # has_more was set to True in the loop if we found an extra item beyond limit
+    
+        return ListClustersResponse(
+            clusters=clusters_list,
+            count=len(clusters_list),
+            has_more=has_more,
         )
-        collected += 1
-    
-    # If we exited the loop normally (not via break), has_more is already False
-    # has_more was set to True in the loop if we found an extra item beyond limit
-    
-    return ListClustersResponse(
-        clusters=clusters_list,
-        count=len(clusters_list),
-        has_more=has_more,
-    )
+
     except Exception as e:
         return ListClustersResponse(
             clusters=[],
@@ -193,66 +195,68 @@ def get_cluster(
         ClusterInfo with complete cluster details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    cluster = client.clusters.get(cluster_id=cluster_id)
+        cluster = client.clusters.get(cluster_id=cluster_id)
     
-    # Extract state
-    state = None
-    if cluster.state:
-        state = ClusterStateInfo(
-            state=cluster.state.value if hasattr(cluster.state, 'value') else str(cluster.state),
-            state_message=cluster.state_message,
+        # Extract state
+        state = None
+        if cluster.state:
+            state = ClusterStateInfo(
+                state=cluster.state.value if hasattr(cluster.state, 'value') else str(cluster.state),
+                state_message=cluster.state_message,
+            )
+    
+        # Extract autoscale
+        autoscale = None
+        if cluster.autoscale:
+            autoscale = AutoScaleInfo(
+                min_workers=cluster.autoscale.min_workers,
+                max_workers=cluster.autoscale.max_workers,
+            )
+    
+        return ClusterInfo(
+            cluster_id=cluster.cluster_id,
+            cluster_name=cluster.cluster_name,
+            spark_version=cluster.spark_version,
+            node_type_id=cluster.node_type_id,
+            driver_node_type_id=cluster.driver_node_type_id,
+            num_workers=cluster.num_workers,
+            autoscale=autoscale,
+            autotermination_minutes=cluster.autotermination_minutes,
+            state=state,
+            creator_user_name=cluster.creator_user_name,
+            start_time=cluster.start_time,
+            terminated_time=cluster.terminated_time,
+            last_restarted_time=cluster.last_restarted_time,
+            cluster_cores=cluster.cluster_cores,
+            cluster_memory_mb=cluster.cluster_memory_mb,
+            spark_context_id=cluster.spark_context_id,
+            jdbc_port=cluster.jdbc_port,
+            cluster_source=cluster.cluster_source.value if cluster.cluster_source else None,
+            instance_pool_id=cluster.instance_pool_id,
+            driver_instance_pool_id=cluster.driver_instance_pool_id,
+            policy_id=cluster.policy_id,
+            enable_elastic_disk=cluster.enable_elastic_disk,
+            enable_local_disk_encryption=cluster.enable_local_disk_encryption,
+            data_security_mode=cluster.data_security_mode.value if cluster.data_security_mode else None,
+            runtime_engine=cluster.runtime_engine.value if cluster.runtime_engine else None,
+            single_user_name=cluster.single_user_name,
+            is_single_node=cluster.is_single_node,
+            spark_conf=cluster.spark_conf,
+            spark_env_vars=cluster.spark_env_vars,
+            custom_tags=cluster.custom_tags,
+            init_scripts=[script.as_dict() for script in cluster.init_scripts] if cluster.init_scripts else None,
+            docker_image=cluster.docker_image.as_dict() if cluster.docker_image else None,
+            ssh_public_keys=cluster.ssh_public_keys,
+            aws_attributes=cluster.aws_attributes.as_dict() if cluster.aws_attributes else None,
+            azure_attributes=cluster.azure_attributes.as_dict() if cluster.azure_attributes else None,
+            gcp_attributes=cluster.gcp_attributes.as_dict() if cluster.gcp_attributes else None,
+            cluster_log_conf=cluster.cluster_log_conf.as_dict() if cluster.cluster_log_conf else None,
+            termination_reason=cluster.termination_reason.as_dict() if cluster.termination_reason else None,
         )
-    
-    # Extract autoscale
-    autoscale = None
-    if cluster.autoscale:
-        autoscale = AutoScaleInfo(
-            min_workers=cluster.autoscale.min_workers,
-            max_workers=cluster.autoscale.max_workers,
-        )
-    
-    return ClusterInfo(
-        cluster_id=cluster.cluster_id,
-        cluster_name=cluster.cluster_name,
-        spark_version=cluster.spark_version,
-        node_type_id=cluster.node_type_id,
-        driver_node_type_id=cluster.driver_node_type_id,
-        num_workers=cluster.num_workers,
-        autoscale=autoscale,
-        autotermination_minutes=cluster.autotermination_minutes,
-        state=state,
-        creator_user_name=cluster.creator_user_name,
-        start_time=cluster.start_time,
-        terminated_time=cluster.terminated_time,
-        last_restarted_time=cluster.last_restarted_time,
-        cluster_cores=cluster.cluster_cores,
-        cluster_memory_mb=cluster.cluster_memory_mb,
-        spark_context_id=cluster.spark_context_id,
-        jdbc_port=cluster.jdbc_port,
-        cluster_source=cluster.cluster_source.value if cluster.cluster_source else None,
-        instance_pool_id=cluster.instance_pool_id,
-        driver_instance_pool_id=cluster.driver_instance_pool_id,
-        policy_id=cluster.policy_id,
-        enable_elastic_disk=cluster.enable_elastic_disk,
-        enable_local_disk_encryption=cluster.enable_local_disk_encryption,
-        data_security_mode=cluster.data_security_mode.value if cluster.data_security_mode else None,
-        runtime_engine=cluster.runtime_engine.value if cluster.runtime_engine else None,
-        single_user_name=cluster.single_user_name,
-        is_single_node=cluster.is_single_node,
-        spark_conf=cluster.spark_conf,
-        spark_env_vars=cluster.spark_env_vars,
-        custom_tags=cluster.custom_tags,
-        init_scripts=[script.as_dict() for script in cluster.init_scripts] if cluster.init_scripts else None,
-        docker_image=cluster.docker_image.as_dict() if cluster.docker_image else None,
-        ssh_public_keys=cluster.ssh_public_keys,
-        aws_attributes=cluster.aws_attributes.as_dict() if cluster.aws_attributes else None,
-        azure_attributes=cluster.azure_attributes.as_dict() if cluster.azure_attributes else None,
-        gcp_attributes=cluster.gcp_attributes.as_dict() if cluster.gcp_attributes else None,
-        cluster_log_conf=cluster.cluster_log_conf.as_dict() if cluster.cluster_log_conf else None,
-        termination_reason=cluster.termination_reason.as_dict() if cluster.termination_reason else None,
-    )
+
     except Exception as e:
         # For functions returning models directly, return None on error
         # FastMCP will handle the None return appropriately
@@ -329,73 +333,75 @@ def create_cluster(
         CreateClusterResponse with cluster ID
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.compute import (
-        AutoScale, InitScriptInfo, DockerImage, DataSecurityMode, RuntimeEngine,
-        AwsAttributes, AzureAttributes, GcpAttributes, ClusterLogConf
-    )
-    
-    # Convert autoscale
-    autoscale_obj = None
-    if autoscale:
-        autoscale_obj = AutoScale(
-            min_workers=autoscale.get("min_workers"),
-            max_workers=autoscale.get("max_workers"),
+        from databricks.sdk.service.compute import (
+            AutoScale, InitScriptInfo, DockerImage, DataSecurityMode, RuntimeEngine,
+            AwsAttributes, AzureAttributes, GcpAttributes, ClusterLogConf
         )
     
-    # Convert init scripts
-    init_scripts_obj = None
-    if init_scripts:
-        init_scripts_obj = [InitScriptInfo.from_dict(script) for script in init_scripts]
+        # Convert autoscale
+        autoscale_obj = None
+        if autoscale:
+            autoscale_obj = AutoScale(
+                min_workers=autoscale.get("min_workers"),
+                max_workers=autoscale.get("max_workers"),
+            )
     
-    # Convert docker image
-    docker_image_obj = DockerImage.from_dict(docker_image) if docker_image else None
+        # Convert init scripts
+        init_scripts_obj = None
+        if init_scripts:
+            init_scripts_obj = [InitScriptInfo.from_dict(script) for script in init_scripts]
     
-    # Convert data security mode
-    data_security_mode_obj = DataSecurityMode(data_security_mode) if data_security_mode else None
+        # Convert docker image
+        docker_image_obj = DockerImage.from_dict(docker_image) if docker_image else None
     
-    # Convert runtime engine
-    runtime_engine_obj = RuntimeEngine(runtime_engine) if runtime_engine else None
+        # Convert data security mode
+        data_security_mode_obj = DataSecurityMode(data_security_mode) if data_security_mode else None
     
-    # Convert cloud attributes
-    aws_attributes_obj = AwsAttributes.from_dict(aws_attributes) if aws_attributes else None
-    azure_attributes_obj = AzureAttributes.from_dict(azure_attributes) if azure_attributes else None
-    gcp_attributes_obj = GcpAttributes.from_dict(gcp_attributes) if gcp_attributes else None
+        # Convert runtime engine
+        runtime_engine_obj = RuntimeEngine(runtime_engine) if runtime_engine else None
     
-    # Convert cluster log conf
-    cluster_log_conf_obj = ClusterLogConf.from_dict(cluster_log_conf) if cluster_log_conf else None
+        # Convert cloud attributes
+        aws_attributes_obj = AwsAttributes.from_dict(aws_attributes) if aws_attributes else None
+        azure_attributes_obj = AzureAttributes.from_dict(azure_attributes) if azure_attributes else None
+        gcp_attributes_obj = GcpAttributes.from_dict(gcp_attributes) if gcp_attributes else None
     
-    response = client.clusters.create(
-        spark_version=spark_version,
-        node_type_id=node_type_id,
-        num_workers=num_workers,
-        cluster_name=cluster_name,
-        autoscale=autoscale_obj,
-        autotermination_minutes=autotermination_minutes,
-        spark_conf=spark_conf,
-        spark_env_vars=spark_env_vars,
-        custom_tags=custom_tags,
-        instance_pool_id=instance_pool_id,
-        driver_instance_pool_id=driver_instance_pool_id,
-        driver_node_type_id=driver_node_type_id,
-        policy_id=policy_id,
-        enable_elastic_disk=enable_elastic_disk,
-        enable_local_disk_encryption=enable_local_disk_encryption,
-        data_security_mode=data_security_mode_obj,
-        runtime_engine=runtime_engine_obj,
-        single_user_name=single_user_name,
-        is_single_node=is_single_node,
-        init_scripts=init_scripts_obj,
-        docker_image=docker_image_obj,
-        ssh_public_keys=ssh_public_keys,
-        aws_attributes=aws_attributes_obj,
-        azure_attributes=azure_attributes_obj,
-        gcp_attributes=gcp_attributes_obj,
-        cluster_log_conf=cluster_log_conf_obj,
-    ).result()  # Wait for cluster to be created
+        # Convert cluster log conf
+        cluster_log_conf_obj = ClusterLogConf.from_dict(cluster_log_conf) if cluster_log_conf else None
     
-    return CreateClusterResponse(cluster_id=response.cluster_id)
+        response = client.clusters.create(
+            spark_version=spark_version,
+            node_type_id=node_type_id,
+            num_workers=num_workers,
+            cluster_name=cluster_name,
+            autoscale=autoscale_obj,
+            autotermination_minutes=autotermination_minutes,
+            spark_conf=spark_conf,
+            spark_env_vars=spark_env_vars,
+            custom_tags=custom_tags,
+            instance_pool_id=instance_pool_id,
+            driver_instance_pool_id=driver_instance_pool_id,
+            driver_node_type_id=driver_node_type_id,
+            policy_id=policy_id,
+            enable_elastic_disk=enable_elastic_disk,
+            enable_local_disk_encryption=enable_local_disk_encryption,
+            data_security_mode=data_security_mode_obj,
+            runtime_engine=runtime_engine_obj,
+            single_user_name=single_user_name,
+            is_single_node=is_single_node,
+            init_scripts=init_scripts_obj,
+            docker_image=docker_image_obj,
+            ssh_public_keys=ssh_public_keys,
+            aws_attributes=aws_attributes_obj,
+            azure_attributes=azure_attributes_obj,
+            gcp_attributes=gcp_attributes_obj,
+            cluster_log_conf=cluster_log_conf_obj,
+        ).result()  # Wait for cluster to be created
+    
+        return CreateClusterResponse(cluster_id=response.cluster_id)
+
     except Exception as e:
         return CreateClusterResponse(
             cluster_id=None,
@@ -451,59 +457,61 @@ def edit_cluster(
         EditClusterResponse confirming edit
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.compute import (
-        AutoScale, InitScriptInfo, DockerImage, DataSecurityMode, RuntimeEngine,
-        AwsAttributes, AzureAttributes, GcpAttributes, ClusterLogConf
-    )
+        from databricks.sdk.service.compute import (
+            AutoScale, InitScriptInfo, DockerImage, DataSecurityMode, RuntimeEngine,
+            AwsAttributes, AzureAttributes, GcpAttributes, ClusterLogConf
+        )
     
-    # Convert parameters (same as create_cluster)
-    autoscale_obj = AutoScale(
-        min_workers=autoscale.get("min_workers"),
-        max_workers=autoscale.get("max_workers"),
-    ) if autoscale else None
+        # Convert parameters (same as create_cluster)
+        autoscale_obj = AutoScale(
+            min_workers=autoscale.get("min_workers"),
+            max_workers=autoscale.get("max_workers"),
+        ) if autoscale else None
     
-    init_scripts_obj = [InitScriptInfo.from_dict(script) for script in init_scripts] if init_scripts else None
-    docker_image_obj = DockerImage.from_dict(docker_image) if docker_image else None
-    data_security_mode_obj = DataSecurityMode(data_security_mode) if data_security_mode else None
-    runtime_engine_obj = RuntimeEngine(runtime_engine) if runtime_engine else None
-    aws_attributes_obj = AwsAttributes.from_dict(aws_attributes) if aws_attributes else None
-    azure_attributes_obj = AzureAttributes.from_dict(azure_attributes) if azure_attributes else None
-    gcp_attributes_obj = GcpAttributes.from_dict(gcp_attributes) if gcp_attributes else None
-    cluster_log_conf_obj = ClusterLogConf.from_dict(cluster_log_conf) if cluster_log_conf else None
+        init_scripts_obj = [InitScriptInfo.from_dict(script) for script in init_scripts] if init_scripts else None
+        docker_image_obj = DockerImage.from_dict(docker_image) if docker_image else None
+        data_security_mode_obj = DataSecurityMode(data_security_mode) if data_security_mode else None
+        runtime_engine_obj = RuntimeEngine(runtime_engine) if runtime_engine else None
+        aws_attributes_obj = AwsAttributes.from_dict(aws_attributes) if aws_attributes else None
+        azure_attributes_obj = AzureAttributes.from_dict(azure_attributes) if azure_attributes else None
+        gcp_attributes_obj = GcpAttributes.from_dict(gcp_attributes) if gcp_attributes else None
+        cluster_log_conf_obj = ClusterLogConf.from_dict(cluster_log_conf) if cluster_log_conf else None
     
-    client.clusters.edit(
-        cluster_id=cluster_id,
-        spark_version=spark_version,
-        node_type_id=node_type_id,
-        num_workers=num_workers,
-        cluster_name=cluster_name,
-        autoscale=autoscale_obj,
-        autotermination_minutes=autotermination_minutes,
-        spark_conf=spark_conf,
-        spark_env_vars=spark_env_vars,
-        custom_tags=custom_tags,
-        instance_pool_id=instance_pool_id,
-        driver_instance_pool_id=driver_instance_pool_id,
-        driver_node_type_id=driver_node_type_id,
-        policy_id=policy_id,
-        enable_elastic_disk=enable_elastic_disk,
-        enable_local_disk_encryption=enable_local_disk_encryption,
-        data_security_mode=data_security_mode_obj,
-        runtime_engine=runtime_engine_obj,
-        single_user_name=single_user_name,
-        is_single_node=is_single_node,
-        init_scripts=init_scripts_obj,
-        docker_image=docker_image_obj,
-        ssh_public_keys=ssh_public_keys,
-        aws_attributes=aws_attributes_obj,
-        azure_attributes=azure_attributes_obj,
-        gcp_attributes=gcp_attributes_obj,
-        cluster_log_conf=cluster_log_conf_obj,
-    )
+        client.clusters.edit(
+            cluster_id=cluster_id,
+            spark_version=spark_version,
+            node_type_id=node_type_id,
+            num_workers=num_workers,
+            cluster_name=cluster_name,
+            autoscale=autoscale_obj,
+            autotermination_minutes=autotermination_minutes,
+            spark_conf=spark_conf,
+            spark_env_vars=spark_env_vars,
+            custom_tags=custom_tags,
+            instance_pool_id=instance_pool_id,
+            driver_instance_pool_id=driver_instance_pool_id,
+            driver_node_type_id=driver_node_type_id,
+            policy_id=policy_id,
+            enable_elastic_disk=enable_elastic_disk,
+            enable_local_disk_encryption=enable_local_disk_encryption,
+            data_security_mode=data_security_mode_obj,
+            runtime_engine=runtime_engine_obj,
+            single_user_name=single_user_name,
+            is_single_node=is_single_node,
+            init_scripts=init_scripts_obj,
+            docker_image=docker_image_obj,
+            ssh_public_keys=ssh_public_keys,
+            aws_attributes=aws_attributes_obj,
+            azure_attributes=azure_attributes_obj,
+            gcp_attributes=gcp_attributes_obj,
+            cluster_log_conf=cluster_log_conf_obj,
+        )
     
-    return EditClusterResponse(cluster_id=cluster_id)
+        return EditClusterResponse(cluster_id=cluster_id)
+
     except Exception as e:
         return EditClusterResponse(
             cluster_id=cluster_id,
@@ -531,11 +539,13 @@ def delete_cluster(
         DeleteClusterResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.clusters.delete(cluster_id=cluster_id)
+        client.clusters.delete(cluster_id=cluster_id)
     
-    return DeleteClusterResponse(cluster_id=cluster_id)
+        return DeleteClusterResponse(cluster_id=cluster_id)
+
     except Exception as e:
         return DeleteClusterResponse(
             cluster_id=cluster_id,
@@ -563,14 +573,16 @@ def permanent_delete_cluster(
         DeleteClusterResponse confirming permanent deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.clusters.permanent_delete(cluster_id=cluster_id)
+        client.clusters.permanent_delete(cluster_id=cluster_id)
     
-    return DeleteClusterResponse(
-        cluster_id=cluster_id,
-        message="Cluster permanently deleted"
-    )
+        return DeleteClusterResponse(
+            cluster_id=cluster_id,
+            message="Cluster permanently deleted"
+        )
+
     except Exception as e:
         return DeleteClusterResponse(
             cluster_id=cluster_id,
@@ -598,11 +610,13 @@ def start_cluster(
         StartClusterResponse confirming start initiated
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.clusters.start(cluster_id=cluster_id).result()  # Wait for start
+        client.clusters.start(cluster_id=cluster_id).result()  # Wait for start
     
-    return StartClusterResponse(cluster_id=cluster_id)
+        return StartClusterResponse(cluster_id=cluster_id)
+
     except Exception as e:
         return StartClusterResponse(
             cluster_id=cluster_id,
@@ -630,11 +644,13 @@ def restart_cluster(
         RestartClusterResponse confirming restart initiated
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.clusters.restart(cluster_id=cluster_id).result()  # Wait for restart
+        client.clusters.restart(cluster_id=cluster_id).result()  # Wait for restart
     
-    return RestartClusterResponse(cluster_id=cluster_id)
+        return RestartClusterResponse(cluster_id=cluster_id)
+
     except Exception as e:
         return RestartClusterResponse(
             cluster_id=cluster_id,
@@ -665,11 +681,13 @@ def get_cluster_permissions(
         Dict with permission details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    permissions = client.clusters.get_permissions(cluster_id=cluster_id)
+        permissions = client.clusters.get_permissions(cluster_id=cluster_id)
     
-    return permissions.as_dict()
+        return permissions.as_dict()
+
     except Exception as e:
         return {"error": f"Failed to get cluster permissions for {cluster_id}: {str(e)}"}
 
@@ -706,18 +724,20 @@ def set_cluster_permissions(
         - CAN_MANAGE - Full control (edit, delete, permissions)
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.compute import ClusterAccessControlRequest
+        from databricks.sdk.service.compute import ClusterAccessControlRequest
     
-    acl_requests = [ClusterAccessControlRequest.from_dict(acl) for acl in access_control_list]
+        acl_requests = [ClusterAccessControlRequest.from_dict(acl) for acl in access_control_list]
     
-    permissions = client.clusters.set_permissions(
-        cluster_id=cluster_id,
-        access_control_list=acl_requests,
-    )
+        permissions = client.clusters.set_permissions(
+            cluster_id=cluster_id,
+            access_control_list=acl_requests,
+        )
     
-    return permissions.as_dict()
+        return permissions.as_dict()
+
     except Exception as e:
         return {"error": f"Failed to set cluster permissions for {cluster_id}: {str(e)}"}
 
@@ -743,18 +763,20 @@ def update_cluster_permissions(
         Dict with updated permission details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.compute import ClusterAccessControlRequest
+        from databricks.sdk.service.compute import ClusterAccessControlRequest
     
-    acl_requests = [ClusterAccessControlRequest.from_dict(acl) for acl in access_control_list]
+        acl_requests = [ClusterAccessControlRequest.from_dict(acl) for acl in access_control_list]
     
-    permissions = client.clusters.update_permissions(
-        cluster_id=cluster_id,
-        access_control_list=acl_requests,
-    )
+        permissions = client.clusters.update_permissions(
+            cluster_id=cluster_id,
+            access_control_list=acl_requests,
+        )
     
-    return permissions.as_dict()
+        return permissions.as_dict()
+
     except Exception as e:
         return {"error": f"Failed to update cluster permissions for {cluster_id}: {str(e)}"}
 
@@ -778,10 +800,12 @@ def get_cluster_permission_levels(
         Dict with available permission levels
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    levels = client.clusters.get_permission_levels(cluster_id=cluster_id)
+        levels = client.clusters.get_permission_levels(cluster_id=cluster_id)
     
-    return levels.as_dict()
+        return levels.as_dict()
+
     except Exception as e:
         return {"error": f"Failed to get cluster permission levels for {cluster_id}: {str(e)}"}

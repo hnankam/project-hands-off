@@ -84,19 +84,21 @@ def create_execution_context(
         CreateExecutionContextResponse with context information
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.compute import Language
+        from databricks.sdk.service.compute import Language
     
-    # Wait for context to be running
-    context_status = client.command_execution.create_and_wait(
-        cluster_id=cluster_id,
-        language=Language(language),
-    )
+        # Wait for context to be running
+        context_status = client.command_execution.create_and_wait(
+            cluster_id=cluster_id,
+            language=Language(language),
+        )
     
-    return CreateExecutionContextResponse(
-        context=_convert_context_status_to_model(context_status),
-    )
+        return CreateExecutionContextResponse(
+            context=_convert_context_status_to_model(context_status),
+        )
+
     except Exception as e:
         return CreateExecutionContextResponse(
             context=None,
@@ -126,14 +128,16 @@ def get_context_status(
         ContextStatusModel with context status
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    context_status = client.command_execution.context_status(
-        cluster_id=cluster_id,
-        context_id=context_id,
-    )
+        context_status = client.command_execution.context_status(
+            cluster_id=cluster_id,
+            context_id=context_id,
+        )
     
-    return _convert_context_status_to_model(context_status)
+        return _convert_context_status_to_model(context_status)
+
     except Exception as e:
         return None
 
@@ -160,17 +164,19 @@ def destroy_execution_context(
         DestroyContextResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.command_execution.destroy(
-        cluster_id=cluster_id,
-        context_id=context_id,
-    )
+        client.command_execution.destroy(
+            cluster_id=cluster_id,
+            context_id=context_id,
+        )
     
-    return DestroyContextResponse(
-        cluster_id=cluster_id,
-        context_id=context_id,
-    )
+        return DestroyContextResponse(
+            cluster_id=cluster_id,
+            context_id=context_id,
+        )
+
     except Exception as e:
         return DestroyContextResponse(
             cluster_id=cluster_id,
@@ -209,21 +215,23 @@ def execute_command(
         ExecuteCommandResponse with command status and results
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.compute import Language
+        from databricks.sdk.service.compute import Language
     
-    # Wait for command to finish
-    command_status = client.command_execution.execute_and_wait(
-        cluster_id=cluster_id,
-        context_id=context_id,
-        command=command,
-        language=Language(language),
-    )
+        # Wait for command to finish
+        command_status = client.command_execution.execute_and_wait(
+            cluster_id=cluster_id,
+            context_id=context_id,
+            command=command,
+            language=Language(language),
+        )
     
-    return ExecuteCommandResponse(
-        command=_convert_command_status_to_model(command_status),
-    )
+        return ExecuteCommandResponse(
+            command=_convert_command_status_to_model(command_status),
+        )
+
     except Exception as e:
         return ExecuteCommandResponse(
             command=None,
@@ -255,15 +263,17 @@ def get_command_status(
         CommandStatusModel with command status and results
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    command_status = client.command_execution.command_status(
-        cluster_id=cluster_id,
-        context_id=context_id,
-        command_id=command_id,
-    )
+        command_status = client.command_execution.command_status(
+            cluster_id=cluster_id,
+            context_id=context_id,
+            command_id=command_id,
+        )
     
-    return _convert_command_status_to_model(command_status)
+        return _convert_command_status_to_model(command_status)
+
     except Exception as e:
         return None
 
@@ -292,18 +302,20 @@ def cancel_command(
         CancelCommandResponse with cancellation status
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Wait for cancellation to complete
-    command_status = client.command_execution.cancel_and_wait(
-        cluster_id=cluster_id,
-        context_id=context_id,
-        command_id=command_id,
-    )
+        # Wait for cancellation to complete
+        command_status = client.command_execution.cancel_and_wait(
+            cluster_id=cluster_id,
+            context_id=context_id,
+            command_id=command_id,
+        )
     
-    return CancelCommandResponse(
-        command=_convert_command_status_to_model(command_status),
-    )
+        return CancelCommandResponse(
+            command=_convert_command_status_to_model(command_status),
+        )
+
     except Exception as e:
         return CancelCommandResponse(
             command=None,

@@ -88,7 +88,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const canFetchTools = Boolean(agentType && modelType && organizationId && teamId);
 
-  const backendUrl = useMemo(() => import.meta.env.VITE_BACKEND_URL || 'http://localhost:8001', []);
+  const backendUrl = useMemo(() => process.env.CEB_BACKEND_URL || 'http://localhost:8001', []);
 
   const fetchTools = useCallback(async () => {
     if (!agentType || !modelType || !organizationId || !teamId) {

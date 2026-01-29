@@ -82,21 +82,23 @@ def list_vector_search_indexes(
         ListIndexesResponse with indexes
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    indexes = []
-    next_token = None
+        indexes = []
+        next_token = None
     
-    for index in client.vector_search_indexes.list_indexes(
-        endpoint_name=endpoint_name,
-        page_token=page_token,
-    ):
-        indexes.append(_convert_to_mini_vector_index(index))
+        for index in client.vector_search_indexes.list_indexes(
+            endpoint_name=endpoint_name,
+            page_token=page_token,
+        ):
+            indexes.append(_convert_to_mini_vector_index(index))
     
-    return ListIndexesResponse(
-        indexes=indexes,
-        next_page_token=next_token,
-    )
+        return ListIndexesResponse(
+            indexes=indexes,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return ListIndexesResponse(
             indexes=[],
@@ -126,14 +128,16 @@ def get_vector_search_index(
         VectorIndexModel with index details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    index = client.vector_search_indexes.get_index(
-        index_name=index_name,
-        ensure_reranker_compatible=ensure_reranker_compatible,
-    )
+        index = client.vector_search_indexes.get_index(
+            index_name=index_name,
+            ensure_reranker_compatible=ensure_reranker_compatible,
+        )
     
-    return _convert_to_vector_index(index)
+        return _convert_to_vector_index(index)
+
     except Exception as e:
         print(f"Error getting vector search index: {e}")
         return None
@@ -170,42 +174,44 @@ def create_vector_search_index(
         CreateIndexResponse with created index
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.vectorsearch import (
-        VectorIndexType,
-        DeltaSyncVectorIndexSpecRequest,
-        DirectAccessVectorIndexSpec,
-    )
+        from databricks.sdk.service.vectorsearch import (
+            VectorIndexType,
+            DeltaSyncVectorIndexSpecRequest,
+            DirectAccessVectorIndexSpec,
+        )
     
-    # Convert string to enum
-    index_type_enum = VectorIndexType[index_type.upper()]
+        # Convert string to enum
+        index_type_enum = VectorIndexType[index_type.upper()]
     
-    # Build spec objects based on index type
-    delta_spec_obj = None
-    direct_spec_obj = None
+        # Build spec objects based on index type
+        delta_spec_obj = None
+        direct_spec_obj = None
     
-    if index_type_enum == VectorIndexType.DELTA_SYNC and delta_sync_spec:
-        # Create DeltaSyncVectorIndexSpecRequest from dict
-        delta_spec_obj = DeltaSyncVectorIndexSpecRequest.from_dict(delta_sync_spec)
+        if index_type_enum == VectorIndexType.DELTA_SYNC and delta_sync_spec:
+            # Create DeltaSyncVectorIndexSpecRequest from dict
+            delta_spec_obj = DeltaSyncVectorIndexSpecRequest.from_dict(delta_sync_spec)
     
-    if index_type_enum == VectorIndexType.DIRECT_ACCESS and direct_access_spec:
-        # Create DirectAccessVectorIndexSpec from dict
-        direct_spec_obj = DirectAccessVectorIndexSpec.from_dict(direct_access_spec)
+        if index_type_enum == VectorIndexType.DIRECT_ACCESS and direct_access_spec:
+            # Create DirectAccessVectorIndexSpec from dict
+            direct_spec_obj = DirectAccessVectorIndexSpec.from_dict(direct_access_spec)
     
-    # Create the index
-    index = client.vector_search_indexes.create_index(
-        name=name,
-        endpoint_name=endpoint_name,
-        primary_key=primary_key,
-        index_type=index_type_enum,
-        delta_sync_index_spec=delta_spec_obj,
-        direct_access_index_spec=direct_spec_obj,
-    )
+        # Create the index
+        index = client.vector_search_indexes.create_index(
+            name=name,
+            endpoint_name=endpoint_name,
+            primary_key=primary_key,
+            index_type=index_type_enum,
+            delta_sync_index_spec=delta_spec_obj,
+            direct_access_index_spec=direct_spec_obj,
+        )
     
-    return CreateIndexResponse(
-        index=_convert_to_vector_index(index),
-    )
+        return CreateIndexResponse(
+            index=_convert_to_vector_index(index),
+        )
+
     except Exception as e:
         return CreateIndexResponse(
             index=None,
@@ -239,13 +245,15 @@ def delete_vector_search_index(
         - Index deletion may take several minutes
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.vector_search_indexes.delete_index(index_name=index_name)
+        client.vector_search_indexes.delete_index(index_name=index_name)
     
-    return DeleteIndexResponse(
-        index_name=index_name,
-    )
+        return DeleteIndexResponse(
+            index_name=index_name,
+        )
+
     except Exception as e:
         return DeleteIndexResponse(
             index_name=index_name,
@@ -291,42 +299,44 @@ def query_vector_search_index(
         QueryVectorIndexResponse with search results
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    result = client.vector_search_indexes.query_index(
-        index_name=index_name,
-        columns=columns,
-        query_text=query_text,
-        query_vector=query_vector,
-        num_results=num_results,
-        query_type=query_type,
-        filters_json=filters_json,
-        score_threshold=score_threshold,
-    )
+        result = client.vector_search_indexes.query_index(
+            index_name=index_name,
+            columns=columns,
+            query_text=query_text,
+            query_vector=query_vector,
+            num_results=num_results,
+            query_type=query_type,
+            filters_json=filters_json,
+            score_threshold=score_threshold,
+        )
     
-    # Convert results to Pydantic models
-    query_results = []
-    if hasattr(result, 'result') and result.result:
-        if hasattr(result.result, 'data_array') and result.result.data_array:
-            for row in result.result.data_array:
-                # Each row is a list of values corresponding to columns
-                row_dict = {}
-                if hasattr(result.result, 'row_count') and result.result.row_count > 0:
-                    # Try to map columns to values
-                    row_dict = {"data": row}
+        # Convert results to Pydantic models
+        query_results = []
+        if hasattr(result, 'result') and result.result:
+            if hasattr(result.result, 'data_array') and result.result.data_array:
+                for row in result.result.data_array:
+                    # Each row is a list of values corresponding to columns
+                    row_dict = {}
+                    if hasattr(result.result, 'row_count') and result.result.row_count > 0:
+                        # Try to map columns to values
+                        row_dict = {"data": row}
                 
-                query_results.append(QueryResultRow(
-                    score=row[0] if isinstance(row, list) and len(row) > 0 and isinstance(row[0], (int, float)) else None,
-                    metadata=row_dict if row_dict else {"data": row},
-                ))
+                    query_results.append(QueryResultRow(
+                        score=row[0] if isinstance(row, list) and len(row) > 0 and isinstance(row[0], (int, float)) else None,
+                        metadata=row_dict if row_dict else {"data": row},
+                    ))
     
-    next_token = result.next_page_token if hasattr(result, 'next_page_token') else None
+        next_token = result.next_page_token if hasattr(result, 'next_page_token') else None
     
-    return QueryVectorIndexResponse(
-        index_name=index_name,
-        results=query_results,
-        next_page_token=next_token,
-    )
+        return QueryVectorIndexResponse(
+            index_name=index_name,
+            results=query_results,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return QueryVectorIndexResponse(
             index_name=index_name,
@@ -360,35 +370,37 @@ def query_vector_search_next_page(
         QueryVectorIndexResponse with next page of results
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    result = client.vector_search_indexes.query_next_page(
-        index_name=index_name,
-        page_token=page_token,
-        endpoint_name=endpoint_name,
-    )
+        result = client.vector_search_indexes.query_next_page(
+            index_name=index_name,
+            page_token=page_token,
+            endpoint_name=endpoint_name,
+        )
     
-    # Convert results (same as query_index)
-    query_results = []
-    if hasattr(result, 'result') and result.result:
-        if hasattr(result.result, 'data_array') and result.result.data_array:
-            for row in result.result.data_array:
-                row_dict = {}
-                if hasattr(result.result, 'row_count') and result.result.row_count > 0:
-                    row_dict = {"data": row}
+        # Convert results (same as query_index)
+        query_results = []
+        if hasattr(result, 'result') and result.result:
+            if hasattr(result.result, 'data_array') and result.result.data_array:
+                for row in result.result.data_array:
+                    row_dict = {}
+                    if hasattr(result.result, 'row_count') and result.result.row_count > 0:
+                        row_dict = {"data": row}
                 
-                query_results.append(QueryResultRow(
-                    score=row[0] if isinstance(row, list) and len(row) > 0 and isinstance(row[0], (int, float)) else None,
-                    metadata=row_dict if row_dict else {"data": row},
-                ))
+                    query_results.append(QueryResultRow(
+                        score=row[0] if isinstance(row, list) and len(row) > 0 and isinstance(row[0], (int, float)) else None,
+                        metadata=row_dict if row_dict else {"data": row},
+                    ))
     
-    next_token = result.next_page_token if hasattr(result, 'next_page_token') else None
+        next_token = result.next_page_token if hasattr(result, 'next_page_token') else None
     
-    return QueryVectorIndexResponse(
-        index_name=index_name,
-        results=query_results,
-        next_page_token=next_token,
-    )
+        return QueryVectorIndexResponse(
+            index_name=index_name,
+            results=query_results,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return QueryVectorIndexResponse(
             index_name=index_name,
@@ -422,29 +434,31 @@ def scan_vector_search_index(
         ScanVectorIndexResponse with scan results
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    result = client.vector_search_indexes.scan_index(
-        index_name=index_name,
-        num_results=num_results,
-        last_primary_key=last_primary_key,
-    )
+        result = client.vector_search_indexes.scan_index(
+            index_name=index_name,
+            num_results=num_results,
+            last_primary_key=last_primary_key,
+        )
     
-    # Convert results
-    scan_results = []
-    if hasattr(result, 'data_array') and result.data_array:
-        for row in result.data_array:
-            scan_results.append(ScanResultRow(
-                metadata={"data": row},
-            ))
+        # Convert results
+        scan_results = []
+        if hasattr(result, 'data_array') and result.data_array:
+            for row in result.data_array:
+                scan_results.append(ScanResultRow(
+                    metadata={"data": row},
+                ))
     
-    last_key = result.last_primary_key if hasattr(result, 'last_primary_key') else None
+        last_key = result.last_primary_key if hasattr(result, 'last_primary_key') else None
     
-    return ScanVectorIndexResponse(
-        index_name=index_name,
-        results=scan_results,
-        last_primary_key=last_key,
-    )
+        return ScanVectorIndexResponse(
+            index_name=index_name,
+            results=scan_results,
+            last_primary_key=last_key,
+        )
+
     except Exception as e:
         return ScanVectorIndexResponse(
             index_name=index_name,
@@ -488,19 +502,21 @@ def upsert_vector_search_data(
         - Existing records with same primary key are updated
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    result = client.vector_search_indexes.upsert_data_vector_index(
-        index_name=index_name,
-        inputs_json=inputs_json,
-    )
+        result = client.vector_search_indexes.upsert_data_vector_index(
+            index_name=index_name,
+            inputs_json=inputs_json,
+        )
     
-    upserted = result.upserted_count if hasattr(result, 'upserted_count') else None
+        upserted = result.upserted_count if hasattr(result, 'upserted_count') else None
     
-    return UpsertDataResponse(
-        index_name=index_name,
-        upserted_count=upserted,
-    )
+        return UpsertDataResponse(
+            index_name=index_name,
+            upserted_count=upserted,
+        )
+
     except Exception as e:
         return UpsertDataResponse(
             index_name=index_name,
@@ -538,19 +554,21 @@ def delete_vector_search_data(
         - Deletion is permanent and cannot be undone
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    result = client.vector_search_indexes.delete_data_vector_index(
-        index_name=index_name,
-        primary_keys=primary_keys,
-    )
+        result = client.vector_search_indexes.delete_data_vector_index(
+            index_name=index_name,
+            primary_keys=primary_keys,
+        )
     
-    deleted = result.deleted_count if hasattr(result, 'deleted_count') else None
+        deleted = result.deleted_count if hasattr(result, 'deleted_count') else None
     
-    return DeleteDataResponse(
-        index_name=index_name,
-        deleted_count=deleted,
-    )
+        return DeleteDataResponse(
+            index_name=index_name,
+            deleted_count=deleted,
+        )
+
     except Exception as e:
         return DeleteDataResponse(
             index_name=index_name,
@@ -591,13 +609,15 @@ def sync_vector_search_index(
         - Sync process may take several minutes depending on data size
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.vector_search_indexes.sync_index(index_name=index_name)
+        client.vector_search_indexes.sync_index(index_name=index_name)
     
-    return SyncIndexResponse(
-        index_name=index_name,
-    )
+        return SyncIndexResponse(
+            index_name=index_name,
+        )
+
     except Exception as e:
         return SyncIndexResponse(
             index_name=index_name,

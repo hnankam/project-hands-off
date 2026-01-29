@@ -117,21 +117,23 @@ def list_postgres_projects(
         ListPostgresProjectsResponse with list of projects
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    projects_list = []
+        projects_list = []
     
-    for project in client.postgres.list_projects(
-        page_size=page_size,
-        page_token=page_token,
-    ):
-        projects_list.append(_convert_project_to_model(project))
+        for project in client.postgres.list_projects(
+            page_size=page_size,
+            page_token=page_token,
+        ):
+            projects_list.append(_convert_project_to_model(project))
     
-    return ListPostgresProjectsResponse(
-        projects=projects_list,
-        count=len(projects_list),
-        next_page_token=None,
-    )
+        return ListPostgresProjectsResponse(
+            projects=projects_list,
+            count=len(projects_list),
+            next_page_token=None,
+        )
+
     except Exception as e:
         return ListPostgresProjectsResponse(
             projects=[],
@@ -160,11 +162,13 @@ def get_postgres_project(
         PostgresProjectModel with project details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    project = client.postgres.get_project(name=name)
+        project = client.postgres.get_project(name=name)
     
-    return _convert_project_to_model(project)
+        return _convert_project_to_model(project)
+
     except Exception as e:
         return None
 
@@ -194,24 +198,26 @@ def create_postgres_project(
         CreatePostgresProjectResponse with operation info
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.postgres import Project, ProjectSettings
+        from databricks.sdk.service.postgres import Project, ProjectSettings
     
-    project_obj = Project(
-        display_name=display_name,
-        pg_version=pg_version,
-        settings=ProjectSettings(**settings) if settings else None,
-    )
+        project_obj = Project(
+            display_name=display_name,
+            pg_version=pg_version,
+            settings=ProjectSettings(**settings) if settings else None,
+        )
     
-    operation = client.postgres.create_project(
-        project=project_obj,
-        project_id=project_id,
-    )
+        operation = client.postgres.create_project(
+            project=project_obj,
+            project_id=project_id,
+        )
     
-    return CreatePostgresProjectResponse(
-        operation=_convert_operation_to_model(operation),
-    )
+        return CreatePostgresProjectResponse(
+            operation=_convert_operation_to_model(operation),
+        )
+
     except Exception as e:
         return CreatePostgresProjectResponse(
             operation=None,
@@ -246,26 +252,28 @@ def update_postgres_project(
         UpdatePostgresResponse with operation info
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.postgres import Project, ProjectSettings, FieldMask
+        from databricks.sdk.service.postgres import Project, ProjectSettings, FieldMask
     
-    project_obj = Project(
-        name=name,
-        display_name=display_name,
-        pg_version=pg_version,
-        settings=ProjectSettings(**settings) if settings else None,
-    )
+        project_obj = Project(
+            name=name,
+            display_name=display_name,
+            pg_version=pg_version,
+            settings=ProjectSettings(**settings) if settings else None,
+        )
     
-    operation = client.postgres.update_project(
-        name=name,
-        project=project_obj,
-        update_mask=FieldMask(update_mask),
-    )
+        operation = client.postgres.update_project(
+            name=name,
+            project=project_obj,
+            update_mask=FieldMask(update_mask),
+        )
     
-    return UpdatePostgresResponse(
-        operation=_convert_operation_to_model(operation),
-    )
+        return UpdatePostgresResponse(
+            operation=_convert_operation_to_model(operation),
+        )
+
     except Exception as e:
         return UpdatePostgresResponse(
             operation=None,
@@ -292,11 +300,13 @@ def delete_postgres_project(
         DeletePostgresResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.postgres.delete_project(name=name)
+        client.postgres.delete_project(name=name)
     
-    return DeletePostgresResponse(name=name)
+        return DeletePostgresResponse(name=name)
+
     except Exception as e:
         return DeletePostgresResponse(
             name=name,
@@ -331,22 +341,24 @@ def list_postgres_branches(
         ListPostgresBranchesResponse with list of branches
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    branches_list = []
+        branches_list = []
     
-    for branch in client.postgres.list_branches(
-        parent=parent,
-        page_size=page_size,
-        page_token=page_token,
-    ):
-        branches_list.append(_convert_branch_to_model(branch))
+        for branch in client.postgres.list_branches(
+            parent=parent,
+            page_size=page_size,
+            page_token=page_token,
+        ):
+            branches_list.append(_convert_branch_to_model(branch))
     
-    return ListPostgresBranchesResponse(
-        branches=branches_list,
-        count=len(branches_list),
-        next_page_token=None,
-    )
+        return ListPostgresBranchesResponse(
+            branches=branches_list,
+            count=len(branches_list),
+            next_page_token=None,
+        )
+
     except Exception as e:
         return ListPostgresBranchesResponse(
             branches=[],
@@ -375,11 +387,13 @@ def get_postgres_branch(
         PostgresBranchModel with branch details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    branch = client.postgres.get_branch(name=name)
+        branch = client.postgres.get_branch(name=name)
     
-    return _convert_branch_to_model(branch)
+        return _convert_branch_to_model(branch)
+
     except Exception as e:
         return None
 
@@ -409,25 +423,27 @@ def create_postgres_branch(
         CreatePostgresBranchResponse with operation info
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.postgres import Branch
+        from databricks.sdk.service.postgres import Branch
     
-    branch_obj = Branch(
-        parent=parent,
-        is_protected=is_protected,
-        source_branch=source_branch,
-    )
+        branch_obj = Branch(
+            parent=parent,
+            is_protected=is_protected,
+            source_branch=source_branch,
+        )
     
-    operation = client.postgres.create_branch(
-        parent=parent,
-        branch=branch_obj,
-        branch_id=branch_id,
-    )
+        operation = client.postgres.create_branch(
+            parent=parent,
+            branch=branch_obj,
+            branch_id=branch_id,
+        )
     
-    return CreatePostgresBranchResponse(
-        operation=_convert_operation_to_model(operation),
-    )
+        return CreatePostgresBranchResponse(
+            operation=_convert_operation_to_model(operation),
+        )
+
     except Exception as e:
         return CreatePostgresBranchResponse(
             operation=None,
@@ -458,24 +474,26 @@ def update_postgres_branch(
         UpdatePostgresResponse with operation info
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.postgres import Branch, FieldMask
+        from databricks.sdk.service.postgres import Branch, FieldMask
     
-    branch_obj = Branch(
-        name=name,
-        is_protected=is_protected,
-    )
+        branch_obj = Branch(
+            name=name,
+            is_protected=is_protected,
+        )
     
-    operation = client.postgres.update_branch(
-        name=name,
-        branch=branch_obj,
-        update_mask=FieldMask(update_mask),
-    )
+        operation = client.postgres.update_branch(
+            name=name,
+            branch=branch_obj,
+            update_mask=FieldMask(update_mask),
+        )
     
-    return UpdatePostgresResponse(
-        operation=_convert_operation_to_model(operation),
-    )
+        return UpdatePostgresResponse(
+            operation=_convert_operation_to_model(operation),
+        )
+
     except Exception as e:
         return UpdatePostgresResponse(
             operation=None,
@@ -502,11 +520,13 @@ def delete_postgres_branch(
         DeletePostgresResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.postgres.delete_branch(name=name)
+        client.postgres.delete_branch(name=name)
     
-    return DeletePostgresResponse(name=name)
+        return DeletePostgresResponse(name=name)
+
     except Exception as e:
         return DeletePostgresResponse(
             name=name,
@@ -541,22 +561,24 @@ def list_postgres_endpoints(
         ListPostgresEndpointsResponse with list of endpoints
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    endpoints_list = []
+        endpoints_list = []
     
-    for endpoint in client.postgres.list_endpoints(
-        parent=parent,
-        page_size=page_size,
-        page_token=page_token,
-    ):
-        endpoints_list.append(_convert_endpoint_to_model(endpoint))
+        for endpoint in client.postgres.list_endpoints(
+            parent=parent,
+            page_size=page_size,
+            page_token=page_token,
+        ):
+            endpoints_list.append(_convert_endpoint_to_model(endpoint))
     
-    return ListPostgresEndpointsResponse(
-        endpoints=endpoints_list,
-        count=len(endpoints_list),
-        next_page_token=None,
-    )
+        return ListPostgresEndpointsResponse(
+            endpoints=endpoints_list,
+            count=len(endpoints_list),
+            next_page_token=None,
+        )
+
     except Exception as e:
         return ListPostgresEndpointsResponse(
             endpoints=[],
@@ -585,11 +607,13 @@ def get_postgres_endpoint(
         PostgresEndpointModel with endpoint details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    endpoint = client.postgres.get_endpoint(name=name)
+        endpoint = client.postgres.get_endpoint(name=name)
     
-    return _convert_endpoint_to_model(endpoint)
+        return _convert_endpoint_to_model(endpoint)
+
     except Exception as e:
         return None
 
@@ -625,28 +649,30 @@ def create_postgres_endpoint(
         CreatePostgresEndpointResponse with operation info
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.postgres import Endpoint, EndpointType, EndpointPoolerMode
+        from databricks.sdk.service.postgres import Endpoint, EndpointType, EndpointPoolerMode
     
-    endpoint_obj = Endpoint(
-        parent=parent,
-        endpoint_type=EndpointType(endpoint_type),
-        autoscaling_limit_min_cu=autoscaling_limit_min_cu,
-        autoscaling_limit_max_cu=autoscaling_limit_max_cu,
-        pooler_mode=EndpointPoolerMode(pooler_mode) if pooler_mode else None,
-        disabled=disabled,
-    )
+        endpoint_obj = Endpoint(
+            parent=parent,
+            endpoint_type=EndpointType(endpoint_type),
+            autoscaling_limit_min_cu=autoscaling_limit_min_cu,
+            autoscaling_limit_max_cu=autoscaling_limit_max_cu,
+            pooler_mode=EndpointPoolerMode(pooler_mode) if pooler_mode else None,
+            disabled=disabled,
+        )
     
-    operation = client.postgres.create_endpoint(
-        parent=parent,
-        endpoint=endpoint_obj,
-        endpoint_id=endpoint_id,
-    )
+        operation = client.postgres.create_endpoint(
+            parent=parent,
+            endpoint=endpoint_obj,
+            endpoint_id=endpoint_id,
+        )
     
-    return CreatePostgresEndpointResponse(
-        operation=_convert_operation_to_model(operation),
-    )
+        return CreatePostgresEndpointResponse(
+            operation=_convert_operation_to_model(operation),
+        )
+
     except Exception as e:
         return CreatePostgresEndpointResponse(
             operation=None,
@@ -683,28 +709,30 @@ def update_postgres_endpoint(
         UpdatePostgresResponse with operation info
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.postgres import Endpoint, EndpointPoolerMode, FieldMask
+        from databricks.sdk.service.postgres import Endpoint, EndpointPoolerMode, FieldMask
     
-    endpoint_obj = Endpoint(
-        name=name,
-        endpoint_type=None,  # Required field but not used in update
-        autoscaling_limit_min_cu=autoscaling_limit_min_cu,
-        autoscaling_limit_max_cu=autoscaling_limit_max_cu,
-        pooler_mode=EndpointPoolerMode(pooler_mode) if pooler_mode else None,
-        disabled=disabled,
-    )
+        endpoint_obj = Endpoint(
+            name=name,
+            endpoint_type=None,  # Required field but not used in update
+            autoscaling_limit_min_cu=autoscaling_limit_min_cu,
+            autoscaling_limit_max_cu=autoscaling_limit_max_cu,
+            pooler_mode=EndpointPoolerMode(pooler_mode) if pooler_mode else None,
+            disabled=disabled,
+        )
     
-    operation = client.postgres.update_endpoint(
-        name=name,
-        endpoint=endpoint_obj,
-        update_mask=FieldMask(update_mask),
-    )
+        operation = client.postgres.update_endpoint(
+            name=name,
+            endpoint=endpoint_obj,
+            update_mask=FieldMask(update_mask),
+        )
     
-    return UpdatePostgresResponse(
-        operation=_convert_operation_to_model(operation),
-    )
+        return UpdatePostgresResponse(
+            operation=_convert_operation_to_model(operation),
+        )
+
     except Exception as e:
         return UpdatePostgresResponse(
             operation=None,
@@ -731,11 +759,13 @@ def delete_postgres_endpoint(
         DeletePostgresResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.postgres.delete_endpoint(name=name)
+        client.postgres.delete_endpoint(name=name)
     
-    return DeletePostgresResponse(name=name)
+        return DeletePostgresResponse(name=name)
+
     except Exception as e:
         return DeletePostgresResponse(
             name=name,
@@ -766,11 +796,13 @@ def get_postgres_operation(
         PostgresOperationModel with operation status
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    operation = client.postgres.get_operation(name=name)
+        operation = client.postgres.get_operation(name=name)
     
-    return _convert_operation_to_model(operation)
+        return _convert_operation_to_model(operation)
+
     except Exception as e:
         return None
 

@@ -38,7 +38,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
   const loadNotes = useCallback(async () => {
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/notes`, {
         credentials: 'include',
       });
@@ -67,7 +67,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
   const handleEdit = async (note: WorkspaceNote) => {
     // Fetch full note content
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/notes/${note.id}`, {
         credentials: 'include',
       });
@@ -93,7 +93,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     setSaving(true);
 
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const url = editingNote ? `${baseURL}/api/workspace/notes/${editingNote.id}` : `${baseURL}/api/workspace/notes`;
 
       const response = await fetch(url, {
@@ -139,7 +139,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
     setDeleting(true);
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/notes/${noteToDelete.id}`, {
         method: 'DELETE',
         credentials: 'include',
@@ -208,7 +208,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
     setDeleting(true);
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/notes/bulk`, {
         method: 'DELETE',
         credentials: 'include',
@@ -265,7 +265,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
   const fetchNoteContent = async (noteId: string) => {
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/notes/${noteId}`, {
         credentials: 'include',
       });

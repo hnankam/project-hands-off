@@ -7,10 +7,26 @@ The cache keys are based on credential keys, not the resolved values.
 import sys
 from pathlib import Path
 
+# Fix namespace conflict: Import PyGithub before local modules
+# Remove this directory from sys.path temporarily to import the real github module
+import os
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir in sys.path:
+    sys.path.remove(_current_dir)
+
+# Now import from PyGithub (the installed package)
 from github import Github
+
+# Restore path if needed
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
+
 from cachetools import TTLCache
 from threading import Lock
 import logging
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 # Add parent directory to path to import shared module
 parent_path = Path(__file__).parent.parent
@@ -18,12 +34,6 @@ if str(parent_path) not in sys.path:
     sys.path.insert(0, str(parent_path))
 
 from shared.credential_resolver import resolve_credential  # type: ignore
-
-logger = logging.getLogger(__name__)
-
-# Cache configuration
-# - maxsize: Maximum number of cached clients
-# - ttl: Time-to-live in seconds (1 hour)
 github_client_cache = TTLCache(maxsize=1000, ttl=3600)
 cache_lock = Lock()
 

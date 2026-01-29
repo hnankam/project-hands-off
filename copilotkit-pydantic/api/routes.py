@@ -347,7 +347,7 @@ def register_agent_routes(app: FastAPI) -> None:
                     deps = UnifiedDeps(
                         state=AgentState(),
                         send_stream=send_stream,
-                        adapter=adapter,
+                        adapter=adapter,  # Provides access to agent (model_settings, toolsets via adapter.agent)
                         organization_id=organization_id,
                         team_id=team_id,
                         agent_type=agent_type,
@@ -472,6 +472,11 @@ def register_info_routes(app: FastAPI) -> None:
     @app.get("/healthz")
     async def healthz():
         return {"status": "ok"}
+    
+    @app.get("/health")
+    async def health():
+        """Alias for /healthz endpoint"""
+        return {"status": "ok"}
 
     @app.get("/readyz")
     async def readyz():
@@ -485,9 +490,26 @@ def register_info_routes(app: FastAPI) -> None:
                     db_ok = True
         except Exception as e:
             logger.warning(f"Readiness DB check failed: {e}")
+        
+        # Check Redis if enabled
+        redis_ok = True
+        from database.redis_connection import is_redis_available
+        if is_redis_available():
+            try:
+                from database.redis_connection import test_redis_connection
+                redis_ok = await test_redis_connection()
+            except Exception as e:
+                logger.warning(f"Readiness Redis check failed: {e}")
+                redis_ok = False
+        
         caches_ok = bool(_context_cache)
-        status = "ok" if db_ok and caches_ok else "degraded"
-        return {"status": status, "db": db_ok, "caches": caches_ok}
+        status = "ok" if db_ok and caches_ok and redis_ok else "degraded"
+        return {
+            "status": status,
+            "db": db_ok,
+            "redis": redis_ok if is_redis_available() else None,
+            "caches": caches_ok
+        }
 
     @app.post("/sessions/{session_id}/cleanup")
     async def cleanup_session_endpoint(session_id: str):

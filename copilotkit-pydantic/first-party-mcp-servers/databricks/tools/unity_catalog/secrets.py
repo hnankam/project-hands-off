@@ -54,37 +54,39 @@ def list_secret_scopes(
         - has_more=True indicates more results available
     """
     try:
-    from itertools import islice
+
+        from itertools import islice
     
-    client = get_workspace_client(host_credential_key, token_credential_key)
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    response = client.secrets.list_scopes()
+        response = client.secrets.list_scopes()
     
-    skip = page * limit
-    scopes_iterator = islice(response, skip, skip + limit)
+        skip = page * limit
+        scopes_iterator = islice(response, skip, skip + limit)
     
-    scopes = []
-    for scope in scopes_iterator:
-        scope_dict = scope.as_dict()
-        scopes.append(SecretScopeInfo(
-            name=scope_dict.get('name'),
-            backend_type=scope_dict.get('backend_type'),
-            keyvault_metadata=scope_dict.get('keyvault_metadata')
-        ))
+        scopes = []
+        for scope in scopes_iterator:
+            scope_dict = scope.as_dict()
+            scopes.append(SecretScopeInfo(
+                name=scope_dict.get('name'),
+                backend_type=scope_dict.get('backend_type'),
+                keyvault_metadata=scope_dict.get('keyvault_metadata')
+            ))
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
+        # Check for more results
         has_more = False
-    
-    return ListSecretScopesResponse(
-        scopes=scopes,
-        count=len(scopes),
-        has_more=has_more,
-    )
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListSecretScopesResponse(
+            scopes=scopes,
+            count=len(scopes),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListSecretScopesResponse(
             scopes=[],
@@ -118,19 +120,21 @@ def create_secret_scope(
         CreateSecretScopeResponse confirming creation
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.secrets.create_scope(
-        scope=scope,
-        scope_backend_type=ScopeBackendType(backend_type) if backend_type else None,
-        initial_manage_principal=initial_manage_principal
-    )
+        client.secrets.create_scope(
+            scope=scope,
+            scope_backend_type=ScopeBackendType(backend_type) if backend_type else None,
+            initial_manage_principal=initial_manage_principal
+        )
     
-    return CreateSecretScopeResponse(
-        scope=scope,
-        backend_type=backend_type,
-        message=f"Secret scope '{scope}' created successfully"
-    )
+        return CreateSecretScopeResponse(
+            scope=scope,
+            backend_type=backend_type,
+            message=f"Secret scope '{scope}' created successfully"
+        )
+
     except Exception as e:
         return CreateSecretScopeResponse(
             scope=scope,
@@ -159,13 +163,15 @@ def delete_secret_scope(
         DeleteSecretScopeResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
-    client.secrets.delete_scope(scope=scope)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
+        client.secrets.delete_scope(scope=scope)
     
-    return DeleteSecretScopeResponse(
-        scope=scope,
-        message=f"Secret scope '{scope}' deleted successfully"
-    )
+        return DeleteSecretScopeResponse(
+            scope=scope,
+            message=f"Secret scope '{scope}' deleted successfully"
+        )
+
     except Exception as e:
         return DeleteSecretScopeResponse(
             scope=scope,
@@ -210,37 +216,39 @@ def list_secrets(
         - Maximum 1000 secrets per scope (Databricks limit)
     """
     try:
-    from itertools import islice
+
+        from itertools import islice
     
-    client = get_workspace_client(host_credential_key, token_credential_key)
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    response = client.secrets.list_secrets(scope=scope)
+        response = client.secrets.list_secrets(scope=scope)
     
-    skip = page * limit
-    secrets_iterator = islice(response, skip, skip + limit)
+        skip = page * limit
+        secrets_iterator = islice(response, skip, skip + limit)
     
-    secrets = []
-    for secret in secrets_iterator:
-        secret_dict = secret.as_dict()
-        secrets.append(SecretMetadataInfo(
-            key=secret_dict.get('key'),
-            last_updated_timestamp=secret_dict.get('last_updated_timestamp')
-        ))
+        secrets = []
+        for secret in secrets_iterator:
+            secret_dict = secret.as_dict()
+            secrets.append(SecretMetadataInfo(
+                key=secret_dict.get('key'),
+                last_updated_timestamp=secret_dict.get('last_updated_timestamp')
+            ))
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
+        # Check for more results
         has_more = False
-    
-    return ListSecretsResponse(
-        scope=scope,
-        secrets=secrets,
-        count=len(secrets),
-        has_more=has_more,
-    )
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListSecretsResponse(
+            scope=scope,
+            secrets=secrets,
+            count=len(secrets),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListSecretsResponse(
             scope=scope,
@@ -277,33 +285,35 @@ def put_secret(
         PutSecretResponse confirming storage
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    if not string_value and not bytes_value:
-            return PutSecretResponse(
-                scope=scope,
-                key=key,
-                error_message="Either string_value or bytes_value must be provided",
-            )
-    if string_value and bytes_value:
-            return PutSecretResponse(
-                scope=scope,
-                key=key,
-                error_message="Only one of string_value or bytes_value can be provided",
-            )
+        if not string_value and not bytes_value:
+                return PutSecretResponse(
+                    scope=scope,
+                    key=key,
+                    error_message="Either string_value or bytes_value must be provided",
+                )
+        if string_value and bytes_value:
+                return PutSecretResponse(
+                    scope=scope,
+                    key=key,
+                    error_message="Only one of string_value or bytes_value can be provided",
+                )
     
-    client.secrets.put_secret(
-        scope=scope,
-        key=key,
-        string_value=string_value,
-        bytes_value=bytes_value
-    )
+        client.secrets.put_secret(
+            scope=scope,
+            key=key,
+            string_value=string_value,
+            bytes_value=bytes_value
+        )
     
-    return PutSecretResponse(
-        scope=scope,
-        key=key,
-        message=f"Secret '{key}' stored successfully in scope '{scope}'"
-    )
+        return PutSecretResponse(
+            scope=scope,
+            key=key,
+            message=f"Secret '{key}' stored successfully in scope '{scope}'"
+        )
+
     except Exception as e:
         return PutSecretResponse(
             scope=scope,
@@ -333,14 +343,16 @@ def delete_secret(
         DeleteSecretResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
-    client.secrets.delete_secret(scope=scope, key=key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
+        client.secrets.delete_secret(scope=scope, key=key)
     
-    return DeleteSecretResponse(
-        scope=scope,
-        key=key,
-        message=f"Secret '{key}' deleted from scope '{scope}'"
-    )
+        return DeleteSecretResponse(
+            scope=scope,
+            key=key,
+            message=f"Secret '{key}' deleted from scope '{scope}'"
+        )
+
     except Exception as e:
         return DeleteSecretResponse(
             scope=scope,
@@ -384,37 +396,39 @@ def list_secret_acls(
         - has_more=True indicates more results available
     """
     try:
-    from itertools import islice
+
+        from itertools import islice
     
-    client = get_workspace_client(host_credential_key, token_credential_key)
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    response = client.secrets.list_acls(scope=scope)
+        response = client.secrets.list_acls(scope=scope)
     
-    skip = page * limit
-    acls_iterator = islice(response, skip, skip + limit)
+        skip = page * limit
+        acls_iterator = islice(response, skip, skip + limit)
     
-    acls = []
-    for acl in acls_iterator:
-        acl_dict = acl.as_dict()
-        acls.append(AclInfo(
-            principal=acl_dict.get('principal'),
-            permission=acl_dict.get('permission')
-        ))
+        acls = []
+        for acl in acls_iterator:
+            acl_dict = acl.as_dict()
+            acls.append(AclInfo(
+                principal=acl_dict.get('principal'),
+                permission=acl_dict.get('permission')
+            ))
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
+        # Check for more results
         has_more = False
-    
-    return ListAclsResponse(
-        scope=scope,
-        acls=acls,
-        count=len(acls),
-        has_more=has_more,
-    )
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListAclsResponse(
+            scope=scope,
+            acls=acls,
+            count=len(acls),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListAclsResponse(
             scope=scope,
@@ -444,14 +458,16 @@ def get_secret_acl(
         AclInfo with permission details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
-    acl = client.secrets.get_acl(scope=scope, principal=principal)
-    acl_dict = acl.as_dict()
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
+        acl = client.secrets.get_acl(scope=scope, principal=principal)
+        acl_dict = acl.as_dict()
     
-    return AclInfo(
-        principal=acl_dict.get('principal'),
-        permission=acl_dict.get('permission')
-    )
+        return AclInfo(
+            principal=acl_dict.get('principal'),
+            permission=acl_dict.get('permission')
+        )
+
     except Exception as e:
         print(f"Error getting secret ACL: {e}")
         return None
@@ -483,20 +499,22 @@ def put_secret_acl(
         PutAclResponse confirming update
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.secrets.put_acl(
-        scope=scope,
-        principal=principal,
-        permission=AclPermission(permission)
-    )
+        client.secrets.put_acl(
+            scope=scope,
+            principal=principal,
+            permission=AclPermission(permission)
+        )
     
-    return PutAclResponse(
-        scope=scope,
-        principal=principal,
-        permission=permission,
-        message=f"ACL updated: '{principal}' has '{permission}' permission on scope '{scope}'"
-    )
+        return PutAclResponse(
+            scope=scope,
+            principal=principal,
+            permission=permission,
+            message=f"ACL updated: '{principal}' has '{permission}' permission on scope '{scope}'"
+        )
+
     except Exception as e:
         return PutAclResponse(
             scope=scope,
@@ -527,14 +545,16 @@ def delete_secret_acl(
         DeleteAclResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
-    client.secrets.delete_acl(scope=scope, principal=principal)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
+        client.secrets.delete_acl(scope=scope, principal=principal)
     
-    return DeleteAclResponse(
-        scope=scope,
-        principal=principal,
-        message=f"ACL deleted: '{principal}' no longer has access to scope '{scope}'"
-    )
+        return DeleteAclResponse(
+            scope=scope,
+            principal=principal,
+            message=f"ACL deleted: '{principal}' no longer has access to scope '{scope}'"
+        )
+
     except Exception as e:
         return DeleteAclResponse(
             scope=scope,

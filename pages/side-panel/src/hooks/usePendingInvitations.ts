@@ -139,7 +139,7 @@ export function usePendingInvitations(): UsePendingInvitationsReturn {
     setError(null);
 
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const url = `${baseURL}/api/invitations/user/${encodeURIComponent(email)}`;
       
       debug.log('[usePendingInvitations] Checking invitations for:', email);

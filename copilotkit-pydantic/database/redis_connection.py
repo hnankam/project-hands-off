@@ -157,6 +157,28 @@ def is_redis_available() -> bool:
     return _redis_client is not None and not _redis_connection_error
 
 
+async def test_redis_connection() -> bool:
+    """Test Redis connection for health checks.
+    
+    Returns:
+        True if Redis is available and responding, False otherwise
+    """
+    if not is_redis_available():
+        return False
+    
+    try:
+        client = get_redis_client()
+        if client is None:
+            return False
+        
+        # Simple PING test
+        result = await client.ping()
+        return result is True
+    except Exception as e:
+        logger.debug(f"Redis health check failed: {e}")
+        return False
+
+
 async def redis_get(key: str, default: Any = None) -> Any:
     """Get a value from Redis with automatic deserialization.
     

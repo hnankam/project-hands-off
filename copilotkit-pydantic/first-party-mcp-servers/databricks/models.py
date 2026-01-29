@@ -7,8 +7,8 @@ These models wrap Databricks SDK dataclass types to provide:
 - Clear API documentation
 """
 
-from typing import Any, Optional, List, Dict
-from pydantic import BaseModel, Field
+from typing import Any, Optional, List, Dict, Union
+from pydantic import BaseModel, Field, ConfigDict, model_serializer
 
 
 # ============================================================================
@@ -881,6 +881,20 @@ class ColumnInfoModel(BaseModel):
     mask: Optional[Dict[str, Any]] = Field(None, description="Column mask configuration")
 
 
+class TableInfoCompactModel(BaseModel):
+    """Compact information about a Unity Catalog table with only essential fields."""
+    name: Optional[str] = Field(None, description="Name of table, relative to parent schema")
+    full_name: Optional[str] = Field(None, description="Full name of table (catalog.schema.table)")
+    catalog_name: Optional[str] = Field(None, description="Name of parent catalog")
+    schema_name: Optional[str] = Field(None, description="Name of parent schema relative to catalog")
+    table_type: Optional[str] = Field(None, description="Table type (MANAGED, EXTERNAL, VIEW)")
+    owner: Optional[str] = Field(None, description="Username of table owner")
+    comment: Optional[str] = Field(None, description="User-provided free-form text description")
+    created_at: Optional[int] = Field(None, description="Time of creation (epoch ms)")
+    updated_at: Optional[int] = Field(None, description="Time of last modification (epoch ms)")
+    table_id: Optional[str] = Field(None, description="Unique identifier of table")
+
+
 class TableInfoModel(BaseModel):
     """Detailed information about a Unity Catalog table."""
     name: Optional[str] = Field(None, description="Name of table, relative to parent schema")
@@ -926,7 +940,7 @@ class TableSummaryModel(BaseModel):
 
 class ListTablesResponse(BaseModel):
     """Response model for listing tables."""
-    tables: list[TableInfoModel] = Field(default_factory=list, description="List of tables")
+    tables: list[Union[TableInfoModel, TableInfoCompactModel]] = Field(default_factory=list, description="List of tables (compact or full)")
     count: Optional[int] = Field(None, description="Number of tables returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     error_message: Optional[str] = Field(None, description="Error message if operation failed")
@@ -1500,8 +1514,8 @@ class ExternalLocationInfoModel(BaseModel):
 class ListExternalLocationsResponse(BaseModel):
     """Response model for listing external locations."""
     external_locations: list[ExternalLocationInfoModel] = Field(default_factory=list, description="List of external locations")
+    count: Optional[int] = Field(None, description="Number of external locations returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
-    message: str = Field(default="External locations retrieved successfully", description="Status message")
     error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
@@ -2508,10 +2522,7 @@ class ListRefreshesResponse(BaseModel):
 
 class DatabricksResponse(BaseModel):
     """Base response model that can wrap any Databricks SDK dataclass."""
-    
-    class Config:
-        # Allow arbitrary types from Databricks SDK
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
     
     @classmethod
     def from_sdk_object(cls, sdk_obj: Any) -> dict:
@@ -2536,11 +2547,8 @@ class NotebookExportResponse(BaseModel):
     content: Optional[str] = Field(None, description="Decoded notebook content as UTF-8 string")
     path: Optional[str] = Field(None, description="Workspace path of the notebook")
     format: Optional[str] = Field(None, description="Export format (SOURCE, HTML, JUPYTER, DBC)")
-    file_type: Optional[str] = Field(None, description="File type/extension of the exported content")
-    error_message: Optional[str] = Field(None, description="Error message if operation failed")
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "content": "# Databricks notebook source\nprint('Hello World')",
                 "path": "/Users/me/notebook",
@@ -2548,6 +2556,10 @@ class NotebookExportResponse(BaseModel):
                 "file_type": "python"
             }
         }
+    )
+    
+    file_type: Optional[str] = Field(None, description="File type/extension of the exported content")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class NotebookImportResponse(BaseModel):
@@ -2560,15 +2572,8 @@ class NotebookImportResponse(BaseModel):
         status: The status of the import operation
         overwritten: Whether an existing notebook was overwritten
     """
-    path: Optional[str] = Field(None, description="Workspace path where notebook was imported")
-    language: Optional[str] = Field(None, description="Notebook language (PYTHON, SCALA, SQL, R)")
-    format: Optional[str] = Field(None, description="Import format (SOURCE, HTML, JUPYTER, DBC, AUTO)")
-    status: str = Field(default="imported", description="Status of the import operation")
-    overwritten: bool = Field(default=False, description="Whether an existing notebook was overwritten")
-    error_message: Optional[str] = Field(None, description="Error message if operation failed")
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "path": "/Users/me/imported_notebook",
                 "language": "PYTHON",
@@ -2577,6 +2582,14 @@ class NotebookImportResponse(BaseModel):
                 "overwritten": False
             }
         }
+    )
+    
+    path: Optional[str] = Field(None, description="Workspace path where notebook was imported")
+    language: Optional[str] = Field(None, description="Notebook language (PYTHON, SCALA, SQL, R)")
+    format: Optional[str] = Field(None, description="Import format (SOURCE, HTML, JUPYTER, DBC, AUTO)")
+    status: str = Field(default="imported", description="Status of the import operation")
+    overwritten: bool = Field(default=False, description="Whether an existing notebook was overwritten")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class NotebookDeleteResponse(BaseModel):
@@ -2587,19 +2600,20 @@ class NotebookDeleteResponse(BaseModel):
         status: The status of the delete operation
         recursive: Whether the delete was recursive (for directories)
     """
-    path: Optional[str] = Field(None, description="Workspace path of the deleted notebook")
-    status: str = Field(default="deleted", description="Status of the delete operation")
-    recursive: bool = Field(default=False, description="Whether delete was recursive")
-    error_message: Optional[str] = Field(None, description="Error message if operation failed")
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "path": "/Users/me/old_notebook",
                 "status": "deleted",
                 "recursive": False
             }
         }
+    )
+    
+    path: Optional[str] = Field(None, description="Workspace path of the deleted notebook")
+    status: str = Field(default="deleted", description="Status of the delete operation")
+    recursive: bool = Field(default=False, description="Whether delete was recursive")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class NotebookCreateResponse(BaseModel):
@@ -2610,19 +2624,20 @@ class NotebookCreateResponse(BaseModel):
         language: The language of the created notebook (PYTHON, SCALA, SQL, R)
         status: The status of the create operation
     """
-    path: Optional[str] = Field(None, description="Workspace path where notebook was created")
-    language: Optional[str] = Field(None, description="Notebook language (PYTHON, SCALA, SQL, R)")
-    status: str = Field(default="created", description="Status of the create operation")
-    error_message: Optional[str] = Field(None, description="Error message if operation failed")
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "path": "/Users/me/new_notebook",
                 "language": "PYTHON",
                 "status": "created"
             }
         }
+    )
+    
+    path: Optional[str] = Field(None, description="Workspace path where notebook was created")
+    language: Optional[str] = Field(None, description="Notebook language (PYTHON, SCALA, SQL, R)")
+    status: str = Field(default="created", description="Status of the create operation")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class NotebookStatusResponse(BaseModel):
@@ -2638,18 +2653,8 @@ class NotebookStatusResponse(BaseModel):
         created_at: Creation timestamp (milliseconds since epoch)
         modified_at: Last modified timestamp (milliseconds since epoch)
     """
-    path: Optional[str] = Field(None, description="Workspace path")
-    object_id: Optional[int] = Field(None, description="Unique object ID")
-    resource_id: Optional[str] = Field(None, description="Resource identifier")
-    object_type: Optional[str] = Field(None, description="Object type")
-    language: Optional[str] = Field(None, description="Programming language")
-    size: Optional[int] = Field(None, description="Size in bytes")
-    created_at: Optional[int] = Field(None, description="Creation timestamp (ms)")
-    modified_at: Optional[int] = Field(None, description="Last modified timestamp (ms)")
-    error_message: Optional[str] = Field(None, description="Error message if operation failed")
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "path": "/Users/me/analysis",
                 "object_id": 1191853414493128,
@@ -2661,6 +2666,17 @@ class NotebookStatusResponse(BaseModel):
                 "modified_at": 1640100000000
             }
         }
+    )
+    
+    path: Optional[str] = Field(None, description="Workspace path")
+    object_id: Optional[int] = Field(None, description="Unique object ID")
+    resource_id: Optional[str] = Field(None, description="Resource identifier")
+    object_type: Optional[str] = Field(None, description="Object type")
+    language: Optional[str] = Field(None, description="Programming language")
+    size: Optional[int] = Field(None, description="Size in bytes")
+    created_at: Optional[int] = Field(None, description="Creation timestamp (ms)")
+    modified_at: Optional[int] = Field(None, description="Last modified timestamp (ms)")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -2684,9 +2700,7 @@ class NotebookCellMetadata(BaseModel):
         description="Additional metadata fields"
     )
     
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class NotebookCell(BaseModel):
@@ -2712,15 +2726,8 @@ class NotebookCell(BaseModel):
     execution_count: Optional[int] = Field(None, description="Execution counter")
     language: Optional[str] = Field(None, description="Programming language for code cells")
     
-    @property
-    def source_text(self) -> str:
-        """Get cell source as a single string (for backward compatibility)."""
-        if isinstance(self.source, list):
-            return "".join(self.source)
-        return self.source
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "index": 0,
                 "cell_type": "code",
@@ -2731,6 +2738,14 @@ class NotebookCell(BaseModel):
                 "language": "python"
             }
         }
+    )
+    
+    @property
+    def source_text(self) -> str:
+        """Get cell source as a single string (for backward compatibility)."""
+        if isinstance(self.source, list):
+            return "".join(self.source)
+        return self.source
 
 
 class NotebookCellsResponse(BaseModel):
@@ -2742,14 +2757,8 @@ class NotebookCellsResponse(BaseModel):
         total_cells: Total number of cells
         notebook_metadata: Notebook-level metadata
     """
-    path: Optional[str] = Field(None, description="Workspace path of the notebook")
-    cells: list[NotebookCell] = Field(default_factory=list, description="List of notebook cells")
-    total_cells: int = Field(default=0, description="Total number of cells")
-    notebook_metadata: dict[str, Any] = Field(default_factory=dict, description="Notebook metadata")
-    error_message: Optional[str] = Field(None, description="Error message if operation failed")
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "path": "/Users/me/notebook",
                 "cells": [],
@@ -2757,6 +2766,13 @@ class NotebookCellsResponse(BaseModel):
                 "notebook_metadata": {}
             }
         }
+    )
+    
+    path: Optional[str] = Field(None, description="Workspace path of the notebook")
+    cells: list[NotebookCell] = Field(default_factory=list, description="List of notebook cells")
+    total_cells: int = Field(default=0, description="Total number of cells")
+    notebook_metadata: dict[str, Any] = Field(default_factory=dict, description="Notebook metadata")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CellSearchResult(BaseModel):
@@ -2769,14 +2785,8 @@ class CellSearchResult(BaseModel):
         matches: List of matching text snippets
         source: Full cell content (complete source code or markdown)
     """
-    cell_index: int = Field(..., description="Index of matching cell")
-    cell_type: str = Field(..., description="Type of cell")
-    match_count: int = Field(..., description="Number of matches in cell")
-    matches: list[str] = Field(..., description="Matching text snippets")
-    source: str = Field(..., description="Full cell content")
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "cell_index": 2,
                 "cell_type": "code",
@@ -2785,6 +2795,13 @@ class CellSearchResult(BaseModel):
                 "source": "import pandas as pd\nimport numpy as np\n\ndf = pandas.DataFrame({'a': [1, 2, 3]})"
             }
         }
+    )
+    
+    cell_index: int = Field(..., description="Index of matching cell")
+    cell_type: str = Field(..., description="Type of cell")
+    match_count: int = Field(..., description="Number of matches in cell")
+    matches: list[str] = Field(..., description="Matching text snippets")
+    source: str = Field(..., description="Full cell content")
 
 
 class CellSearchResponse(BaseModel):
@@ -2798,16 +2815,8 @@ class CellSearchResponse(BaseModel):
         results: List of cells containing matches
         total_matches: Total number of matching cells found
     """
-    path: Optional[str] = Field(None, description="Notebook path searched")
-    pattern: Optional[str] = Field(None, description="Search pattern used")
-    cell_type: Optional[str] = Field(None, description="Cell type filter")
-    case_sensitive: bool = Field(default=False, description="Whether search was case-sensitive")
-    results: List[CellSearchResult] = Field(default_factory=list, description="Matching cells")
-    total_matches: int = Field(default=0, description="Total matching cells")
-    error_message: Optional[str] = Field(None, description="Error message if operation failed")
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "path": "/Users/user@company.com/analysis",
                 "pattern": "pandas|numpy",
@@ -2825,6 +2834,15 @@ class CellSearchResponse(BaseModel):
                 "total_matches": 1
             }
         }
+    )
+    
+    path: Optional[str] = Field(None, description="Notebook path searched")
+    pattern: Optional[str] = Field(None, description="Search pattern used")
+    cell_type: Optional[str] = Field(None, description="Cell type filter")
+    case_sensitive: bool = Field(default=False, description="Whether search was case-sensitive")
+    results: List[CellSearchResult] = Field(default_factory=list, description="Matching cells")
+    total_matches: int = Field(default=0, description="Total matching cells")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CellOperationResponse(BaseModel):
@@ -2837,15 +2855,8 @@ class CellOperationResponse(BaseModel):
         status: Status of the operation
         total_cells: Total number of cells after operation
     """
-    path: Optional[str] = Field(None, description="Workspace path of the notebook")
-    operation: Optional[str] = Field(None, description="Operation performed (insert, update, delete, reorder)")
-    cell_index: int = Field(default=-1, description="Index of affected cell")
-    status: str = Field(default="success", description="Operation status")
-    total_cells: int = Field(default=0, description="Total cells after operation")
-    error_message: Optional[str] = Field(None, description="Error message if operation failed")
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "path": "/Users/me/notebook",
                 "operation": "insert",
@@ -2854,6 +2865,14 @@ class CellOperationResponse(BaseModel):
                 "total_cells": 6
             }
         }
+    )
+    
+    path: Optional[str] = Field(None, description="Workspace path of the notebook")
+    operation: Optional[str] = Field(None, description="Operation performed (insert, update, delete, reorder)")
+    cell_index: int = Field(default=-1, description="Index of affected cell")
+    status: str = Field(default="success", description="Operation status")
+    total_cells: int = Field(default=0, description="Total cells after operation")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -3083,14 +3102,8 @@ class ListNotebooksResponse(BaseModel):
         has_more: Whether more notebooks exist beyond this page
     """
     path: Optional[str] = Field(None, description="Workspace path searched")
-    recursive: bool = Field(default=False, description="Whether search was recursive")
-    notebooks: List[NotebookInfo] = Field(default_factory=list, description="List of notebooks")
-    count: int = Field(default=0, description="Total notebooks found")
-    has_more: bool = Field(default=False, description="Whether more notebooks exist beyond this page")
-    error_message: Optional[str] = Field(None, description="Error message if operation failed")
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "path": "/Users/user@company.com",
                 "recursive": True,
@@ -3109,6 +3122,13 @@ class ListNotebooksResponse(BaseModel):
                 "count": 1
             }
         }
+    )
+    
+    recursive: bool = Field(default=False, description="Whether search was recursive")
+    notebooks: List[NotebookInfo] = Field(default_factory=list, description="List of notebooks")
+    count: int = Field(default=0, description="Total notebooks found")
+    has_more: bool = Field(default=False, description="Whether more notebooks exist beyond this page")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -3127,17 +3147,8 @@ class NotebookPathInfo(BaseModel):
         created_at: Creation timestamp
         modified_at: Last modification timestamp
     """
-    url: str = Field(..., description="Original URL")
-    notebook_id: Optional[str] = Field(None, description="Notebook ID from URL")
-    path: Optional[str] = Field(None, description="Workspace path")
-    object_type: Optional[str] = Field(None, description="Object type")
-    language: Optional[str] = Field(None, description="Programming language")
-    created_at: Optional[int] = Field(None, description="Creation timestamp (ms)")
-    modified_at: Optional[int] = Field(None, description="Last modified timestamp (ms)")
-    error_message: Optional[str] = Field(None, description="Error message if operation failed")
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "url": "https://workspace.cloud.databricks.com/editor/notebooks/1191853414493128",
                 "notebook_id": "1191853414493128",
@@ -3148,3 +3159,13 @@ class NotebookPathInfo(BaseModel):
                 "modified_at": 1640100000000
             }
         }
+    )
+    
+    url: str = Field(..., description="Original URL")
+    notebook_id: Optional[str] = Field(None, description="Notebook ID from URL")
+    path: Optional[str] = Field(None, description="Workspace path")
+    object_type: Optional[str] = Field(None, description="Object type")
+    language: Optional[str] = Field(None, description="Programming language")
+    created_at: Optional[int] = Field(None, description="Creation timestamp (ms)")
+    modified_at: Optional[int] = Field(None, description="Last modified timestamp (ms)")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")

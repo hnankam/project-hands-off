@@ -1337,7 +1337,7 @@ router.post('/mcp-servers/:serverId/load-tools', async (req, res, next) => {
     const server = serverResult.rows[0];
 
     // Make a request to the Python backend to list tools from this MCP server
-    const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8001';
+    const pythonBackendUrl = process.env.PYDANTIC_SERVICE_URL || 'http://localhost:8001';
     
     let response;
     try {
@@ -1523,7 +1523,7 @@ router.post('/mcp-servers/test-config', async (req, res, next) => {
     if (!roles) return;
 
     // Call Python backend to test connectivity
-    const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8001';
+    const pythonBackendUrl = process.env.PYDANTIC_SERVICE_URL || 'http://localhost:8001';
     
     try {
       const response = await fetch(`${pythonBackendUrl}/api/admin/mcp-servers/test`, {
@@ -1615,7 +1615,7 @@ router.post('/mcp-servers/:serverId/test', async (req, res, next) => {
     const server = toCamelServer(serverResult.rows[0]);
 
     // Call Python backend to test connectivity
-    const pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8001';
+    const pythonBackendUrl = process.env.PYDANTIC_SERVICE_URL || 'http://localhost:8001';
     
     try {
       const response = await fetch(`${pythonBackendUrl}/api/admin/mcp-servers/test`, {

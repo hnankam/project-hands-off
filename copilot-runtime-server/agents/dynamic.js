@@ -9,7 +9,7 @@
  */
 
 import { HttpAgent } from "@ag-ui/client";
-import { AGENT_BASE_URL } from '../config/index.js';
+import { PYDANTIC_SERVICE_URL } from '../config/index.js';
 import { getModelEndpoint, getDefaultAgent, getDefaultModel } from '../config/models.js';
 
 /**
@@ -20,7 +20,7 @@ import { getModelEndpoint, getDefaultAgent, getDefaultModel } from '../config/mo
  */
 export async function getDynamicAgentUrl(agent, model) {
   const endpoint = await getModelEndpoint(model);
-  return `${AGENT_BASE_URL}/agent/${agent}/${endpoint}`;
+  return `${PYDANTIC_SERVICE_URL}/agent/${agent}/${endpoint}`;
 }
 
 /**

@@ -67,7 +67,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
 
   const loadCredentials = useCallback(async () => {
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/credentials`, {
         credentials: 'include',
       });
@@ -97,7 +97,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
     setLoadingSecrets(prev => ({ ...prev, [credentialId]: true }));
     
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/credentials/bulk`, {
         method: 'POST',
         credentials: 'include',
@@ -150,7 +150,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
     
     // Load the existing password so user can see it with eye icon
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/credentials/bulk`, {
         method: 'POST',
         credentials: 'include',
@@ -185,7 +185,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
 
     setSaving(true);
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const url = editingCredential
         ? `${baseURL}/api/workspace/credentials/${editingCredential.id}`
         : `${baseURL}/api/workspace/credentials`;
@@ -235,7 +235,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
 
     setDeleting(true);
     try {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/credentials/${credentialToDelete.id}`, {
         method: 'DELETE',
         credentials: 'include',

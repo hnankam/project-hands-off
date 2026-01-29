@@ -23,6 +23,67 @@ from core.models import AgentState, UnifiedDeps
 from pydantic_ai.models import ModelRequestParameters
 
 
+async def get_model_config_from_agent(ctx: RunContext) -> tuple[dict, ModelRequestParameters]:
+    """Extract model settings and tools from agent for accurate token counting.
+    
+    Args:
+        ctx: RunContext with access to agent via ctx.deps.adapter.agent
+        
+    Returns:
+        Tuple of (model_settings dict, ModelRequestParameters with function_tools)
+    """
+    model_settings = {}
+    function_tools = []
+    
+    if hasattr(ctx.deps, 'adapter') and ctx.deps.adapter is not None:
+        agent = getattr(ctx.deps.adapter, 'agent', None)
+        if agent is not None:
+            # Extract model settings from agent
+            model_settings = getattr(agent, 'model_settings', {}) or {}
+            
+            # Extract tools from agent using _get_toolset and get_tools(ctx)
+            try:
+                # Get the combined toolset from agent
+                toolset = agent._get_toolset()
+                
+                # Get tools dict using the current context (async call)
+                tools_dict = await toolset.get_tools(ctx)
+                # logger.debug(f"Got {len(tools_dict)} tools from agent")
+                
+                # Extract ToolDefinition from each tool object
+                # _CombinedToolsetTool stores the ToolDefinition in its constructor
+                for tool_name, tool in tools_dict.items():
+                    try:
+                        # Check for common attribute names where ToolDefinition might be stored
+                        tool_def = None
+                        
+                        # Try various attribute names
+                        for attr_name in ['tool_def', '_tool_def', 'definition', '_definition']:
+                            if hasattr(tool, attr_name):
+                                tool_def = getattr(tool, attr_name)
+                                break
+                        
+                        if tool_def is not None:
+                            function_tools.append(tool_def)
+                        else:
+                            # Debug: Log first tool's attributes to understand structure
+                            if len(function_tools) == 0:
+                                attrs = [a for a in dir(tool) if not a.startswith('__')]
+                                # logger.debug(f"First tool '{tool_name}' attributes: {attrs[:20]}")
+                    except Exception as e:
+                        logger.debug(f"Could not extract tool definition for {tool_name}: {e}")
+                
+                # logger.info(f"Extracted {len(function_tools)} function tools from agent")
+            except Exception as e:
+                logger.debug(f"Could not extract tools from agent: {e}")
+                # It's okay if we can't get tools - token counting will still work
+    
+    # Create ModelRequestParameters with extracted tools
+    model_request_params = ModelRequestParameters(function_tools=function_tools)
+    
+    return model_settings, model_request_params
+
+
 def pydantic_to_agui_messages(pydantic_messages: list[ModelMessage]) -> list:
     """Convert Pydantic AI ModelMessages to AG-UI messages.
     
@@ -135,20 +196,22 @@ async def keep_recent_messages(
     Reference: https://github.com/pydantic/pydantic-ai/issues/2050
     """
 
-    # current_tokens = await ctx.model.count_tokens(messages, model_settings={}, model_request_parameters=ModelRequestParameters())
-    # Error: AsyncAnthropicBedrock client does not support `count_tokens` api.
+    # Get model settings and tools from agent (via adapter) for accurate token counting
+    model_settings, model_request_params = await get_model_config_from_agent(ctx)
+    
+    try:
+        # logger.info(f"Model Settings: {model_settings}")
+        # logger.info(f"Model Request Parameters: {model_request_params}")
+        current_tokens = await ctx.model.count_tokens(messages, model_settings=model_settings, model_request_parameters=model_request_params)
+        logger.info(f"Current Tokens: {current_tokens}")
+    except Exception as e:
+        logger.debug(f"Token counting not supported or failed: {e}")
+    # Note: AsyncAnthropicBedrock client does not support `count_tokens` api.
+    # We rely on ctx.usage from actual API responses instead.
 
     logger.info(f"Message History Usage: {ctx.usage.total_tokens} = {ctx.usage.input_tokens} + {ctx.usage.output_tokens}")
-    # logger.info(f"Current Tokens: {current_tokens.input_tokens} + {current_tokens.output_tokens}")
 
-    # --- Pre-sanitization: trim oversized tool results and drop duplicates within a message ---
-    def _truncate_text(text: str, limit: int = 2000, keep: int = 1800) -> str:
-        if not isinstance(text, str):
-            return text
-        if len(text) <= limit:
-            return text
-        return text[:keep] + f"... (truncated {len(text) - keep} chars)"
-
+    # --- Pre-sanitization: drop duplicates within a message ---
     def _get_tool_return_id(part: Any) -> str | None:
         """Return the canonical tool return identifier.
         According to Pydantic AI, BaseToolReturnPart exposes `tool_call_id`.
@@ -257,90 +320,8 @@ async def keep_recent_messages(
                         if rid in seen_return_ids_in_msg:
                             continue
                         seen_return_ids_in_msg.add(rid)
-                    # For older messages, also truncate and apply cross-message dedup
+                    # For older messages, also apply cross-message dedup
                     if idx < keep_full_after_index:
-                        if isinstance(part, ToolReturnPart):
-                            # Only truncate for select tools
-                            tool_name = getattr(part, 'tool_name', None)
-                            
-                            TRUNCATE_TOOL_NAMES = {
-                                # Browser extension tools
-                                'searchPageContent',
-                                'searchFormData',
-                                'searchDOMUpdates',
-                                'searchClickableElements',
-                                'takeScreenshot',
-                                # Workspace tools - High Priority (large content)
-                                'get_file_content',
-                                'read_file',
-                                'get_note_content',
-                                'grep_files',
-                                'update_file_content',
-                                # Workspace tools - Medium Priority (large lists)
-                                'search_workspace_files',
-                                'search_workspace_notes',
-                                'list_files',
-                                'glob_files',
-                                # Databricks - High Priority (large content)
-                                'get_notebook',
-                                'get_notebook_cells',
-                                'execute_statement',
-                                'get_statement',
-                                'get_statement_result_chunk',
-                                'execute_command',
-                                'get_command_status',
-                                'get_run_output',
-                                'export_run',
-                                # Databricks - Medium Priority (large lists/metadata)
-                                'list_notebooks',
-                                'list_directories',
-                                'list_query_history',
-                                'list_jobs',
-                                'list_runs',
-                                'list_clusters',
-                                'get_job',
-                                'get_run',
-                                # Unity Catalog tools
-                                'list_tables',
-                                'list_table_summaries',
-                                'list_schemas',
-                                'list_catalogs',
-                                'list_functions',
-                                'list_volumes',
-                                # Machine Learning tools
-                                'search_runs',
-                                'list_experiments',
-                                'list_models',
-                                'list_model_versions',
-                                # Pipeline tools
-                                'list_pipelines',
-                                'list_pipeline_updates',
-                            }
-                            
-                            # Check if any truncate tool name appears in the full tool name
-                            # This handles MCP prefixed names like "databricks_list_query_history"
-                            should_truncate = tool_name and any(
-                                truncate_name in tool_name for truncate_name in TRUNCATE_TOOL_NAMES
-                            )
-                            
-                            if hasattr(part, 'content') and should_truncate:
-                                try:
-                                    if isinstance(part.content, (dict, list)):
-                                        text = json.dumps(part.content)
-                                        part.content = _truncate_text(text, limit=100, keep=90)
-                                    else:
-                                        part.content = _truncate_text(str(part.content), limit=100, keep=90)
-                                except Exception:
-                                    pass
-                            elif hasattr(part, 'result') and should_truncate:
-                                try:
-                                    if isinstance(part.result, (dict, list)):
-                                        text = json.dumps(part.result)
-                                        part.result = _truncate_text(text, limit=100, keep=90)
-                                    else:
-                                        part.result = _truncate_text(str(part.result), limit=100, keep=90)
-                                except Exception:
-                                    pass
                         sig = _part_signature(part)
                         if last_return_occurrence.get(sig, idx) != idx:
                             continue
@@ -365,26 +346,8 @@ async def keep_recent_messages(
                         if idx < keep_full_after_index:
                             if last_call_occurrence.get(cid, idx) != idx:
                                 continue
-                        # CRITICAL FIX: Drop tool_use blocks without corresponding tool_result immediately after
-                        # This prevents Anthropic API rejection for orphaned or misordered tool_use blocks
-                        occurrences = tool_return_occurrences.get(cid, [])
-                        if not occurrences:
-                            logger.warning(
-                                f"Dropping orphaned tool_use with id={cid} at message {idx} (no corresponding tool_result found)"
-                            )
-                            continue
-                        immediate_next_idx = idx + 1
-                        if immediate_next_idx not in occurrences:
-                            next_occurrence = next((pos for pos in occurrences if pos > idx), None)
-                            if next_occurrence is None:
-                                logger.warning(
-                                    f"Dropping tool_use with id={cid} at message {idx} (tool_result missing after this call)"
-                                )
-                            else:
-                                logger.warning(
-                                    f"Dropping tool_use with id={cid} at message {idx} (tool_result appears at message {next_occurrence}, not immediately after)"
-                                )
-                            continue
+                        # Don't drop tool_use blocks yet - we'll validate after re-indexing
+                        # The indices in tool_return_occurrences become stale after skipping empty messages
                     new_parts_rev.append(part)
                     continue
 
@@ -410,9 +373,91 @@ async def keep_recent_messages(
             pass
         sanitized_messages.append(msg)
 
+    # --- Re-validate tool_use/tool_result pairs after skipping empty messages ---
+    # Now that we have the actual message list (with empty messages skipped),
+    # we need to validate that each tool_use has a tool_result immediately after
+    # using the NEW indices
+    
+    # Rebuild tool_return_occurrences with correct indices
+    tool_return_occurrences_reindexed: dict[str, list[int]] = defaultdict(list)
+    for _idx, _msg in enumerate(sanitized_messages):
+        for part in getattr(_msg, 'parts', []) or []:
+            if _is_tool_result_part(part):
+                tool_call_id = _get_tool_return_id(part)
+                if tool_call_id:
+                    tool_return_occurrences_reindexed[tool_call_id].append(_idx)
+    
+    # Validate tool_use blocks have tool_result immediately after
+    revalidated_messages: list[ModelMessage] = []
+    for idx, msg in enumerate(sanitized_messages):
+        try:
+            original_parts = (getattr(msg, 'parts', []) or [])
+            filtered_parts: list[Any] = []
+            
+            for part in original_parts:
+                # Check tool_use blocks
+                if isinstance(part, ToolCallPart):
+                    cid = None
+                    try:
+                        cid = getattr(part, 'tool_call_id', None)
+                        if isinstance(cid, (str, int)):
+                            cid = str(cid)
+                    except Exception:
+                        pass
+                    
+                    if cid is not None:
+                        # CRITICAL: Every tool_use must have tool_result immediately after
+                        occurrences = tool_return_occurrences_reindexed.get(cid, [])
+                        immediate_next_idx = idx + 1
+                        
+                        if not occurrences:
+                            # Only drop if we're NOT in the last message
+                            # (last message may be mid-execution, waiting for tool result)
+                            if idx < len(sanitized_messages) - 1:
+                                logger.warning(
+                                    f"Dropping orphaned tool_use with id={cid} at message {idx} "
+                                    "(no corresponding tool_result found)"
+                                )
+                                continue
+                        elif immediate_next_idx not in occurrences:
+                            # Only drop if we're NOT in the last message
+                            if idx < len(sanitized_messages) - 1:
+                                next_occurrence = next((pos for pos in occurrences if pos > idx), None)
+                                if next_occurrence is None:
+                                    logger.warning(
+                                        f"Dropping tool_use with id={cid} at message {idx} "
+                                        "(tool_result missing after this call)"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"Dropping tool_use with id={cid} at message {idx} "
+                                        f"(tool_result appears at message {next_occurrence}, not immediately after)"
+                                    )
+                                continue
+                
+                filtered_parts.append(part)
+            
+            # Skip messages that have no parts after revalidation
+            if not filtered_parts:
+                logger.warning(f"Skipping message {idx} - all parts removed during revalidation")
+                continue
+            
+            if hasattr(msg, 'parts'):
+                try:
+                    msg.parts = filtered_parts
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"Error revalidating message {idx}: {e}")
+        
+        revalidated_messages.append(msg)
+    
+    sanitized_messages = revalidated_messages
+
     # Continue with compaction on sanitized list
-    # --- Post-sanitization: ensure tool results still have matching tool uses ---
+    # --- Final validation: ensure tool results have matching tool uses in previous message ---
     def _collect_prev_call_ids(msg_list: list[ModelMessage], index: int) -> set[str]:
+        """Collect tool call IDs from the previous message."""
         if index <= 0:
             return set()
         return set(_iter_tool_call_ids(msg_list[index - 1]))
@@ -431,6 +476,7 @@ async def keep_recent_messages(
                             f"Dropping {type(part).__name__} without tool_call_id at message {idx}"
                         )
                         continue
+                    # Tool result must have matching tool_use in immediately previous message
                     if rid not in prev_call_ids:
                         logger.warning(
                             f"Dropping {type(part).__name__} with id={rid} at message {idx} "
@@ -469,12 +515,38 @@ async def keep_recent_messages(
             return msgs + [ModelRequest(parts=[])]
         return msgs
 
-    message_window = 150
-
-    if len(messages) <= message_window:
-        logger.info(f"Returning {len(messages)} messages (<={message_window})")
-        return _ensure_ends_with_request(messages)
-
+    # Dynamic message window based on token usage
+    # Aggressive cutting when over 1.2M tokens, gentle cutting when over 200k
+    skip_safe_cut_search = False  # Flag to skip safe cut search (used for first message)
+    
+    if ctx.usage.input_tokens > 1_000_000:
+        # High token usage: Keep 90% of messages (cut 10% from the beginning)
+        target_messages_to_keep = int(len(messages) * 0.90)
+        logger.info(f"Token usage {ctx.usage.input_tokens} > 1M, targeting 90% of messages ({target_messages_to_keep}/{len(messages)})")
+        
+        if len(messages) <= target_messages_to_keep:
+            logger.info(f"Returning {len(messages)} messages (<={target_messages_to_keep})")
+            return _ensure_ends_with_request(messages)
+    elif ctx.usage.input_tokens > 200_000:
+        # Moderate token usage: Keep 99.5% of messages (cut 0.5% from the beginning)
+        target_messages_to_keep = int(len(messages) * 0.995)
+        logger.info(f"Token usage {ctx.usage.input_tokens} > 200k, targeting 99.5% of messages ({target_messages_to_keep}/{len(messages)})")
+        
+        if len(messages) <= target_messages_to_keep:
+            logger.info(f"Returning {len(messages)} messages (<={target_messages_to_keep})")
+            return _ensure_ends_with_request(messages)
+    else:
+        # Under token limit - return all messages without cutting
+        # Special case: first message (token usage = 0) - limit to 200 messages max
+        if ctx.usage.input_tokens == 0 and len(messages) > 150:
+            logger.info(f"First message with {len(messages)} messages, forcing cut to 150")
+            # For first message, skip safe cut search and go directly to forced cut
+            skip_safe_cut_search = True
+            target_messages_to_keep = 150
+        else:
+            logger.info(f"Token usage {ctx.usage.input_tokens} <= 200k, returning all {len(messages)} messages")
+            return _ensure_ends_with_request(messages)
+    
     # Find system prompt if it exists
     system_prompt = None
     system_prompt_index = None
@@ -484,34 +556,97 @@ async def keep_recent_messages(
             system_prompt_index = i
             break
     
-    # Start at target cut point and search backward (upstream) for a safe cut
-    target_cut = len(messages) - message_window
-
-    for cut_index in range(target_cut, -1, -1):
-        first_message = messages[cut_index]
-
-        # Skip if first message has tool returns (orphaned without calls)
-        if any(_is_tool_result_part(part) for part in first_message.parts):
-            continue
-
-        # Skip if first message has tool calls (violates AI model ordering rules)
-        if isinstance(first_message, ModelResponse) and any(
-            isinstance(part, ToolCallPart) for part in first_message.parts
-        ):
-            continue
-
-        # Found a safe cut point
-        logger.info(f"Found safe cut at index={cut_index}")
-        result = messages[cut_index:]
-
-        # If we cut off the system prompt, prepend it back
-        if system_prompt is not None and system_prompt_index is not None and cut_index > system_prompt_index:
-            result = [system_prompt] + result
-
-        logger.info(f"Returning {len(result)} messages after cut")
-        return _ensure_ends_with_request(result)
-
-    # No safe cut point found, keep all messages
-    logger.info(f"Returning {len(messages)} messages (no safe cut)")
-    return _ensure_ends_with_request(messages)
+    # Calculate target cut point (remove oldest messages)
+    target_cut = len(messages) - target_messages_to_keep
+    
+    # Try to find a safe cut in the messages that will be removed
+    # (skip this for first message - go directly to forced cut)
+    if not skip_safe_cut_search:
+        # Search only within messages before target_cut, but EXCLUDE index 0
+        # (index 0 would keep all messages, defeating the purpose of cutting)
+        logger.info(f"Searching for safe cut point in messages [1:{target_cut}]")
+        
+        safe_cut_found = None
+        for cut_index in range(target_cut, 0, -1):  # Stop at 1, not 0
+            first_message = messages[cut_index]
+            
+            # Skip if first message has tool returns (orphaned without calls)
+            if any(_is_tool_result_part(part) for part in first_message.parts):
+                continue
+            
+            # Skip if first message has tool calls (violates AI model ordering rules)
+            if isinstance(first_message, ModelResponse) and any(
+                isinstance(part, ToolCallPart) for part in first_message.parts
+            ):
+                continue
+            
+            # Found a safe cut point
+            safe_cut_found = cut_index
+            logger.info(f"Found safe cut at index={cut_index}, will keep {len(messages) - cut_index} messages")
+            break
+        
+        # If safe cut found (and it's not index 0), use it
+        if safe_cut_found is not None and safe_cut_found > 0:
+            result = messages[safe_cut_found:]
+            
+            # If we cut off the system prompt, prepend it back
+            if system_prompt is not None and system_prompt_index is not None and safe_cut_found > system_prompt_index:
+                result = [system_prompt] + result
+            
+            logger.info(f"Returning {len(result)} messages after safe cut")
+            return _ensure_ends_with_request(result)
+        
+        # No safe cut found - force cut at target_cut and clean up orphaned tool returns
+        logger.warning(f"No safe cut found, forcing cut at index={target_cut} and cleaning orphaned tool returns")
+    
+    # Collect all tool_call_ids that exist in the messages being removed
+    removed_messages = messages[:target_cut]
+    removed_tool_call_ids = set()
+    for msg in removed_messages:
+        for part in getattr(msg, 'parts', []) or []:
+            if isinstance(part, ToolCallPart):
+                try:
+                    call_id = getattr(part, 'tool_call_id', None)
+                    if isinstance(call_id, (str, int)):
+                        removed_tool_call_ids.add(str(call_id))
+                except Exception:
+                    pass
+    
+    logger.info(f"Found {len(removed_tool_call_ids)} tool call IDs in removed messages")
+    
+    # Keep messages from target_cut onward, but remove orphaned tool returns
+    kept_messages = messages[target_cut:]
+    cleaned_messages = []
+    
+    for idx, msg in enumerate(kept_messages):
+        original_parts = getattr(msg, 'parts', []) or []
+        cleaned_parts = []
+        
+        for part in original_parts:
+            # Check if this is a tool return for a removed tool call
+            if _is_tool_result_part(part):
+                tool_call_id = _get_tool_return_id(part)
+                if tool_call_id and tool_call_id in removed_tool_call_ids:
+                    logger.info(f"Removing orphaned tool return with id={tool_call_id} at message {idx}")
+                    continue
+            
+            cleaned_parts.append(part)
+        
+        # Only keep message if it has parts after cleaning
+        if cleaned_parts:
+            if hasattr(msg, 'parts'):
+                try:
+                    msg.parts = cleaned_parts
+                except Exception:
+                    pass
+            cleaned_messages.append(msg)
+        else:
+            logger.info(f"Skipping message {idx} - all parts were orphaned tool returns")
+    
+    # If we cut off the system prompt, prepend it back
+    if system_prompt is not None and system_prompt_index is not None and target_cut > system_prompt_index:
+        cleaned_messages = [system_prompt] + cleaned_messages
+    
+    logger.info(f"Returning {len(cleaned_messages)} messages after forced cut and cleanup")
+    return _ensure_ends_with_request(cleaned_messages)
 

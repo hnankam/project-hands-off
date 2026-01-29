@@ -68,24 +68,26 @@ def download_billable_usage(
         - job_creator_email: Email of job creator
     """
     try:
-    client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
+
+        client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
-    # Download billable usage (returns DownloadResponse with CSV content)
-    response = client.billable_usage.download(
-        start_month=start_month,
-        end_month=end_month,
-        personal_data=personal_data,
-    )
+        # Download billable usage (returns DownloadResponse with CSV content)
+        response = client.billable_usage.download(
+            start_month=start_month,
+            end_month=end_month,
+            personal_data=personal_data,
+        )
     
-    # Extract CSV content from response
-    # The SDK returns a DownloadResponse object with a 'contents' field
-    csv_content = response.contents if hasattr(response, 'contents') else str(response)
+        # Extract CSV content from response
+        # The SDK returns a DownloadResponse object with a 'contents' field
+        csv_content = response.contents if hasattr(response, 'contents') else str(response)
     
-    return BillableUsageDownloadResponse(
-        csv_content=csv_content,
-        start_month=start_month,
-        end_month=end_month,
-    )
+        return BillableUsageDownloadResponse(
+            csv_content=csv_content,
+            start_month=start_month,
+            end_month=end_month,
+        )
+
     except Exception as e:
         return BillableUsageDownloadResponse(
             csv_content=None,

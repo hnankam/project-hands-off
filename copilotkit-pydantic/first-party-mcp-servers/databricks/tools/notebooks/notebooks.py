@@ -53,19 +53,20 @@ def list_notebooks(
     from itertools import islice
     
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    notebooks = []
-    has_more = False
+        notebooks = []
+        has_more = False
     
         # Use the SDK's built-in recursive parameter
         items = client.workspace.list(path, recursive=recursive)
-        
+    
         # Calculate pagination
         skip = page * limit
         collected = 0
         skipped = 0
-        
+    
         for item in items:
             # Filter for notebooks only
             if item.object_type and item.object_type.value == 'NOTEBOOK':
@@ -73,12 +74,12 @@ def list_notebooks(
                 if skipped < skip:
                     skipped += 1
                     continue
-                
+            
                 # Check if we've collected enough
                 if collected >= limit:
                     has_more = True
                     break
-                
+            
                 item_dict = item.as_dict()
                 notebooks.append(NotebookInfo(
                     path=item_dict.get('path'),
@@ -92,13 +93,14 @@ def list_notebooks(
                 ))
                 collected += 1
     
-    return ListNotebooksResponse(
-        path=path,
-        recursive=recursive,
-        notebooks=notebooks,
-        count=len(notebooks),
-        has_more=has_more,
-    )
+        return ListNotebooksResponse(
+            path=path,
+            recursive=recursive,
+            notebooks=notebooks,
+            count=len(notebooks),
+            has_more=has_more,
+        )
+
     except Exception as e:
         return ListNotebooksResponse(
             path=path,
@@ -124,44 +126,46 @@ def get_notebook(host_credential_key: str, token_credential_key: str, path: str,
         NotebookExportResponse with decoded content as string and metadata
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Map string format to ExportFormat enum
-    format_map = {
-        "SOURCE": ExportFormat.SOURCE,
-        "HTML": ExportFormat.HTML,
-        "JUPYTER": ExportFormat.JUPYTER,
-        "DBC": ExportFormat.DBC,
-    }
+        # Map string format to ExportFormat enum
+        format_map = {
+            "SOURCE": ExportFormat.SOURCE,
+            "HTML": ExportFormat.HTML,
+            "JUPYTER": ExportFormat.JUPYTER,
+            "DBC": ExportFormat.DBC,
+        }
     
-    export_format = format_map.get(format.upper(), ExportFormat.SOURCE)
+        export_format = format_map.get(format.upper(), ExportFormat.SOURCE)
     
-    # Export the notebook
-    response = client.workspace.export(path=path, format=export_format)
+        # Export the notebook
+        response = client.workspace.export(path=path, format=export_format)
     
-    # Extract content (SDK returns base64-encoded content)
-    content_encoded = getattr(response, 'content', '')
-    if content_encoded is None:
-        content_encoded = ''
+        # Extract content (SDK returns base64-encoded content)
+        content_encoded = getattr(response, 'content', '')
+        if content_encoded is None:
+            content_encoded = ''
     
-    # Decode base64 content to string
-    content_str = ''
-    if content_encoded:
-        try:
-            content_str = base64.b64decode(content_encoded).decode('utf-8')
-        except Exception as e:
-            # If decoding fails, return the encoded content
-            content_str = content_encoded
+        # Decode base64 content to string
+        content_str = ''
+        if content_encoded:
+            try:
+                content_str = base64.b64decode(content_encoded).decode('utf-8')
+            except Exception as e:
+                # If decoding fails, return the encoded content
+                content_str = content_encoded
     
-    # Get file type if available
-    file_type = getattr(response, 'file_type', None)
+        # Get file type if available
+        file_type = getattr(response, 'file_type', None)
     
-    return NotebookExportResponse(
-        content=content_str,
-        path=path,
-        format=format.upper(),
-        file_type=file_type
-    )
+        return NotebookExportResponse(
+            content=content_str,
+            path=path,
+            format=format.upper(),
+            file_type=file_type
+        )
+
     except Exception as e:
         return NotebookExportResponse(
             content=None,
@@ -197,47 +201,49 @@ def import_notebook(
         NotebookImportResponse with import status and metadata
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Map string language to Language enum
-    language_map = {
-        "PYTHON": Language.PYTHON,
-        "SCALA": Language.SCALA,
-        "SQL": Language.SQL,
-        "R": Language.R,
-    }
+        # Map string language to Language enum
+        language_map = {
+            "PYTHON": Language.PYTHON,
+            "SCALA": Language.SCALA,
+            "SQL": Language.SQL,
+            "R": Language.R,
+        }
     
-    # Map string format to ImportFormat enum
-    format_map = {
-        "SOURCE": ImportFormat.SOURCE,
-        "HTML": ImportFormat.HTML,
-        "JUPYTER": ImportFormat.JUPYTER,
-        "DBC": ImportFormat.DBC,
-        "AUTO": ImportFormat.AUTO,
-    }
+        # Map string format to ImportFormat enum
+        format_map = {
+            "SOURCE": ImportFormat.SOURCE,
+            "HTML": ImportFormat.HTML,
+            "JUPYTER": ImportFormat.JUPYTER,
+            "DBC": ImportFormat.DBC,
+            "AUTO": ImportFormat.AUTO,
+        }
     
-    notebook_language = language_map.get(language.upper(), Language.PYTHON)
-    import_format = format_map.get(format.upper(), ImportFormat.SOURCE)
+        notebook_language = language_map.get(language.upper(), Language.PYTHON)
+        import_format = format_map.get(format.upper(), ImportFormat.SOURCE)
     
-    # Encode content to base64 for SDK
-    encoded_content = base64.b64encode(content.encode('utf-8')).decode('ascii')
+        # Encode content to base64 for SDK
+        encoded_content = base64.b64encode(content.encode('utf-8')).decode('ascii')
     
-    # Import the notebook
-    client.workspace.import_(
-        path=path,
-        content=encoded_content,
-        language=notebook_language,
-        format=import_format,
-        overwrite=overwrite
-    )
+        # Import the notebook
+        client.workspace.import_(
+            path=path,
+            content=encoded_content,
+            language=notebook_language,
+            format=import_format,
+            overwrite=overwrite
+        )
     
-    return NotebookImportResponse(
-        path=path,
-        language=language.upper(),
-        format=format.upper(),
-        status="imported",
-        overwritten=overwrite
-    )
+        return NotebookImportResponse(
+            path=path,
+            language=language.upper(),
+            format=format.upper(),
+            status="imported",
+            overwritten=overwrite
+        )
+
     except Exception as e:
         return NotebookImportResponse(
             path=None,
@@ -263,15 +269,17 @@ def delete_notebook(host_credential_key: str, token_credential_key: str, path: s
         NotebookDeleteResponse with deletion status
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.workspace.delete(path=path, recursive=recursive)
+        client.workspace.delete(path=path, recursive=recursive)
     
-    return NotebookDeleteResponse(
-        path=path,
-        status="deleted",
-        recursive=recursive
-    )
+        return NotebookDeleteResponse(
+            path=path,
+            status="deleted",
+            recursive=recursive
+        )
+
     except Exception as e:
         return NotebookDeleteResponse(
             path=None,
@@ -300,32 +308,34 @@ def create_notebook(
         NotebookCreateResponse with creation status
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Map string language to Language enum
-    language_map = {
-        "PYTHON": Language.PYTHON,
-        "SCALA": Language.SCALA,
-        "SQL": Language.SQL,
-        "R": Language.R,
-    }
+        # Map string language to Language enum
+        language_map = {
+            "PYTHON": Language.PYTHON,
+            "SCALA": Language.SCALA,
+            "SQL": Language.SQL,
+            "R": Language.R,
+        }
     
-    notebook_language = language_map.get(language.upper(), Language.PYTHON)
+        notebook_language = language_map.get(language.upper(), Language.PYTHON)
     
-    # Create empty notebook by importing empty content
-    client.workspace.import_(
-        path=path,
-        content="",
-        language=notebook_language,
-        format=ImportFormat.SOURCE,
-        overwrite=False
-    )
+        # Create empty notebook by importing empty content
+        client.workspace.import_(
+            path=path,
+            content="",
+            language=notebook_language,
+            format=ImportFormat.SOURCE,
+            overwrite=False
+        )
     
-    return NotebookCreateResponse(
-        path=path,
-        language=language.upper(),
-        status="created"
-    )
+        return NotebookCreateResponse(
+            path=path,
+            language=language.upper(),
+            status="created"
+        )
+
     except Exception as e:
         return NotebookCreateResponse(
             path=None,
@@ -348,21 +358,23 @@ def get_notebook_status(host_credential_key: str, token_credential_key: str, pat
         NotebookStatusResponse with notebook metadata
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    status = client.workspace.get_status(path=path)
-    status_dict = status.as_dict()
+        status = client.workspace.get_status(path=path)
+        status_dict = status.as_dict()
     
-    return NotebookStatusResponse(
-        path=status_dict.get('path'),
-        object_id=status_dict.get('object_id'),
-        resource_id=status_dict.get('resource_id'),
-        object_type=status_dict.get('object_type'),
-        language=status_dict.get('language'),
-        size=status_dict.get('size'),
-        created_at=status_dict.get('created_at'),
-        modified_at=status_dict.get('modified_at')
-    )
+        return NotebookStatusResponse(
+            path=status_dict.get('path'),
+            object_id=status_dict.get('object_id'),
+            resource_id=status_dict.get('resource_id'),
+            object_type=status_dict.get('object_type'),
+            language=status_dict.get('language'),
+            size=status_dict.get('size'),
+            created_at=status_dict.get('created_at'),
+            modified_at=status_dict.get('modified_at')
+        )
+
     except Exception as e:
         return NotebookStatusResponse(
             path=None,

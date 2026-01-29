@@ -397,8 +397,14 @@ project-hands-off/
 
 #### Chrome Extension (root `.env`)
 
+See `env.frontend.example` for a complete reference.
+
 ```env
-VITE_RUNTIME_SERVER_URL=http://localhost:3001
+# Runtime Server (Node.js) - Main API endpoint
+VITE_API_URL=http://localhost:3001
+
+# Pydantic Backend (Python) - AI Agent Service
+VITE_BACKEND_URL=http://localhost:8001
 ```
 
 #### CopilotKit Runtime Server (`copilot-runtime-server/.env`)
@@ -408,7 +414,7 @@ VITE_RUNTIME_SERVER_URL=http://localhost:3001
 PORT=3001
 NODE_ENV=development
 DEBUG=true
-AGENT_BASE_URL=http://localhost:8001
+PYDANTIC_SERVICE_URL=http://localhost:8001
 
 # Database (PostgreSQL/Neon)
 DB_HOST=your-host.neon.tech
@@ -537,6 +543,41 @@ python main.py
 uvicorn main:app --reload --port 8001
 ```
 
+### Docker Build Scripts
+
+**Quick rebuild and restart containers when code changes** 🚀
+
+```bash
+# Build both services (recommended after code changes)
+./build-all.sh
+
+# Build individual services
+cd copilotkit-pydantic && ./build-and-run.sh
+cd copilot-runtime-server && ./build-and-run.sh
+
+# Production mode
+./build-all.sh production
+
+# Health checks
+curl http://localhost:8001/healthz  # Pydantic
+curl http://localhost:3001/health   # Runtime
+
+# View logs
+docker logs -f copilotkit-pydantic
+docker logs -f copilot-runtime-server
+```
+
+**Features:**
+- ✅ Automatic container rebuild and restart
+- ✅ Color-coded output with status updates
+- ✅ Built-in health checks
+- ✅ Error handling and validation
+- ✅ Development and production modes
+
+**Documentation:**
+- 📖 [Full Build Scripts Guide](BUILD_SCRIPTS_README.md)
+- 📖 [Quick Reference Card](QUICK_BUILD_REFERENCE.md)
+
 ### Adding Dependencies
 
 ```bash
@@ -663,6 +704,17 @@ pip install -r requirements.txt --upgrade
 | [INVITATION_ARCHITECTURE.md](INVITATION_ARCHITECTURE.md) | Invitation system architecture |
 | [ADMIN_REFACTORING.md](ADMIN_REFACTORING.md) | Admin dashboard documentation |
 | [SINGLE_TEAM_ENFORCEMENT.md](SINGLE_TEAM_ENFORCEMENT.md) | Team membership rules |
+
+### Docker & Deployment
+
+| Document | Description |
+|----------|-------------|
+| **[BUILD_SCRIPTS_README.md](BUILD_SCRIPTS_README.md)** | Complete guide to Docker build scripts |
+| **[QUICK_BUILD_REFERENCE.md](QUICK_BUILD_REFERENCE.md)** | Quick reference for build commands |
+| **[DOCKER_BUILD_SUMMARY.md](DOCKER_BUILD_SUMMARY.md)** | Docker image build results and comparison |
+| **[DEPLOYMENT.md](DEPLOYMENT.md)** | Production deployment guide |
+| **[PRODUCTION_READINESS_REVIEW.md](PRODUCTION_READINESS_REVIEW.md)** | Production readiness assessment |
+| **[FRONTEND_CONNECTIVITY_TEST.md](FRONTEND_CONNECTIVITY_TEST.md)** | Frontend-backend connectivity validation |
 
 ### API Documentation
 

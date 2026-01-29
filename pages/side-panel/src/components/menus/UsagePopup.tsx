@@ -4,7 +4,7 @@ import type { CumulativeUsage, UsageData } from '../../hooks/useUsageStream';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { cn } from '@extension/ui';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_BASE_URL = process.env.CEB_API_URL || 'http://localhost:3001';
 
 export interface UsagePopupProps {
   isOpen: boolean;

@@ -514,7 +514,7 @@ const ProviderDropdown: React.FC<ProviderDropdownProps> = ({
 };
 
 export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, onSuccess }: ModelsTabProps) {
-  const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+  const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
 
   // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';

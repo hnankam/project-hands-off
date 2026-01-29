@@ -608,7 +608,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
       }
 
       // Fetch all org members (including team-only members) using custom endpoint
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
       let orgMembersList: any[] = [];
           try {
         const response = await fetch(`${baseURL}/api/auth/org-members-with-status?organizationId=${selectedOrgForTeam}`, {

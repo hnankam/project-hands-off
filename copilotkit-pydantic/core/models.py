@@ -18,7 +18,7 @@ class UnifiedDeps:
     
     Fields are organized by category:
     - Core state: Required for agent tools, optional for graph nodes
-    - Streaming and adapter: For AGUI event streaming
+    - Streaming and adapter: For AGUI event streaming (adapter.agent provides access to model_settings and toolsets)
     - Agent context: Organization/team/agent metadata
     - Usage tracking: Session and user identification
     - AGUI context: Frontend context from useCopilotReadableData
@@ -28,7 +28,7 @@ class UnifiedDeps:
     
     # Streaming and adapter
     send_stream: Any = None  # MemoryObjectSendStream[str]
-    adapter: Any = None  # AGUIAdapter
+    adapter: Any = None  # AGUIAdapter (provides access to agent via adapter.agent)
     
     # Graph metadata (for multi-agent graph nodes)
     graph_id: str | None = None  # Graph ID for tracking ActivityMessages

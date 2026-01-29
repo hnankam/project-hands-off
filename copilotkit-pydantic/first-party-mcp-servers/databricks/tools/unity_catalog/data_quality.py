@@ -59,8 +59,6 @@ def _convert_to_refresh(refresh) -> DataQualityRefreshModel:
 def create_data_quality_monitor(
     host_credential_key: str,
     token_credential_key: str,
-    object_type: str,
-    object_id: str,
     monitor_config: Dict[str, Any],
 ) -> CreateMonitorResponse:
     """
@@ -72,27 +70,33 @@ def create_data_quality_monitor(
     
     Args:
         host_credential_key: Credential key for workspace URL
-        token: Authentication token
-        object_type: Object type ("schema" or "table")
-        object_id: Object ID (schema_id or table_id)
-        monitor_config: Monitor configuration dictionary
+        token_credential_key: Authentication token
+        monitor_config: Monitor configuration dictionary (must include object_type and object_id)
         
     Returns:
         CreateMonitorResponse with created monitor
+        
+    Note:
+        The monitor_config should include:
+        - table_name or schema_name: Full name of the object to monitor
+        - baseline_table_name: Optional baseline table for comparisons
+        - output_schema_name: Schema for storing monitoring results
+        - Other monitor-specific configuration
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.dataquality import Monitor
+        from databricks.sdk.service.dataquality import Monitor
     
-    # Create Monitor object from config
-    monitor_spec = Monitor.from_dict(monitor_config)
+        # Create Monitor object from config
+        monitor_spec = Monitor.from_dict(monitor_config)
     
-    monitor = client.data_quality.create_monitor(monitor=monitor_spec)
+        monitor = client.data_quality.create_monitor(monitor=monitor_spec)
     
-    return CreateMonitorResponse(
-        monitor=_convert_to_monitor(monitor),
-    )
+        return CreateMonitorResponse(
+            monitor=_convert_to_monitor(monitor),
+        )
+
     except Exception as e:
         return CreateMonitorResponse(
             monitor=None,
@@ -121,14 +125,16 @@ def get_data_quality_monitor(
         DataQualityMonitorModel with monitor details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    monitor = client.data_quality.get_monitor(
-        object_type=object_type,
-        object_id=object_id,
-    )
+        monitor = client.data_quality.get_monitor(
+            object_type=object_type,
+            object_id=object_id,
+        )
     
-    return _convert_to_monitor(monitor)
+        return _convert_to_monitor(monitor)
+
     except Exception as e:
         print(f"Error getting data quality monitor: {e}")
         return None
@@ -159,23 +165,25 @@ def update_data_quality_monitor(
         UpdateMonitorResponse with updated monitor
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.dataquality import Monitor
+        from databricks.sdk.service.dataquality import Monitor
     
-    # Create Monitor object from config
-    monitor_spec = Monitor.from_dict(monitor_config)
+        # Create Monitor object from config
+        monitor_spec = Monitor.from_dict(monitor_config)
     
-    monitor = client.data_quality.update_monitor(
-        object_type=object_type,
-        object_id=object_id,
-        monitor=monitor_spec,
-        update_mask=update_mask,
-    )
+        monitor = client.data_quality.update_monitor(
+            object_type=object_type,
+            object_id=object_id,
+            monitor=monitor_spec,
+            update_mask=update_mask,
+        )
     
-    return UpdateMonitorResponse(
-        monitor=_convert_to_monitor(monitor),
-    )
+        return UpdateMonitorResponse(
+            monitor=_convert_to_monitor(monitor),
+        )
+
     except Exception as e:
         return UpdateMonitorResponse(
             monitor=None,
@@ -203,26 +211,21 @@ def delete_data_quality_monitor(
         
     Returns:
         DeleteMonitorResponse confirming deletion
-        
-    
-        
-    Note:
-        - Metric tables are NOT deleted
-        - Dashboard is NOT deleted
-        - Manual cleanup required if desired
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.data_quality.delete_monitor(
-        object_type=object_type,
-        object_id=object_id,
-    )
+        client.data_quality.delete_monitor(
+            object_type=object_type,
+            object_id=object_id,
+        )
     
-    return DeleteMonitorResponse(
-        object_type=object_type,
-        object_id=object_id,
-    )
+        return DeleteMonitorResponse(
+            object_type=object_type,
+            object_id=object_id,
+        )
+
     except Exception as e:
         return DeleteMonitorResponse(
             object_type=object_type,
@@ -250,32 +253,29 @@ def list_data_quality_monitors(
         
     Returns:
         ListMonitorsResponse with monitors
-        
-    
-            
-    Note:
-        This operation may be unimplemented in some SDK versions.
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    monitors = []
-    next_token = None
+        monitors = []
+        next_token = None
     
-    try:
-        for monitor in client.data_quality.list_monitor(
-            page_size=page_size,
-            page_token=page_token,
-        ):
-            monitors.append(_convert_to_monitor(monitor))
-    except Exception as e:
-        # list_monitor may be unimplemented
-        pass
-    
-    return ListMonitorsResponse(
-        monitors=monitors,
-        next_page_token=next_token,
-    )
+        try:
+            for monitor in client.data_quality.list_monitor(
+                page_size=page_size,
+                page_token=page_token,
+            ):
+                monitors.append(_convert_to_monitor(monitor))
+
+        except Exception as e:
+            # list_monitor may be unimplemented
+            pass
+        
+        return ListMonitorsResponse(
+            monitors=monitors,
+            next_page_token=next_token,
+        )
     except Exception as e:
         return ListMonitorsResponse(
             monitors=[],
@@ -312,25 +312,27 @@ def create_data_quality_refresh(
         CreateRefreshResponse with created refresh
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.dataquality import Refresh
+        from databricks.sdk.service.dataquality import Refresh
     
-    # Create Refresh object from config
-    if refresh_config:
-        refresh_spec = Refresh.from_dict(refresh_config)
-    else:
-        refresh_spec = Refresh()
+        # Create Refresh object from config
+        if refresh_config:
+            refresh_spec = Refresh.from_dict(refresh_config)
+        else:
+            refresh_spec = Refresh()
     
-    refresh = client.data_quality.create_refresh(
-        object_type=object_type,
-        object_id=object_id,
-        refresh=refresh_spec,
-    )
+        refresh = client.data_quality.create_refresh(
+            object_type=object_type,
+            object_id=object_id,
+            refresh=refresh_spec,
+        )
     
-    return CreateRefreshResponse(
-        refresh=_convert_to_refresh(refresh),
-    )
+        return CreateRefreshResponse(
+            refresh=_convert_to_refresh(refresh),
+        )
+
     except Exception as e:
         return CreateRefreshResponse(
             refresh=None,
@@ -361,15 +363,17 @@ def get_data_quality_refresh(
         DataQualityRefreshModel with refresh details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    refresh = client.data_quality.get_refresh(
-        object_type=object_type,
-        object_id=object_id,
-        refresh_id=refresh_id,
-    )
+        refresh = client.data_quality.get_refresh(
+            object_type=object_type,
+            object_id=object_id,
+            refresh_id=refresh_id,
+        )
     
-    return _convert_to_refresh(refresh)
+        return _convert_to_refresh(refresh)
+
     except Exception as e:
         print(f"Error getting data quality refresh: {e}")
         return None
@@ -400,23 +404,25 @@ def list_data_quality_refreshes(
         ListRefreshesResponse with refreshes
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    refreshes = []
-    next_token = None
+        refreshes = []
+        next_token = None
     
-    for refresh in client.data_quality.list_refresh(
-        object_type=object_type,
-        object_id=object_id,
-        page_size=page_size,
-        page_token=page_token,
-    ):
-        refreshes.append(_convert_to_refresh(refresh))
+        for refresh in client.data_quality.list_refresh(
+            object_type=object_type,
+            object_id=object_id,
+            page_size=page_size,
+            page_token=page_token,
+        ):
+            refreshes.append(_convert_to_refresh(refresh))
     
-    return ListRefreshesResponse(
-        refreshes=refreshes,
-        next_page_token=next_token,
-    )
+        return ListRefreshesResponse(
+            refreshes=refreshes,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return ListRefreshesResponse(
             refreshes=[],
@@ -449,17 +455,19 @@ def cancel_data_quality_refresh(
         CancelRefreshResponse confirming cancellation
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.data_quality.cancel_refresh(
-        object_type=object_type,
-        object_id=object_id,
-        refresh_id=refresh_id,
-    )
+        client.data_quality.cancel_refresh(
+            object_type=object_type,
+            object_id=object_id,
+            refresh_id=refresh_id,
+        )
     
-    return CancelRefreshResponse(
-        refresh_id=refresh_id,
-    )
+        return CancelRefreshResponse(
+            refresh_id=refresh_id,
+        )
+
     except Exception as e:
         return CancelRefreshResponse(
             refresh_id=refresh_id,

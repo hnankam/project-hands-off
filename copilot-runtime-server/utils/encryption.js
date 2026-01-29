@@ -24,6 +24,15 @@ function deriveKey(organizationId) {
   // Master secret from environment (should be 32+ characters)
   const masterSecret = process.env.ENCRYPTION_MASTER_SECRET || 'default-secret-change-in-production';
   
+  // CRITICAL: Fail fast in production if encryption secret is not set
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (masterSecret === 'default-secret-change-in-production' && isProduction) {
+    throw new Error(
+      'ENCRYPTION_MASTER_SECRET must be set to a secure value in production. ' +
+      'Generate a strong secret with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64\'))"'
+    );
+  }
+  
   if (masterSecret === 'default-secret-change-in-production') {
     console.warn('⚠️  WARNING: Using default encryption secret. Set ENCRYPTION_MASTER_SECRET environment variable in production!');
   }

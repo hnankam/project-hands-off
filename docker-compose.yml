@@ -1,0 +1,154 @@
+# =============================================================================
+# Docker Compose Configuration for CopilotKit Services
+# =============================================================================
+#
+# This compose file orchestrates:
+# - copilotkit-pydantic: Python FastAPI service with MCP servers
+# - copilot-runtime-server: Node.js Express + Hono service
+#
+# External Dependencies (Managed SaaS):
+# - PostgreSQL: Neon, AWS RDS, Google Cloud SQL, etc.
+# - Redis: Redis Cloud, AWS ElastiCache, Google Memorystore, etc.
+#
+# Usage:
+#   Development: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+#   Production:  docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Note: For local development with containerized PostgreSQL/Redis, use docker-compose.dev.yml
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # Python FastAPI Service (Pydantic AI Agent Server)
+  # ---------------------------------------------------------------------------
+  copilotkit-pydantic:
+    build:
+      context: ./copilotkit-pydantic
+      dockerfile: Dockerfile
+      target: production
+    container_name: copilotkit-pydantic
+    restart: unless-stopped
+    environment:
+      # Server
+      HOST: 0.0.0.0
+      PORT: 8001
+      DEBUG: ${DEBUG:-false}
+      PYTHON_ENV: ${PYTHON_ENV:-production}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      
+      # Security
+      ENCRYPTION_MASTER_SECRET: ${ENCRYPTION_MASTER_SECRET:?ENCRYPTION_MASTER_SECRET is required}
+      
+      # Database (Managed SaaS - Neon, AWS RDS, etc.)
+      DB_HOST: ${DB_HOST:?DB_HOST is required}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:?DB_DATABASE is required}
+      DB_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      DB_OTHER_PARAMS: ${DB_OTHER_PARAMS:-sslmode=require}
+      DB_POOL_MIN_SIZE: ${DB_POOL_MIN_SIZE:-5}
+      DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-20}
+      
+      # Redis (Managed SaaS - Redis Cloud, AWS ElastiCache, etc.)
+      REDIS_ENABLED: ${REDIS_ENABLED:-true}
+      REDIS_HOST: ${REDIS_HOST:?REDIS_HOST is required}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      REDIS_SSL: ${REDIS_SSL:-true}
+      
+      # Rate Limiting
+      RATE_LIMIT_DEFAULT: ${RATE_LIMIT_DEFAULT:-100/minute}
+      RATE_LIMIT_AGENT: ${RATE_LIMIT_AGENT:-60/minute}
+      RATE_LIMIT_ADMIN: ${RATE_LIMIT_ADMIN:-120/minute}
+      
+      # External Services
+      ABLY_API_KEY: ${ABLY_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      
+      # Observability
+      LOGFIRE_ENABLED: ${LOGFIRE_ENABLED:-false}
+      LOGFIRE_TOKEN: ${LOGFIRE_TOKEN:-}
+      LOGFIRE_SERVICE_NAME: copilotkit-pydantic
+      LOGFIRE_ENVIRONMENT: ${PYTHON_ENV:-production}
+    ports:
+      - "${PYDANTIC_PORT:-8001}:8001"
+    volumes:
+      # Mount logs directory (optional)
+      - ./logs/pydantic:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/healthz').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - copilotkit-network
+
+  # ---------------------------------------------------------------------------
+  # Node.js Runtime Server (Express + Hono)
+  # ---------------------------------------------------------------------------
+  copilot-runtime-server:
+    build:
+      context: ./copilot-runtime-server
+      dockerfile: Dockerfile
+      target: production
+    container_name: copilot-runtime-server
+    restart: unless-stopped
+    depends_on:
+      copilotkit-pydantic:
+        condition: service_healthy
+    environment:
+      # Server
+      PORT: ${RUNTIME_PORT:-3001}
+      NODE_ENV: ${NODE_ENV:-production}
+      
+      # Security
+      ENCRYPTION_MASTER_SECRET: ${ENCRYPTION_MASTER_SECRET:?ENCRYPTION_MASTER_SECRET is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      
+      # Database (Managed SaaS - Neon, AWS RDS, etc.)
+      DB_HOST: ${DB_HOST:?DB_HOST is required}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:?DB_DATABASE is required}
+      DB_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      DB_OTHER_PARAMS: ${DB_OTHER_PARAMS:-sslmode=require}
+      
+      # Redis (Managed SaaS - Redis Cloud, AWS ElastiCache, etc.)
+      REDIS_ENABLED: ${REDIS_ENABLED:-true}
+      REDIS_HOST: ${REDIS_HOST:?REDIS_HOST is required}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_DB: ${REDIS_DB_RUNTIME:-1}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      
+      # Python Service
+      PYDANTIC_SERVICE_URL: http://copilotkit-pydantic:8001
+      
+      # External Services
+      ABLY_API_KEY: ${ABLY_API_KEY:-}
+    ports:
+      - "${RUNTIME_PORT:-3001}:3001"
+    volumes:
+      # Mount logs directory (optional)
+      - ./logs/runtime:/app/logs
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - copilotkit-network
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  copilotkit-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

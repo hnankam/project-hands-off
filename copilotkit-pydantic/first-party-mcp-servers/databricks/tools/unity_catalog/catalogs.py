@@ -83,35 +83,35 @@ def list_catalogs(
         ListCatalogsResponse with list of catalogs and pagination info
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Cap limit at 20 when include_browse is True to reduce response size
-    effective_limit = min(limit, 20) if include_browse else limit
+        # Cap limit at 20 when include_browse is True to reduce response size
+        effective_limit = min(limit, 20) if include_browse else limit
     
-    response = client.catalogs.list(
-        include_browse=include_browse,
-    )
+        response = client.catalogs.list(
+            include_browse=include_browse,
+        )
     
-    skip = page * effective_limit
-    catalogs_iterator = islice(response, skip, skip + effective_limit)
+        skip = page * effective_limit
+        catalogs_iterator = islice(response, skip, skip + effective_limit)
     
-    catalogs_list = []
-    for catalog in catalogs_iterator:
-        catalogs_list.append(_convert_catalog_to_model(catalog))
+        catalogs_list = []
+        for catalog in catalogs_iterator:
+            catalogs_list.append(_convert_catalog_to_model(catalog))
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
+        # Check for more results
         has_more = False
-    
-    return ListCatalogsResponse(
-        catalogs=catalogs_list,
-        count=len(catalogs_list),
-        has_more=has_more,
-    )
+        try:
+            next(response)
+            has_more = True
+        except StopIteration:
+            has_more = False
+        
+        return ListCatalogsResponse(
+            catalogs=catalogs_list,
+            count=len(catalogs_list),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListCatalogsResponse(
             catalogs=[],
@@ -143,14 +143,16 @@ def get_catalog(
         CatalogInfoModel with complete catalog details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    catalog = client.catalogs.get(
-        name=name,
-        include_browse=include_browse,
-    )
+        catalog = client.catalogs.get(
+            name=name,
+            include_browse=include_browse,
+        )
     
-    return _convert_catalog_to_model(catalog)
+        return _convert_catalog_to_model(catalog)
+
     except Exception as e:
         return CatalogInfoModel(
             name=name,
@@ -196,22 +198,24 @@ def create_catalog(
         CreateCatalogResponse with created catalog information
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    catalog = client.catalogs.create(
-        name=name,
-        comment=comment,
-        properties=properties,
-        storage_root=storage_root,
-        connection_name=connection_name,
-        options=options,
-        provider_name=provider_name,
-        share_name=share_name,
-    )
+        catalog = client.catalogs.create(
+            name=name,
+            comment=comment,
+            properties=properties,
+            storage_root=storage_root,
+            connection_name=connection_name,
+            options=options,
+            provider_name=provider_name,
+            share_name=share_name,
+        )
     
-    return CreateCatalogResponse(
-        catalog_info=_convert_catalog_to_model(catalog),
-    )
+        return CreateCatalogResponse(
+            catalog_info=_convert_catalog_to_model(catalog),
+        )
+
     except Exception as e:
         return CreateCatalogResponse(
             catalog_info=None,
@@ -239,24 +243,18 @@ def delete_catalog(
         
     Returns:
         DeleteCatalogResponse confirming deletion
-        
-    
-        try:
-            catalog = get_catalog(host, token, name="staging")
-            delete_catalog(host, token, name="staging")
-            print("Catalog deleted")
-        except Exception as e:
-            print(f"Catalog not found or cannot be deleted: {e}")
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.catalogs.delete(
-        name=name,
-        force=force,
-    )
+        client.catalogs.delete(
+            name=name,
+            force=force,
+        )
     
-    return DeleteCatalogResponse(name=name)
+        return DeleteCatalogResponse(name=name)
+
     except Exception as e:
         return DeleteCatalogResponse(
             name=name,
@@ -299,33 +297,35 @@ def update_catalog(
         UpdateCatalogResponse with updated catalog information
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Convert string parameters to enums if provided
-    isolation_mode_obj = None
-    if isolation_mode:
-        from databricks.sdk.service.catalog import CatalogIsolationMode
-        isolation_mode_obj = CatalogIsolationMode(isolation_mode)
+        # Convert string parameters to enums if provided
+        isolation_mode_obj = None
+        if isolation_mode:
+            from databricks.sdk.service.catalog import CatalogIsolationMode
+            isolation_mode_obj = CatalogIsolationMode(isolation_mode)
     
-    enable_pred_opt = None
-    if enable_predictive_optimization:
-        from databricks.sdk.service.catalog import EnablePredictiveOptimization
-        enable_pred_opt = EnablePredictiveOptimization(enable_predictive_optimization)
+        enable_pred_opt = None
+        if enable_predictive_optimization:
+            from databricks.sdk.service.catalog import EnablePredictiveOptimization
+            enable_pred_opt = EnablePredictiveOptimization(enable_predictive_optimization)
     
-    catalog = client.catalogs.update(
-        name=name,
-        new_name=new_name,
-        comment=comment,
-        owner=owner,
-        properties=properties,
-        options=options,
-        isolation_mode=isolation_mode_obj,
-        enable_predictive_optimization=enable_pred_opt,
-    )
+        catalog = client.catalogs.update(
+            name=name,
+            new_name=new_name,
+            comment=comment,
+            owner=owner,
+            properties=properties,
+            options=options,
+            isolation_mode=isolation_mode_obj,
+            enable_predictive_optimization=enable_pred_opt,
+        )
     
-    return UpdateCatalogResponse(
-        catalog_info=_convert_catalog_to_model(catalog),
-    )
+        return UpdateCatalogResponse(
+            catalog_info=_convert_catalog_to_model(catalog),
+        )
+
     except Exception as e:
         return UpdateCatalogResponse(
             catalog_info=None,

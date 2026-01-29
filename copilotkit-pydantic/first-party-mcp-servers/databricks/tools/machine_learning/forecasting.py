@@ -98,56 +98,58 @@ def create_forecasting_experiment(
         CreateForecastingExperimentResponse with experiment ID
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    if wait_for_completion:
-        # Use the blocking version that waits for completion
-        experiment = client.forecasting.create_experiment_and_wait(
-            train_data_path=train_data_path,
-            target_column=target_column,
-            time_column=time_column,
-            forecast_granularity=forecast_granularity,
-            forecast_horizon=forecast_horizon,
-            experiment_path=experiment_path,
-            prediction_data_path=prediction_data_path,
-            future_feature_data_path=future_feature_data_path,
-            register_to=register_to,
-            primary_metric=primary_metric,
-            timeseries_identifier_columns=timeseries_identifier_columns,
-            include_features=include_features,
-            training_frameworks=training_frameworks,
-            split_column=split_column,
-            custom_weights_column=custom_weights_column,
-            holiday_regions=holiday_regions,
-            max_runtime=max_runtime,
-        )
-    else:
-        # Use the non-blocking version
-        experiment = client.forecasting.create_experiment(
-            train_data_path=train_data_path,
-            target_column=target_column,
-            time_column=time_column,
-            forecast_granularity=forecast_granularity,
-            forecast_horizon=forecast_horizon,
-            experiment_path=experiment_path,
-            prediction_data_path=prediction_data_path,
-            future_feature_data_path=future_feature_data_path,
-            register_to=register_to,
-            primary_metric=primary_metric,
-            timeseries_identifier_columns=timeseries_identifier_columns,
-            include_features=include_features,
-            training_frameworks=training_frameworks,
-            split_column=split_column,
-            custom_weights_column=custom_weights_column,
-            holiday_regions=holiday_regions,
-            max_runtime=max_runtime,
-        )
-        # For long-running operations, we need to wait for the result
-        experiment = experiment.result()
+        if wait_for_completion:
+            # Use the blocking version that waits for completion
+            experiment = client.forecasting.create_experiment_and_wait(
+                train_data_path=train_data_path,
+                target_column=target_column,
+                time_column=time_column,
+                forecast_granularity=forecast_granularity,
+                forecast_horizon=forecast_horizon,
+                experiment_path=experiment_path,
+                prediction_data_path=prediction_data_path,
+                future_feature_data_path=future_feature_data_path,
+                register_to=register_to,
+                primary_metric=primary_metric,
+                timeseries_identifier_columns=timeseries_identifier_columns,
+                include_features=include_features,
+                training_frameworks=training_frameworks,
+                split_column=split_column,
+                custom_weights_column=custom_weights_column,
+                holiday_regions=holiday_regions,
+                max_runtime=max_runtime,
+            )
+        else:
+            # Use the non-blocking version
+            experiment = client.forecasting.create_experiment(
+                train_data_path=train_data_path,
+                target_column=target_column,
+                time_column=time_column,
+                forecast_granularity=forecast_granularity,
+                forecast_horizon=forecast_horizon,
+                experiment_path=experiment_path,
+                prediction_data_path=prediction_data_path,
+                future_feature_data_path=future_feature_data_path,
+                register_to=register_to,
+                primary_metric=primary_metric,
+                timeseries_identifier_columns=timeseries_identifier_columns,
+                include_features=include_features,
+                training_frameworks=training_frameworks,
+                split_column=split_column,
+                custom_weights_column=custom_weights_column,
+                holiday_regions=holiday_regions,
+                max_runtime=max_runtime,
+            )
+            # For long-running operations, we need to wait for the result
+            experiment = experiment.result()
     
-    return CreateForecastingExperimentResponse(
-        experiment_id=experiment.experiment_id,
-    )
+        return CreateForecastingExperimentResponse(
+            experiment_id=experiment.experiment_id,
+        )
+
     except Exception as e:
         return CreateForecastingExperimentResponse(
             experiment_id=None,
@@ -175,11 +177,13 @@ def get_forecasting_experiment(
         ForecastingExperimentModel with experiment details, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    experiment = client.forecasting.get_experiment(experiment_id=experiment_id)
+        experiment = client.forecasting.get_experiment(experiment_id=experiment_id)
     
-    return _convert_to_forecasting_experiment(experiment)
+        return _convert_to_forecasting_experiment(experiment)
+
     except Exception as e:
         return None
 

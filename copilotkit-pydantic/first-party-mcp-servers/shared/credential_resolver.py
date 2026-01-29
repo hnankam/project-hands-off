@@ -12,6 +12,7 @@ Security Note:
 
 import os
 import hashlib
+import time
 from pathlib import Path
 import psycopg
 from psycopg.rows import dict_row
@@ -23,6 +24,7 @@ from cryptography.hazmat.backends import default_backend
 from cachetools import TTLCache
 from threading import Lock
 import logging
+from typing import Optional, Callable, Any
 
 # Load .env file on module import
 try:
@@ -182,8 +184,58 @@ def _get_db_pool() -> ConnectionPool:
     return _db_pool
 
 
+def _exponential_backoff_retry(
+    func: Callable[[], Any],
+    max_retries: int = 3,
+    initial_delay: float = 0.5,
+    max_delay: float = 10.0,
+    exponential_base: float = 2.0
+) -> Any:
+    """Execute a function with exponential backoff retry logic.
+    
+    Args:
+        func: Function to execute
+        max_retries: Maximum number of retry attempts
+        initial_delay: Initial delay in seconds
+        max_delay: Maximum delay between retries
+        exponential_base: Base for exponential backoff calculation
+        
+    Returns:
+        Result of the function call
+        
+    Raises:
+        Last exception if all retries fail
+    """
+    last_exception = None
+    delay = initial_delay
+    
+    for attempt in range(max_retries + 1):
+        try:
+            return func()
+        except (psycopg.OperationalError, psycopg.InterfaceError, ConnectionError) as e:
+            last_exception = e
+            
+            if attempt == max_retries:
+                logger.error(f"All {max_retries} retry attempts failed: {e}")
+                raise
+            
+            # Calculate next delay with exponential backoff
+            delay = min(initial_delay * (exponential_base ** attempt), max_delay)
+            
+            logger.warning(
+                f"Database operation failed (attempt {attempt + 1}/{max_retries + 1}): {e}. "
+                f"Retrying in {delay:.2f}s..."
+            )
+            
+            time.sleep(delay)
+    
+    # Should never reach here, but just in case
+    if last_exception:
+        raise last_exception
+
+
 def _fetch_credential_from_db(credential_key: str) -> dict:
-    """Fetch credential from database by key using connection pool.
+    """Fetch credential from database by key using connection pool with retry logic.
     
     The key column must be globally unique across all users.
     
@@ -193,29 +245,33 @@ def _fetch_credential_from_db(credential_key: str) -> dict:
     Returns:
         Dict with credential data including encrypted_data and user_id
     """
-    pool = _get_db_pool()
+    def _fetch():
+        pool = _get_db_pool()
+        
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, user_id, name, type, key, encrypted_data
+                    FROM workspace_credentials
+                    WHERE key = %s
+                    """,
+                    (credential_key,)
+                )
+                result = cur.fetchone()
+                
+                if not result:
+                    raise ValueError(f"Credential not found with key: {credential_key}")
+                
+                # Convert hex string to bytes (matches Node.js storage format)
+                # Node.js stores as: encrypted.toString('hex')
+                if result['encrypted_data']:
+                    result['encrypted_data'] = bytes.fromhex(result['encrypted_data'])
+                
+                return result
     
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, user_id, name, type, key, encrypted_data
-                FROM workspace_credentials
-                WHERE key = %s
-                """,
-                (credential_key,)
-            )
-            result = cur.fetchone()
-            
-            if not result:
-                raise ValueError(f"Credential not found with key: {credential_key}")
-            
-            # Convert hex string to bytes (matches Node.js storage format)
-            # Node.js stores as: encrypted.toString('hex')
-            if result['encrypted_data']:
-                result['encrypted_data'] = bytes.fromhex(result['encrypted_data'])
-            
-            return result
+    # Execute with exponential backoff retry
+    return _exponential_backoff_retry(_fetch, max_retries=3)
 
 
 def resolve_credential(credential_key: str) -> str:
@@ -316,4 +372,52 @@ def get_db_pool_info() -> dict:
             "error": f"Could not get pool stats: {e}",
             "pool_type": str(type(pool).__name__)
         }
+
+
+def health_check() -> dict:
+    """Perform health check on credential resolver.
+    
+    Tests database connectivity and returns status information.
+    
+    Returns:
+        Dict with health check status and details
+    """
+    status = {
+        "healthy": False,
+        "database": {"connected": False, "error": None},
+        "cache": {"size": 0, "maxsize": 0, "ttl": 0},
+        "pool": {"initialized": False, "info": None}
+    }
+    
+    # Check cache
+    try:
+        cache_info = get_credential_cache_info()
+        status["cache"] = cache_info
+    except Exception as e:
+        logger.warning(f"Cache health check failed: {e}")
+    
+    # Check database connection
+    try:
+        pool = _get_db_pool()
+        status["pool"]["initialized"] = True
+        
+        # Try a simple query with retry
+        def _test_query():
+            with pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                    result = cur.fetchone()
+                    return result is not None
+        
+        db_ok = _exponential_backoff_retry(_test_query, max_retries=2)
+        status["database"]["connected"] = db_ok
+        
+        if db_ok:
+            status["pool"]["info"] = get_db_pool_info()
+            status["healthy"] = True
+    except Exception as e:
+        status["database"]["error"] = str(e)
+        logger.error(f"Database health check failed: {e}")
+    
+    return status
 

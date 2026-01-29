@@ -69,7 +69,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
   useEffect(() => {
     const fetchWorkspaceFiles = async () => {
       try {
-        const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
         const response = await fetch(`${baseURL}/api/workspace/files?limit=1000`, {
           credentials: 'include',
         });

@@ -55,33 +55,35 @@ def list_warehouses(
         - has_more=True indicates more results available
     """
     try:
-    from itertools import islice
+
+        from itertools import islice
     
-    client = get_workspace_client(host_credential_key, token_credential_key)
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    response = client.warehouses.list()
+        response = client.warehouses.list()
     
-    skip = page * limit
-    warehouses_iterator = islice(response, skip, skip + limit)
+        skip = page * limit
+        warehouses_iterator = islice(response, skip, skip + limit)
     
-    warehouses = []
-    for endpoint in warehouses_iterator:
-        endpoint_dict = endpoint.as_dict()
-        warehouses.append(_convert_warehouse_info(endpoint_dict))
+        warehouses = []
+        for endpoint in warehouses_iterator:
+            endpoint_dict = endpoint.as_dict()
+            warehouses.append(_convert_warehouse_info(endpoint_dict))
     
-    # Check for more results
-    has_more = False
-    try:
-        next(response)
-        has_more = True
-    except StopIteration:
+        # Check for more results
         has_more = False
-    
-    return ListWarehousesResponse(
-        warehouses=warehouses,
-        count=len(warehouses),
-        has_more=has_more,
-    )
+        try:
+            next(response)
+            has_more = True
+
+        except StopIteration:
+            has_more = False
+        
+        return ListWarehousesResponse(
+            warehouses=warehouses,
+            count=len(warehouses),
+            has_more=has_more,
+        )
     except Exception as e:
         return ListWarehousesResponse(
             warehouses=[],
@@ -111,9 +113,11 @@ def get_warehouse(
         WarehouseInfo with complete warehouse details, or None on error
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
-    response = client.warehouses.get(id=warehouse_id)
-    return _convert_warehouse_info(response.as_dict())
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
+        response = client.warehouses.get(id=warehouse_id)
+        return _convert_warehouse_info(response.as_dict())
+
     except Exception as e:
         return WarehouseInfo(
             id=warehouse_id,
@@ -159,35 +163,37 @@ def create_warehouse(
         CreateWarehouseResponse with created warehouse details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Convert tags
-    sdk_tags = None
-    if tags:
-        sdk_tags = SDKEndpointTags(
-            custom_tags=[SDKEndpointTagPair(key=t.key, value=t.value) for t in tags]
+        # Convert tags
+        sdk_tags = None
+        if tags:
+            sdk_tags = SDKEndpointTags(
+                custom_tags=[SDKEndpointTagPair(key=t.key, value=t.value) for t in tags]
+            )
+    
+        # Create warehouse (returns long-running operation waiter)
+        created = client.warehouses.create(
+            name=name,
+            cluster_size=cluster_size,
+            min_num_clusters=min_num_clusters,
+            max_num_clusters=max_num_clusters,
+            auto_stop_mins=auto_stop_mins,
+            warehouse_type=CreateWarehouseRequestWarehouseType(warehouse_type) if warehouse_type else None,
+            enable_photon=enable_photon,
+            enable_serverless_compute=enable_serverless_compute,
+            tags=sdk_tags,
+            spot_instance_policy=SpotInstancePolicy(spot_instance_policy) if spot_instance_policy else None
+        ).result()  # Wait for creation to complete
+    
+        return CreateWarehouseResponse(
+            id=created.id,
+            name=created.name,
+            state=created.state.value if created.state else "UNKNOWN",
+            message=f"Warehouse '{name}' created successfully"
         )
-    
-    # Create warehouse (returns long-running operation waiter)
-    created = client.warehouses.create(
-        name=name,
-        cluster_size=cluster_size,
-        min_num_clusters=min_num_clusters,
-        max_num_clusters=max_num_clusters,
-        auto_stop_mins=auto_stop_mins,
-        warehouse_type=CreateWarehouseRequestWarehouseType(warehouse_type) if warehouse_type else None,
-        enable_photon=enable_photon,
-        enable_serverless_compute=enable_serverless_compute,
-        tags=sdk_tags,
-        spot_instance_policy=SpotInstancePolicy(spot_instance_policy) if spot_instance_policy else None
-    ).result()  # Wait for creation to complete
-    
-    return CreateWarehouseResponse(
-        id=created.id,
-        name=created.name,
-        state=created.state.value if created.state else "UNKNOWN",
-        message=f"Warehouse '{name}' created successfully"
-    )
+
     except Exception as e:
         return CreateWarehouseResponse(
             id=None,
@@ -233,34 +239,36 @@ def update_warehouse(
         UpdateWarehouseResponse with updated warehouse details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Convert tags if provided
-    sdk_tags = None
-    if tags is not None:
-        sdk_tags = SDKEndpointTags(
-            custom_tags=[SDKEndpointTagPair(key=t.key, value=t.value) for t in tags]
+        # Convert tags if provided
+        sdk_tags = None
+        if tags is not None:
+            sdk_tags = SDKEndpointTags(
+                custom_tags=[SDKEndpointTagPair(key=t.key, value=t.value) for t in tags]
+            )
+    
+        # Update warehouse
+        updated = client.warehouses.edit(
+            id=warehouse_id,
+            name=name,
+            cluster_size=cluster_size,
+            min_num_clusters=min_num_clusters,
+            max_num_clusters=max_num_clusters,
+            auto_stop_mins=auto_stop_mins,
+            enable_photon=enable_photon,
+            enable_serverless_compute=enable_serverless_compute,
+            tags=sdk_tags
+        ).result()  # Wait for update to complete
+    
+        return UpdateWarehouseResponse(
+            id=updated.id,
+            name=updated.name,
+            state=updated.state.value if updated.state else None,
+            message=f"Warehouse {warehouse_id} updated successfully"
         )
-    
-    # Update warehouse
-    updated = client.warehouses.edit(
-        id=warehouse_id,
-        name=name,
-        cluster_size=cluster_size,
-        min_num_clusters=min_num_clusters,
-        max_num_clusters=max_num_clusters,
-        auto_stop_mins=auto_stop_mins,
-        enable_photon=enable_photon,
-        enable_serverless_compute=enable_serverless_compute,
-        tags=sdk_tags
-    ).result()  # Wait for update to complete
-    
-    return UpdateWarehouseResponse(
-        id=updated.id,
-        name=updated.name,
-        state=updated.state.value if updated.state else None,
-        message=f"Warehouse {warehouse_id} updated successfully"
-    )
+
     except Exception as e:
         return UpdateWarehouseResponse(
             id=warehouse_id,
@@ -288,13 +296,15 @@ def delete_warehouse(
         DeleteWarehouseResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
-    client.warehouses.delete(id=warehouse_id)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
+        client.warehouses.delete(id=warehouse_id)
     
-    return DeleteWarehouseResponse(
-        id=warehouse_id,
-        message=f"Warehouse {warehouse_id} deleted successfully"
-    )
+        return DeleteWarehouseResponse(
+            id=warehouse_id,
+            message=f"Warehouse {warehouse_id} deleted successfully"
+        )
+
     except Exception as e:
         return DeleteWarehouseResponse(
             id=warehouse_id,
@@ -324,16 +334,18 @@ def start_warehouse(
         StartWarehouseResponse with warehouse state
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Start warehouse and wait for RUNNING state
-    started = client.warehouses.start(id=warehouse_id).result()
+        # Start warehouse and wait for RUNNING state
+        started = client.warehouses.start(id=warehouse_id).result()
     
-    return StartWarehouseResponse(
-        id=warehouse_id,
-        state=started.state.value if started.state else "UNKNOWN",
-        message=f"Warehouse {warehouse_id} is now {started.state.value if started.state else 'UNKNOWN'}"
-    )
+        return StartWarehouseResponse(
+            id=warehouse_id,
+            state=started.state.value if started.state else "UNKNOWN",
+            message=f"Warehouse {warehouse_id} is now {started.state.value if started.state else 'UNKNOWN'}"
+        )
+
     except Exception as e:
         return StartWarehouseResponse(
             id=warehouse_id,
@@ -364,16 +376,18 @@ def stop_warehouse(
         StopWarehouseResponse with warehouse state
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Stop warehouse and wait for STOPPED state
-    stopped = client.warehouses.stop(id=warehouse_id).result()
+        # Stop warehouse and wait for STOPPED state
+        stopped = client.warehouses.stop(id=warehouse_id).result()
     
-    return StopWarehouseResponse(
-        id=warehouse_id,
-        state=stopped.state.value if stopped.state else "UNKNOWN",
-        message=f"Warehouse {warehouse_id} is now {stopped.state.value if stopped.state else 'UNKNOWN'}"
-    )
+        return StopWarehouseResponse(
+            id=warehouse_id,
+            state=stopped.state.value if stopped.state else "UNKNOWN",
+            message=f"Warehouse {warehouse_id} is now {stopped.state.value if stopped.state else 'UNKNOWN'}"
+        )
+
     except Exception as e:
         return StopWarehouseResponse(
             id=warehouse_id,

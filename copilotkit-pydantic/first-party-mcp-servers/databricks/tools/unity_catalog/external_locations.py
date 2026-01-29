@@ -7,6 +7,7 @@ secure access control.
 """
 
 from typing import Optional
+from itertools import islice
 from cache import get_workspace_client
 from models import (
     ExternalLocationInfoModel,
@@ -48,10 +49,10 @@ def _convert_to_external_location_model(external_location) -> ExternalLocationIn
 def list_external_locations(
     host_credential_key: str,
     token_credential_key: str,
+    limit: int = 25,
+    page: int = 0,
     include_browse: bool = False,
     include_unbound: bool = False,
-    max_results: int = 0,
-    page_token: Optional[str] = None,
 ) -> ListExternalLocationsResponse:
     """
     List external locations in Unity Catalog.
@@ -62,42 +63,53 @@ def list_external_locations(
     
     Args:
         host_credential_key: Credential key for workspace URL
-        token: Authentication token
+        token_credential_key: Authentication token
+        limit: Number of external locations to return. Default: 25. Capped at 20 when include_browse or include_unbound is True
+        page: Zero-indexed page number for pagination. Default: 0
         include_browse: Whether to include locations with selective metadata access
         include_unbound: Whether to include locations not bound to workspace
-        max_results: Maximum number of results (0 for server default, recommended). Maximum: 20 when include_browse or include_unbound is True
-        page_token: Opaque pagination token for next page
         
     Returns:
-        ListExternalLocationsResponse with external locations and pagination
+        ListExternalLocationsResponse with external locations and pagination info
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Cap max_results at 20 when expand options are True to reduce response size
-    effective_max_results = min(max_results, 20) if (include_browse or include_unbound) and max_results > 0 else max_results
+        # Cap limit at 20 when expand options are True to reduce response size
+        effective_limit = min(limit, 20) if (include_browse or include_unbound) else limit
     
-    locations = []
-    next_token = None
+        response = client.external_locations.list(
+            include_browse=include_browse,
+            include_unbound=include_unbound,
+        )
     
-    for location in client.external_locations.list(
-        include_browse=include_browse,
-        include_unbound=include_unbound,
-        max_results=effective_max_results,
-        page_token=page_token,
-    ):
-        locations.append(_convert_to_external_location_model(location))
+        skip = page * effective_limit
+        locations_iterator = islice(response, skip, skip + effective_limit)
     
-    return ListExternalLocationsResponse(
-        external_locations=locations,
-            has_more=False,  # SDK handles pagination internally
+        locations = []
+        for location in locations_iterator:
+            locations.append(_convert_to_external_location_model(location))
+    
+        # Check for more results
+        has_more = False
+        try:
+            next(response)
+            has_more = True
+        except StopIteration:
+            has_more = False
+        
+        return ListExternalLocationsResponse(
+            external_locations=locations,
+            count=len(locations),
+            has_more=has_more,
         )
     except Exception as e:
         return ListExternalLocationsResponse(
             external_locations=[],
+            count=0,
             has_more=False,
             error_message=f"Failed to list external locations: {str(e)}",
-    )
+        )
 
 
 def get_external_location(
@@ -123,14 +135,16 @@ def get_external_location(
         ExternalLocationInfoModel with location details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    location = client.external_locations.get(
-        name=name,
-        include_browse=include_browse,
-    )
+        location = client.external_locations.get(
+            name=name,
+            include_browse=include_browse,
+        )
     
-    return _convert_to_external_location_model(location)
+        return _convert_to_external_location_model(location)
+
     except Exception as e:
         return ExternalLocationInfoModel(
             name=name,
@@ -173,22 +187,24 @@ def create_external_location(
         CreateExternalLocationResponse with created location
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    location = client.external_locations.create(
-        name=name,
-        url=url,
-        credential_name=credential_name,
-        comment=comment,
-        read_only=read_only,
-        skip_validation=skip_validation,
-        enable_file_events=enable_file_events,
-        fallback=fallback,
-    )
+        location = client.external_locations.create(
+            name=name,
+            url=url,
+            credential_name=credential_name,
+            comment=comment,
+            read_only=read_only,
+            skip_validation=skip_validation,
+            enable_file_events=enable_file_events,
+            fallback=fallback,
+        )
     
-    return CreateExternalLocationResponse(
-        external_location=_convert_to_external_location_model(location),
-    )
+        return CreateExternalLocationResponse(
+            external_location=_convert_to_external_location_model(location),
+        )
+
     except Exception as e:
         return CreateExternalLocationResponse(
             external_location=None,
@@ -236,25 +252,27 @@ def update_external_location(
         UpdateExternalLocationResponse with updated location
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    location = client.external_locations.update(
-        name=name,
-        new_name=new_name,
-        url=url,
-        credential_name=credential_name,
-        comment=comment,
-        owner=owner,
-        read_only=read_only,
-        skip_validation=skip_validation,
-        force=force,
-        enable_file_events=enable_file_events,
-        fallback=fallback,
-    )
+        location = client.external_locations.update(
+            name=name,
+            new_name=new_name,
+            url=url,
+            credential_name=credential_name,
+            comment=comment,
+            owner=owner,
+            read_only=read_only,
+            skip_validation=skip_validation,
+            force=force,
+            enable_file_events=enable_file_events,
+            fallback=fallback,
+        )
     
-    return UpdateExternalLocationResponse(
-        external_location=_convert_to_external_location_model(location),
-    )
+        return UpdateExternalLocationResponse(
+            external_location=_convert_to_external_location_model(location),
+        )
+
     except Exception as e:
         return UpdateExternalLocationResponse(
             external_location=None,
@@ -284,16 +302,18 @@ def delete_external_location(
         DeleteExternalLocationResponse confirming deletion
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.external_locations.delete(
-        name=name,
-        force=force,
-    )
+        client.external_locations.delete(
+            name=name,
+            force=force,
+        )
     
-    return DeleteExternalLocationResponse(
-        name=name,
-    )
+        return DeleteExternalLocationResponse(
+            name=name,
+        )
+
     except Exception as e:
         return DeleteExternalLocationResponse(
             name=name,

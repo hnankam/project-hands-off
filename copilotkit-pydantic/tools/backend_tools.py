@@ -873,8 +873,8 @@ async def run_aux_agent_streaming(
     """
     # Extract parent_deps from context
     parent_deps = parent_ctx.deps
-    # Known auxiliary types that should NOT inherit parent tools
-    NO_TOOLS_AUX_TYPES = {'image_generation', 'web_search', 'code_execution', 'url_context'}
+    # Known auxiliary types that should NOT inherit parent tools or message history
+    NO_TOOLS_AUX_TYPES = {'image_generation', 'web_search', 'code_execution', 'url_context', 'code_generation'}
     
     # Inherit tools from parent only for unknown aux types
     tools = [] if aux_type in NO_TOOLS_AUX_TYPES else (run_input.tools or [])
@@ -894,10 +894,11 @@ async def run_aux_agent_streaming(
     # Inherit parent's message history and append new user message
     # Use parent_ctx.messages (ModelMessages) with keep_recent_messages to properly limit
     # while preserving tool call/result pairs, then convert to AG-UI format
+    # Skip history for certain agent types that don't need context
     
     model_messages = parent_ctx.messages
     
-    if model_messages:
+    if model_messages and aux_type not in NO_TOOLS_AUX_TYPES:
         logger.info(
             f"Sub-agent '{aux_type}': using parent_ctx.messages ({len(model_messages)} ModelMessages), "
             "applying keep_recent_messages to preserve tool call/result pairs"
@@ -921,9 +922,12 @@ async def run_aux_agent_streaming(
         sub_messages = agui_messages
         
     else:
-        # No parent messages - just create new user message
+        # No parent messages OR history excluded for this agent type - just create new user message
         sub_messages = [UserMessage(id=str(uuid.uuid4()), content=user_message)]
-        logger.info(f"Sub-agent '{aux_type}': no parent messages, starting with new user message")
+        if aux_type in NO_TOOLS_AUX_TYPES:
+            logger.info(f"Sub-agent '{aux_type}': excluding message history (agent type doesn't need context)")
+        else:
+            logger.info(f"Sub-agent '{aux_type}': no parent messages, starting with new user message")
     
     logger.info(
         f"Sub-agent '{aux_type}': starting with {len(sub_messages)} AG-UI messages "
@@ -933,7 +937,7 @@ async def run_aux_agent_streaming(
     sub_run_input = RunAgentInput(
         thread_id=run_input.thread_id,  # Inherit thread_id from parent
         run_id=str(uuid.uuid4()),  # New run_id for this sub-agent
-        messages=sub_messages,  # Include parent message history + new message
+        messages=sub_messages,  # Include parent message history + new message (history excluded for certain agent types)
         state=run_input.state or {},
         context=context_items,  # Context items for RunAgentInput
         tools=tools,
@@ -1000,10 +1004,10 @@ async def run_aux_agent_streaming(
         ):
             # If stream is closed, stop processing immediately
             if stream_closed:
-                logger.info(f"Auxiliary agent '{aux_type}' stopping - stream closed")
+                # logger.info(f"Auxiliary agent '{aux_type}' stopping - stream closed")
                 break
             
-            logger.info(f"Event: {event}")
+            # logger.info(f"Event: {event}")
             if send_stream is not None:
                 try:
                     import json
@@ -1020,11 +1024,6 @@ async def run_aux_agent_streaming(
                     
                     # Forward tool call events and state/activity events directly
                     if event_type in FORWARD_EVENT_TYPES:
-                        # Log state events for debugging
-                        if event_type in ('STATE_SNAPSHOT', 'STATE_DELTA', 'ACTIVITY_SNAPSHOT', 'ACTIVITY_DELTA'):
-                            logger.debug(
-                                f"Auxiliary agent '{aux_type}' forwarding {event_type} event to frontend"
-                            )
                         await send_stream.send(event)
                         consecutive_failures = 0  # Reset on success
                     
@@ -1537,9 +1536,7 @@ async def call_agent(ctx: RunContext[UnifiedDeps], agent_key: str, prompt: str) 
         prompt: Task or question for the agent
         
     Returns:
-        Agent response text
-        
-    Example: call_agent(agent_key="databricks_expert", prompt="List all clusters")
+        Agent response text        
     """
     # Get agent context
     organization_id, team_id, agent_type, agent_info = _get_agent_context(ctx)
@@ -1621,14 +1618,153 @@ async def call_agent(ctx: RunContext[UnifiedDeps], agent_key: str, prompt: str) 
         response_text = result.response.text if result and result.response else ""
         
         if not response_text:
+            logger.warning(f"Custom auxiliary agent '{agent_key}' completed but returned no response.")
             return ToolReturn(return_value=f"Custom auxiliary agent '{agent_key}' completed but returned no response.")
         
+        logger.info(f"Custom auxiliary agent '{agent_key}' completed with response: {response_text}")
         return ToolReturn(return_value=response_text)
         
     except Exception as e:
         error_msg = f"Custom auxiliary agent '{agent_key}' failed: {str(e)}"
         logger.exception("Custom auxiliary agent '%s' failed: %s", agent_key, e)
         return ToolReturn(return_value=format_error_json('execution_error', error_msg, {"exception": str(e), "agent_key": agent_key}))
+
+
+async def load_full_tool_result(
+    ctx: RunContext[UnifiedDeps],
+    run_id: str,
+    tool_call_id: str,
+    event_type: str = "TOOL_CALL_RESULT"
+) -> ToolReturn:
+    """Load the full untruncated content of a tool call result or arguments.
+    
+    This tool is used when a tool's output or input was truncated due to size limits.
+    Call this tool to retrieve the complete, untruncated data directly from the database.
+    
+    Args:
+        run_id: The unique identifier for the agent run
+        tool_call_id: The unique identifier for the specific tool call
+        event_type: Type of content to load - either "TOOL_CALL_RESULT" (for tool outputs) 
+                   or "TOOL_CALL_ARGS" (for tool inputs). Defaults to "TOOL_CALL_RESULT".
+    
+    Returns:
+        ToolReturn with the full untruncated content        
+    """
+    try:
+        # Validate event_type
+        if event_type not in ('TOOL_CALL_RESULT', 'TOOL_CALL_ARGS'):
+            error_msg = "Event type must be TOOL_CALL_RESULT or TOOL_CALL_ARGS"
+            logger.error(f"Invalid event_type: {event_type}")
+            return ToolReturn(return_value=format_error_json(
+                'validation_error',
+                error_msg,
+                {
+                    "run_id": run_id,
+                    "tool_call_id": tool_call_id,
+                    "event_type": event_type
+                }
+            ))
+        
+        logger.info(f"Loading full tool result from database: run_id={run_id}, tool_call_id={tool_call_id}, event_type={event_type}")
+        
+        # Import database connection
+        from database.connection import get_db_connection
+        
+        # Query the database for the run's events
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT events FROM agent_runs WHERE run_id = %s",
+                    (run_id,)
+                )
+                result = await cur.fetchone()
+                
+                if not result:
+                    error_msg = "Run not found in database"
+                    logger.warning(f"Run not found: run_id={run_id}")
+                    return ToolReturn(return_value=format_error_json(
+                        'not_found',
+                        error_msg,
+                        {
+                            "run_id": run_id,
+                            "tool_call_id": tool_call_id,
+                            "event_type": event_type
+                        }
+                    ))
+                
+                events = result.get('events', []) or []
+                
+                # Find the event with the matching toolCallId and eventType
+                target_event = None
+                for event in events:
+                    if event.get('toolCallId') == tool_call_id and event.get('type') == event_type:
+                        target_event = event
+                        break
+                
+                if not target_event:
+                    error_msg = f"{event_type} event with toolCallId {tool_call_id} not found in run {run_id}"
+                    logger.warning(f"Event not found: {error_msg}")
+                    return ToolReturn(return_value=format_error_json(
+                        'not_found',
+                        error_msg,
+                        {
+                            "run_id": run_id,
+                            "tool_call_id": tool_call_id,
+                            "event_type": event_type
+                        }
+                    ))
+                
+                # Extract content based on event type
+                content = None
+                if event_type == 'TOOL_CALL_RESULT':
+                    # For TOOL_CALL_RESULT, check content field first, then result field
+                    content = target_event.get('content')
+                    if content is None:
+                        content = target_event.get('result')
+                else:
+                    # For TOOL_CALL_ARGS, check args field first, then delta field
+                    content = target_event.get('args')
+                    if content is None:
+                        content = target_event.get('delta')
+                
+                if content is None:
+                    error_msg = f"No content found in {event_type} event"
+                    logger.warning(f"Content not found in event: {error_msg}")
+                    return ToolReturn(return_value=format_error_json(
+                        'not_found',
+                        error_msg,
+                        {
+                            "run_id": run_id,
+                            "tool_call_id": tool_call_id,
+                            "event_type": event_type
+                        }
+                    ))
+                
+                # Format the response based on content type
+                if isinstance(content, (dict, list)):
+                    # Return JSON content as formatted string
+                    result_str = json.dumps(content, indent=2)
+                    logger.info(f"Successfully loaded full tool result (JSON, {len(result_str)} chars)")
+                    return ToolReturn(return_value=result_str)
+                else:
+                    # Return string content as-is
+                    result_str = str(content)
+                    logger.info(f"Successfully loaded full tool result (string, {len(result_str)} chars)")
+                    return ToolReturn(return_value=result_str)
+    
+    except Exception as e:
+        error_msg = f"Database error while loading content: {str(e)}"
+        logger.exception("Database error loading tool result: %s", e)
+        return ToolReturn(return_value=format_error_json(
+            'execution_error',
+            error_msg,
+            {
+                "run_id": run_id,
+                "tool_call_id": tool_call_id,
+                "event_type": event_type,
+                "exception": str(e)
+            }
+        ))
 
 
 # Multi-agent graph tools moved to graph_tools.py
@@ -1658,6 +1794,8 @@ BACKEND_TOOLS = {
     'url_context': url_context,
     # Custom auxiliary agents
     'call_agent': call_agent,
+    # Tool result loading
+    'load_full_tool_result': load_full_tool_result,
     # Workspace tools (personal resources) - lazy loaded
     'search_workspace_files': None,
     'get_file_content': None,

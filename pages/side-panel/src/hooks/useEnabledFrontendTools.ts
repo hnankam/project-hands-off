@@ -109,7 +109,7 @@ export function useEnabledFrontendTools({
   // Track previous params to avoid redundant fetches
   const prevParamsRef = useRef<string>('');
 
-  const backendUrl = useMemo(() => import.meta.env.VITE_BACKEND_URL || 'http://localhost:8001', []);
+  const backendUrl = useMemo(() => process.env.CEB_BACKEND_URL || 'http://localhost:8001', []);
 
   const canFetch = Boolean(agentType && modelType && organizationId && teamId);
 

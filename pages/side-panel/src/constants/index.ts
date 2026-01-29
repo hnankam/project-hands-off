@@ -135,8 +135,11 @@ export const THEME_COLORS = {
 } as const;
 
 // API configuration
+// Uses CEB_API_URL environment variable with fallback to localhost
+const API_BASE_URL = process.env.CEB_API_URL || 'http://localhost:3001';
+
 export const API_CONFIG = {
-  BASE_URL: 'http://localhost:3001',
+  BASE_URL: API_BASE_URL,
   ENDPOINTS: {
     CONFIG: '/api/config',
     CONFIG_AGENTS: '/api/config/agents',
@@ -147,8 +150,9 @@ export const API_CONFIG = {
 } as const;
 
 // CopilotKit configuration
+// Uses CEB_API_URL environment variable with fallback to localhost
 export const COPIOLITKIT_CONFIG = {
-  RUNTIME_URL: 'http://localhost:3001/api/copilotkit',
+  RUNTIME_URL: `${API_BASE_URL}/api/copilotkit`,
   PUBLIC_API_KEY: 'ck_pub_c94e406d9327510d0463f3dbe3c1f2e8',
   PUBLIC_LICENSE_KEY: "ck_pub_c94e406d9327510d0463f3dbe3c1f2e8",
   MAX_SUGGESTIONS: 3,

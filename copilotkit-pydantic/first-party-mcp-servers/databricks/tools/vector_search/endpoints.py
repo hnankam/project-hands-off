@@ -65,20 +65,22 @@ def list_vector_search_endpoints(
         ListEndpointsResponse with endpoints
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    endpoints = []
-    next_token = None
+        endpoints = []
+        next_token = None
     
-    for endpoint in client.vector_search_endpoints.list_endpoints(
-        page_token=page_token,
-    ):
-        endpoints.append(_convert_to_endpoint_info(endpoint))
+        for endpoint in client.vector_search_endpoints.list_endpoints(
+            page_token=page_token,
+        ):
+            endpoints.append(_convert_to_endpoint_info(endpoint))
     
-    return ListEndpointsResponse(
-        endpoints=endpoints,
-        next_page_token=next_token,
-    )
+        return ListEndpointsResponse(
+            endpoints=endpoints,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return ListEndpointsResponse(
             endpoints=[],
@@ -106,13 +108,15 @@ def get_vector_search_endpoint(
         EndpointInfoModel with endpoint details
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    endpoint = client.vector_search_endpoints.get_endpoint(
-        endpoint_name=endpoint_name
-    )
+        endpoint = client.vector_search_endpoints.get_endpoint(
+            endpoint_name=endpoint_name
+        )
     
-    return _convert_to_endpoint_info(endpoint)
+        return _convert_to_endpoint_info(endpoint)
+
     except Exception as e:
         print(f"Error getting vector search endpoint: {e}")
         return None
@@ -150,26 +154,28 @@ def create_vector_search_endpoint(
         - Once ONLINE, you can create vector search indexes on this endpoint
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.vectorsearch import EndpointType
+        from databricks.sdk.service.vectorsearch import EndpointType
     
-    # Convert string to EndpointType enum
-    endpoint_type_enum = EndpointType[endpoint_type.upper()]
+        # Convert string to EndpointType enum
+        endpoint_type_enum = EndpointType[endpoint_type.upper()]
     
-    # Create endpoint and wait for it to be online
-    waiter = client.vector_search_endpoints.create_endpoint(
-        name=name,
-        endpoint_type=endpoint_type_enum,
-        budget_policy_id=budget_policy_id,
-    )
+        # Create endpoint and wait for it to be online
+        waiter = client.vector_search_endpoints.create_endpoint(
+            name=name,
+            endpoint_type=endpoint_type_enum,
+            budget_policy_id=budget_policy_id,
+        )
     
-    # Wait for endpoint to be online (with timeout)
-    endpoint = waiter.result(timeout=1200)  # 20 minutes timeout
+        # Wait for endpoint to be online (with timeout)
+        endpoint = waiter.result(timeout=1200)  # 20 minutes timeout
     
-    return CreateEndpointResponse(
-        endpoint=_convert_to_endpoint_info(endpoint),
-    )
+        return CreateEndpointResponse(
+            endpoint=_convert_to_endpoint_info(endpoint),
+        )
+
     except Exception as e:
         return CreateEndpointResponse(
             endpoint=None,
@@ -204,15 +210,17 @@ def delete_vector_search_endpoint(
         - Endpoint deletion may take several minutes
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.vector_search_endpoints.delete_endpoint(
-        endpoint_name=endpoint_name
-    )
+        client.vector_search_endpoints.delete_endpoint(
+            endpoint_name=endpoint_name
+        )
     
-    return DeleteEndpointResponse(
-        endpoint_name=endpoint_name,
-    )
+        return DeleteEndpointResponse(
+            endpoint_name=endpoint_name,
+        )
+
     except Exception as e:
         return DeleteEndpointResponse(
             endpoint_name=endpoint_name,
@@ -242,17 +250,19 @@ def update_endpoint_budget_policy(
         UpdateEndpointBudgetPolicyResponse confirming update
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    client.vector_search_endpoints.update_endpoint_budget_policy(
-        endpoint_name=endpoint_name,
-        budget_policy_id=budget_policy_id,
-    )
+        client.vector_search_endpoints.update_endpoint_budget_policy(
+            endpoint_name=endpoint_name,
+            budget_policy_id=budget_policy_id,
+        )
     
-    return UpdateEndpointBudgetPolicyResponse(
-        endpoint_name=endpoint_name,
-        budget_policy_id=budget_policy_id,
-    )
+        return UpdateEndpointBudgetPolicyResponse(
+            endpoint_name=endpoint_name,
+            budget_policy_id=budget_policy_id,
+        )
+
     except Exception as e:
         return UpdateEndpointBudgetPolicyResponse(
             endpoint_name=endpoint_name,
@@ -283,25 +293,27 @@ def update_endpoint_custom_tags(
         UpdateEndpointCustomTagsResponse confirming update
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.vectorsearch import CustomTag
+        from databricks.sdk.service.vectorsearch import CustomTag
     
-    # Convert dict tags to CustomTag objects
-    tag_objects = [CustomTag(key=tag['key'], value=tag['value']) for tag in custom_tags]
+        # Convert dict tags to CustomTag objects
+        tag_objects = [CustomTag(key=tag['key'], value=tag['value']) for tag in custom_tags]
     
-    client.vector_search_endpoints.update_endpoint_custom_tags(
-        endpoint_name=endpoint_name,
-        custom_tags=tag_objects,
-    )
+        client.vector_search_endpoints.update_endpoint_custom_tags(
+            endpoint_name=endpoint_name,
+            custom_tags=tag_objects,
+        )
     
-    # Convert back to Pydantic models for response
-    tag_models = [CustomTagModel(key=tag['key'], value=tag['value']) for tag in custom_tags]
+        # Convert back to Pydantic models for response
+        tag_models = [CustomTagModel(key=tag['key'], value=tag['value']) for tag in custom_tags]
     
-    return UpdateEndpointCustomTagsResponse(
-        endpoint_name=endpoint_name,
-        custom_tags=tag_models,
-    )
+        return UpdateEndpointCustomTagsResponse(
+            endpoint_name=endpoint_name,
+            custom_tags=tag_models,
+        )
+
     except Exception as e:
         return UpdateEndpointCustomTagsResponse(
             endpoint_name=endpoint_name,
@@ -347,48 +359,50 @@ def retrieve_endpoint_metrics(
         - Time range is limited based on retention policy
     """
     try:
-    client = get_workspace_client(host_credential_key, token_credential_key)
+
+        client = get_workspace_client(host_credential_key, token_credential_key)
     
-    from databricks.sdk.service.vectorsearch import Metric
+        from databricks.sdk.service.vectorsearch import Metric
     
-    # Convert string metrics to Metric enum if provided
-    metric_enums = None
-    if metrics:
-        metric_enums = [Metric[m.upper()] for m in metrics]
+        # Convert string metrics to Metric enum if provided
+        metric_enums = None
+        if metrics:
+            metric_enums = [Metric[m.upper()] for m in metrics]
     
-    result = client.vector_search_endpoints.retrieve_user_visible_metrics(
-        name=endpoint_name,
-        start_time=start_time,
-        end_time=end_time,
-        metrics=metric_enums,
-        granularity_in_seconds=granularity_in_seconds,
-        page_token=page_token,
-    )
+        result = client.vector_search_endpoints.retrieve_user_visible_metrics(
+            name=endpoint_name,
+            start_time=start_time,
+            end_time=end_time,
+            metrics=metric_enums,
+            granularity_in_seconds=granularity_in_seconds,
+            page_token=page_token,
+        )
     
-    # Convert result to Pydantic models
-    metric_series = []
-    if hasattr(result, 'metrics') and result.metrics:
-        for series in result.metrics:
-            data_points = []
-            if hasattr(series, 'data_points') and series.data_points:
-                for point in series.data_points:
-                    data_points.append(MetricDataPoint(
-                        timestamp=point.timestamp if hasattr(point, 'timestamp') else None,
-                        value=point.value if hasattr(point, 'value') else None,
-                    ))
+        # Convert result to Pydantic models
+        metric_series = []
+        if hasattr(result, 'metrics') and result.metrics:
+            for series in result.metrics:
+                data_points = []
+                if hasattr(series, 'data_points') and series.data_points:
+                    for point in series.data_points:
+                        data_points.append(MetricDataPoint(
+                            timestamp=point.timestamp if hasattr(point, 'timestamp') else None,
+                            value=point.value if hasattr(point, 'value') else None,
+                        ))
             
-            metric_series.append(MetricSeries(
-                metric_name=series.metric_name if hasattr(series, 'metric_name') else None,
-                data_points=data_points,
-            ))
+                metric_series.append(MetricSeries(
+                    metric_name=series.metric_name if hasattr(series, 'metric_name') else None,
+                    data_points=data_points,
+                ))
     
-    next_token = result.next_page_token if hasattr(result, 'next_page_token') else None
+        next_token = result.next_page_token if hasattr(result, 'next_page_token') else None
     
-    return RetrieveMetricsResponse(
-        endpoint_name=endpoint_name,
-        metrics=metric_series,
-        next_page_token=next_token,
-    )
+        return RetrieveMetricsResponse(
+            endpoint_name=endpoint_name,
+            metrics=metric_series,
+            next_page_token=next_token,
+        )
+
     except Exception as e:
         return RetrieveMetricsResponse(
             endpoint_name=endpoint_name,
