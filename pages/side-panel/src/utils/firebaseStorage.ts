@@ -12,7 +12,7 @@
 
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getStorage, ref, uploadString, getDownloadURL, type FirebaseStorage } from 'firebase/storage';
-import { getAuth, signInAnonymously, type Auth } from 'firebase/auth';
+import { getAuth, signInAnonymously, type Auth } from 'firebase/auth/web-extension';
 
 // ============================================================================
 // TYPES
