@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
 import { OrganizationSelector, TeamSelector } from './selectors';
+import { API_CONFIG } from '../../constants';
 
 interface Organization {
   id: string;
@@ -72,7 +73,7 @@ interface DeploymentsTabProps {
   onSuccess: (message: string) => void;
 }
 
-const BACKEND_URL = process.env.CEB_BACKEND_URL || 'http://localhost:8001';
+const BACKEND_URL = API_CONFIG.BACKEND_URL;
 const AUTO_REFRESH_INTERVAL_MS = 30000;
 
 const AgentIcon = () => (

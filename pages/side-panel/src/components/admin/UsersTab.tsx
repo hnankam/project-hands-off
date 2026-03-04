@@ -9,6 +9,7 @@ import { authClient, adminResetPassword, banUser, unbanUser } from '../../lib/au
 import { cn } from '@extension/ui';
 import { OrganizationSelector, TeamSelector, RoleSelector } from './selectors';
 import { AdminConfirmDialog, BanUserDialog } from './modals';
+import { API_CONFIG } from '../../constants';
 
 interface Organization {
   id: string;
@@ -216,7 +217,7 @@ useEffect(() => {
   const loadMembers = async (orgId: string) => {
     try {
       // Use custom endpoint that includes banned status
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/auth/org-members-with-status?organizationId=${orgId}`, {
         credentials: 'include',
       });
@@ -457,7 +458,7 @@ useEffect(() => {
 
     try {
       // Use custom invitation endpoint that supports team assignments
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/invitations/create`, {
         method: 'POST',
         headers: {

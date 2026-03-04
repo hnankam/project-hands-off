@@ -135,11 +135,25 @@ export const THEME_COLORS = {
 } as const;
 
 // API configuration
-// Uses CEB_API_URL environment variable with fallback to localhost
-const API_BASE_URL = process.env.CEB_API_URL || 'http://localhost:3001';
+// Defaults come from build-time env vars; runtime overrides via apiConfigStorage (Options page)
+let _apiUrlOverride: string | null = null;
+let _backendUrlOverride: string | null = null;
+
+const DEFAULT_API_URL = process.env.CEB_API_URL || 'http://localhost:3001';
+const DEFAULT_BACKEND_URL = process.env.CEB_BACKEND_URL || 'http://localhost:8001';
+
+/**
+ * Call once on app startup (from SidePanel) after reading apiConfigStorage.
+ * Passing empty strings clears the override and falls back to build-time defaults.
+ */
+export function initApiConfig(apiUrl: string, backendUrl: string) {
+  _apiUrlOverride = apiUrl || null;
+  _backendUrlOverride = backendUrl || null;
+}
 
 export const API_CONFIG = {
-  BASE_URL: API_BASE_URL,
+  get BASE_URL(): string { return _apiUrlOverride || DEFAULT_API_URL; },
+  get BACKEND_URL(): string { return _backendUrlOverride || DEFAULT_BACKEND_URL; },
   ENDPOINTS: {
     CONFIG: '/api/config',
     CONFIG_AGENTS: '/api/config/agents',
@@ -147,19 +161,17 @@ export const API_CONFIG = {
     CONFIG_DEFAULTS: '/api/config/defaults',
   },
   CACHE_TTL: 5 * 60 * 1000, // 5 minutes for config cache
-} as const;
+};
 
 // CopilotKit configuration
-// Uses CEB_API_URL environment variable with fallback to localhost
 export const COPIOLITKIT_CONFIG = {
-  RUNTIME_URL: `${API_BASE_URL}/api/copilotkit`,
+  get RUNTIME_URL(): string { return `${API_CONFIG.BASE_URL}/api/copilotkit`; },
   PUBLIC_API_KEY: 'ck_pub_c94e406d9327510d0463f3dbe3c1f2e8',
   PUBLIC_LICENSE_KEY: "ck_pub_c94e406d9327510d0463f3dbe3c1f2e8",
   MAX_SUGGESTIONS: 3,
   ENABLE_IMAGE_UPLOADS: true,
   ENABLE_AUDIO_TRANSCRIPTION: true,
   ENABLE_TEXT_TO_SPEECH: true,
-  // Firebase upload integration (set these via environment-injection script)
   ENABLE_FIREBASE_UPLOADS: true,
   FIREBASE: {
     apiKey: "AIzaSyA8gy_pM2D8A80jX4bUuhwkAuRHupNrYNE",
@@ -169,7 +181,7 @@ export const COPIOLITKIT_CONFIG = {
     messagingSenderId: "1095327983558",
     appId: "1:1095327983558:web:7178975fca572f8fe534c7"
   } as any,
-} as const;
+};
 
 // Ably Pub/Sub configuration for real-time usage streaming
 export const ABLY_CONFIG = {

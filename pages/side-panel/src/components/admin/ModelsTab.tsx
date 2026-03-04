@@ -7,6 +7,7 @@ import { OrganizationSelector, TeamMultiSelector } from './selectors';
 import { Radio, Checkbox } from './form-controls';
 import { CodeMirrorJsonEditor } from './editors';
 import { AdminConfirmDialog } from './modals';
+import { API_CONFIG } from '../../constants';
 
 interface Organization {
   id: string;
@@ -515,7 +516,7 @@ const ProviderDropdown: React.FC<ProviderDropdownProps> = ({
 };
 
 export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, onSuccess }: ModelsTabProps) {
-  const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+  const baseURL = API_CONFIG.BASE_URL;
 
   // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';

@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { API_CONFIG } from '../constants';
 
 // ============================================================================
 // TYPES
@@ -109,7 +110,7 @@ export function useEnabledFrontendTools({
   // Track previous params to avoid redundant fetches
   const prevParamsRef = useRef<string>('');
 
-  const backendUrl = useMemo(() => process.env.CEB_BACKEND_URL || 'http://localhost:8001', []);
+  const backendUrl = useMemo(() => API_CONFIG.BACKEND_URL, []);
 
   const canFetch = Boolean(agentType && modelType && organizationId && teamId);
 

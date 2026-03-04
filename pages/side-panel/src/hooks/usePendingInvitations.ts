@@ -20,6 +20,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { debug } from '@extension/shared';
+import { API_CONFIG } from '../constants';
 
 // ============================================================================
 // TYPES
@@ -139,7 +140,7 @@ export function usePendingInvitations(): UsePendingInvitationsReturn {
     setError(null);
 
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const url = `${baseURL}/api/invitations/user/${encodeURIComponent(email)}`;
       
       debug.log('[usePendingInvitations] Checking invitations for:', email);

@@ -102,7 +102,7 @@ async function checkServiceHealth(
  */
 export async function checkBackendHealth(): Promise<BackendHealthStatus> {
   const runtimeServerUrl = API_CONFIG.BASE_URL;
-  const pydanticBackendUrl = process.env.CEB_BACKEND_URL || 'http://localhost:8001';
+  const pydanticBackendUrl = API_CONFIG.BACKEND_URL;
 
   // Check both services in parallel
   const [runtimeServer, pydanticBackend] = await Promise.all([

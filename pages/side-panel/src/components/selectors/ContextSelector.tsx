@@ -14,6 +14,7 @@ import { cn } from '@extension/ui';
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type React from 'react';
+import { API_CONFIG } from '../../constants';
 
 // ============================================================================
 // TYPES
@@ -371,7 +372,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
 
     setLoadingWorkspace(true);
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
 
       // Fetch notes
       if (onNotesChange) {
@@ -1099,7 +1100,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
       // If callback for full notes is provided, fetch content
       if (onNotesWithContentChange && newSelection.length > 0) {
         try {
-          const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+          const baseURL = API_CONFIG.BASE_URL;
           const response = await fetch(`${baseURL}/api/workspace/notes/bulk`, {
             method: 'POST',
             credentials: 'include',
@@ -1136,7 +1137,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
       // ✅ SECURITY: Fetch metadata only (no secrets/passwords)
       if (onCredentialsWithMetadataChange && newSelection.length > 0) {
         try {
-          const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+          const baseURL = API_CONFIG.BASE_URL;
           // Changed endpoint from /bulk to /metadata
           const response = await fetch(`${baseURL}/api/workspace/credentials/metadata`, {
             method: 'POST',

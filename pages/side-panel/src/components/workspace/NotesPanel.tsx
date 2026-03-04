@@ -4,6 +4,7 @@ import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { cn } from '@extension/ui';
 import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
+import { API_CONFIG } from '../../constants';
 
 interface WorkspaceNote {
   id: string;
@@ -39,7 +40,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
   const loadNotes = useCallback(async () => {
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/workspace/notes`, {
         credentials: 'include',
       });
@@ -68,7 +69,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
   const handleEdit = async (note: WorkspaceNote) => {
     // Fetch full note content
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/workspace/notes/${note.id}`, {
         credentials: 'include',
       });
@@ -94,7 +95,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     setSaving(true);
 
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const url = editingNote ? `${baseURL}/api/workspace/notes/${editingNote.id}` : `${baseURL}/api/workspace/notes`;
 
       const response = await fetch(url, {
@@ -140,7 +141,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
     setDeleting(true);
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/workspace/notes/${noteToDelete.id}`, {
         method: 'DELETE',
         credentials: 'include',
@@ -209,7 +210,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
     setDeleting(true);
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/workspace/notes/bulk`, {
         method: 'DELETE',
         credentials: 'include',
@@ -266,7 +267,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
   const fetchNoteContent = async (noteId: string) => {
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/workspace/notes/${noteId}`, {
         credentials: 'include',
       });

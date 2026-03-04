@@ -4,8 +4,9 @@ import { UsageDisplay } from './UsageDisplay';
 import type { CumulativeUsage, UsageData } from '../../hooks/useUsageStream';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { cn } from '@extension/ui';
+import { API_CONFIG } from '../../constants';
 
-const API_BASE_URL = process.env.CEB_API_URL || 'http://localhost:3001';
+const API_BASE_URL = API_CONFIG.BASE_URL;
 
 export interface UsagePopupProps {
   isOpen: boolean;

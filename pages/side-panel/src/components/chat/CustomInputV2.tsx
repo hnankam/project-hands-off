@@ -28,7 +28,7 @@ import { ContextSelector } from '../selectors/ContextSelector';
 import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
 import { useAuth } from '../../context/AuthContext';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator, cn } from '@extension/ui';
-import { COPIOLITKIT_CONFIG } from '../../constants';
+import { COPIOLITKIT_CONFIG, API_CONFIG} from '../../constants';
 import { ensureFirebase, ensureFirebaseAuth } from '../../utils/firebaseStorage';
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { useCopilotChat, type Message } from '../../hooks/copilotkit';
@@ -249,7 +249,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   // This ensures that when a session is opened, selected notes/credentials are available to the agent
   useEffect(() => {
     const restoreWorkspaceItems = async () => {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       
       // Restore notes if we have initial IDs and no notes data yet
       if (pageSelectorCtx?.initialSelectedNoteIds && 
@@ -359,7 +359,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   useEffect(() => {
     const loadConnections = async () => {
       try {
-        const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+        const baseURL = API_CONFIG.BASE_URL;
         const response = await fetch(`${baseURL}/api/workspace/connections`, {
           credentials: 'include',
         });
@@ -666,7 +666,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                   }
                 }
                 
-                const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+                const baseURL = API_CONFIG.BASE_URL;
                 await fetch(`${baseURL}/api/workspace/files/register`, {
                   method: 'POST',
                   credentials: 'include',
@@ -751,7 +751,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   const fetchWorkspaceFiles = async () => {
     setLoadingWorkspaceFiles(true);
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/workspace/files`, {
         credentials: 'include',
       });
@@ -782,7 +782,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
     // If not found locally, try to fetch it
     if (!file) {
       try {
-        const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+        const baseURL = API_CONFIG.BASE_URL;
         const response = await fetch(`${baseURL}/api/workspace/files/${mention.workspaceFileId}/metadata`, {
           credentials: 'include',
         });
@@ -876,7 +876,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   // Fetch workspace folders
   const fetchWorkspaceFolders = async () => {
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/workspace/folders`, {
         credentials: 'include',
       });
@@ -913,7 +913,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   useEffect(() => {
     const loadFilesForMentions = async () => {
       try {
-        const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+        const baseURL = API_CONFIG.BASE_URL;
         const response = await fetch(`${baseURL}/api/workspace/files?limit=1000`, {
           credentials: 'include',
         });
@@ -1097,7 +1097,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       if (isPartOfThread) {
         // Fetch full thread
         try {
-          const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+          const baseURL = API_CONFIG.BASE_URL;
           const response = await fetch(
             `${baseURL}/api/workspace/connections/${gmailConnectionId}/gmail/thread/${threadId}`,
             { credentials: 'include' }
@@ -1184,7 +1184,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
           console.error(`Error fetching thread ${threadId}:`, error);
           // Fallback to single email with full content
           try {
-            const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+            const baseURL = API_CONFIG.BASE_URL;
             const emailResponse = await fetch(
               `${baseURL}/api/workspace/connections/${gmailConnectionId}/gmail/email/${email.id}`,
               { credentials: 'include' }
@@ -1238,7 +1238,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       } else {
         // Single email, not part of a thread - fetch full content
         try {
-          const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+          const baseURL = API_CONFIG.BASE_URL;
           const response = await fetch(
             `${baseURL}/api/workspace/connections/${gmailConnectionId}/gmail/email/${email.id}`,
             { credentials: 'include' }
@@ -1304,7 +1304,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   };
   
   const handleSlackItemsSelected = async (messages: any[]) => {
-    const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+    const baseURL = API_CONFIG.BASE_URL;
     const newAttachments: AttachmentItem[] = [];
     
     for (const message of messages) {

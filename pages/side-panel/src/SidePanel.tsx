@@ -23,7 +23,7 @@ import {
   useSessionStorageDB,
   withErrorBoundary,
 } from '@extension/shared';
-import { themeStorage } from '@extension/storage';
+import { themeStorage, apiConfigStorage } from '@extension/storage';
 import {
   cn,
   ErrorDisplay,
@@ -45,6 +45,7 @@ import { useMessageHandlers } from './hooks/useMessageHandlers';
 import { ChatSkeleton } from './components/feedback/LoadingStates';
 import { InvitationModal } from './components/modals/InvitationModal';
 import { AboutModal } from './components/modals/AboutModal';
+import { initApiConfig } from './constants';
 
 // TODO: Move to environment variable (VITE_COPILOTKIT_PUBLIC_KEY)
 const COPILOTKIT_PUBLIC_KEY = 'ck_pub_c94e406d9327510d0463f3dbe3c1f2e8';
@@ -63,6 +64,12 @@ const SidePanel = () => {
   // Theme
   const { isLight, theme } = useStorage(themeStorage);
   useThemeManager(isLight, theme);
+  
+  // API config from Options page (overrides build-time .env defaults)
+  const { apiUrl, backendUrl } = useStorage(apiConfigStorage);
+  useEffect(() => {
+    initApiConfig(apiUrl, backendUrl);
+  }, [apiUrl, backendUrl]);
   
   // Sessions
   const { sessions, currentSessionId, isLoading: sessionsLoading } = useSessionStorageDB();

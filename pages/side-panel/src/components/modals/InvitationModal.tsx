@@ -9,6 +9,7 @@ import * as React from 'react';
 import { useState, useCallback } from 'react';
 import { cn } from '@extension/ui';
 import { Modal } from './Modal';
+import { API_CONFIG } from '../../constants';
 
 export interface InvitationModalProps {
   /** Whether the modal is open */
@@ -32,7 +33,7 @@ export const InvitationModal: React.FC<InvitationModalProps> = ({
   onClose,
   onSubmit,
   isLight,
-  apiBaseUrl = process.env.CEB_API_URL || 'http://localhost:3001',
+  apiBaseUrl = API_CONFIG.BASE_URL,
 }) => {
   const [invitationId, setInvitationId] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);

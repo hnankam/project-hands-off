@@ -9,6 +9,7 @@ import { RichTextEditor, CodeMirrorJsonEditor } from './editors';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { AdminConfirmDialog } from './modals';
 import type { AuxiliaryAgentType, CustomAuxiliaryAgent } from './types';
+import { API_CONFIG } from '../../constants';
 
 interface Organization {
   id: string;
@@ -412,7 +413,7 @@ const ModelIcon = () => (
 );
 
 export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, onSuccess }: AgentsTabProps) {
-  const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+  const baseURL = API_CONFIG.BASE_URL;
 
   // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';

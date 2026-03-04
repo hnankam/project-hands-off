@@ -7,6 +7,7 @@ import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { embeddingsStorage } from '@extension/shared';
 import { cn } from '@extension/ui';
+import { API_CONFIG } from '../../constants';
 
 export interface MentionSuggestion {
   id: string;
@@ -70,7 +71,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
   useEffect(() => {
     const fetchWorkspaceFiles = async () => {
       try {
-        const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+        const baseURL = API_CONFIG.BASE_URL;
         const response = await fetch(`${baseURL}/api/workspace/files?limit=1000`, {
           credentials: 'include',
         });

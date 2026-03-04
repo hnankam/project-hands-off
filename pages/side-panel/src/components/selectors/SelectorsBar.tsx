@@ -4,6 +4,7 @@ import { AgentSelector } from './AgentSelector';
 import { ModelSelector } from './ModelSelector';
 import { SettingsDropdown } from '../menus/SettingsDropdown';
 import InfoMenu from '../menus/InfoMenu';
+import { API_CONFIG } from '../../constants';
 
 interface SelectorsBarProps {
   isLight: boolean;
@@ -38,7 +39,7 @@ export const SelectorsBar: React.FC<SelectorsBarProps> = ({
   React.useEffect(() => {
     const fetchAgents = async () => {
       try {
-        const response = await fetch(`${process.env.CEB_API_URL || 'http://localhost:3001'}/api/config/agents`, {
+        const response = await fetch(`${API_CONFIG.BASE_URL}/api/config/agents`, {
           credentials: 'include',
         });
         if (response.ok) {

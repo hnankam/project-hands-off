@@ -6,6 +6,7 @@
 import { DropdownMenu, DropdownMenuItem, cn } from '@extension/ui';
 import { useState, useEffect } from 'react';
 import type React from 'react';
+import { API_CONFIG } from '../../constants';
 
 interface SlackMessage {
   ts: string;
@@ -57,7 +58,7 @@ export const SlackItemsModal: React.FC<SlackItemsModalProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/workspace/connections/${connectionId}/slack/messages?limit=100`, {
         credentials: 'include',
       });
@@ -120,7 +121,7 @@ export const SlackItemsModal: React.FC<SlackItemsModalProps> = ({
     setLoadingThreads(prev => new Set(prev).add(threadKey));
 
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(
         `${baseURL}/api/workspace/connections/${connectionId}/slack/thread/${message.channelId}/${message.ts}`,
         { credentials: 'include' },

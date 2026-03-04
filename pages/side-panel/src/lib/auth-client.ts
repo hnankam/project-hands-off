@@ -10,10 +10,11 @@
 import { createAuthClient } from "better-auth/client";
 import { organizationClient, adminClient } from "better-auth/client/plugins";
 import { ssoClient } from "@better-auth/sso/client";
+import { API_CONFIG } from '../constants';
 
 // Constants
 const DEFAULT_API_URL = "http://localhost:3001";
-const baseURL = process.env.CEB_API_URL || DEFAULT_API_URL;
+const baseURL = API_CONFIG.BASE_URL || DEFAULT_API_URL;
 
 /**
  * Better Auth client instance

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '@extension/ui';
 import { useStorage } from '@extension/shared';
 import { themeStorage, preferencesStorage, type ChatFontSize } from '@extension/storage';
+import { API_CONFIG } from '../../constants';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -89,7 +90,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const canFetchTools = Boolean(agentType && modelType && organizationId && teamId);
 
-  const backendUrl = useMemo(() => process.env.CEB_BACKEND_URL || 'http://localhost:8001', []);
+  const backendUrl = useMemo(() => API_CONFIG.BACKEND_URL, []);
 
   const fetchTools = useCallback(async () => {
     if (!agentType || !modelType || !organizationId || !teamId) {

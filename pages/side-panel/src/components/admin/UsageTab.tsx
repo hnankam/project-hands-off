@@ -15,8 +15,9 @@ import {
   YAxis,
 } from 'recharts';
 import { OrganizationSelector, TeamSelector, ModelMultiSelector } from './selectors';
+import { API_CONFIG } from '../../constants';
 
-const API_BASE_URL = process.env.CEB_API_URL || 'http://localhost:3001';
+const API_BASE_URL = API_CONFIG.BASE_URL;
 
 interface Organization {
   id: string;

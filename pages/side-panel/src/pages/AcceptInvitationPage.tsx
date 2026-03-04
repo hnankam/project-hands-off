@@ -13,12 +13,13 @@ import { useAuth } from '../context/AuthContext';
 import { cn } from '@extension/ui';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
+import { API_CONFIG } from '../constants';
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 
-const API_BASE_URL = process.env.CEB_API_URL || 'http://localhost:3001';
+const API_BASE_URL = API_CONFIG.BASE_URL;
 const REDIRECT_DELAYS = {
   afterAccept: 2000,
   afterDecline: 1500,

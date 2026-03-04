@@ -7,6 +7,7 @@ import { cn } from '@extension/ui';
 import DOMPurify from 'dompurify';
 import { useState, useEffect, useMemo } from 'react';
 import type React from 'react';
+import { API_CONFIG } from '../../constants';
 
 interface GmailEmail {
   id: string;
@@ -81,7 +82,7 @@ export const GmailItemsModal: React.FC<GmailItemsModalProps> = ({
     setError(null);
 
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/workspace/connections/${connectionId}/gmail/emails?maxResults=50`, {
         credentials: 'include',
       });
@@ -109,7 +110,7 @@ export const GmailItemsModal: React.FC<GmailItemsModalProps> = ({
     setError(null);
 
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const params = new URLSearchParams({
         maxResults: '50',
         pageToken: nextPageToken,
@@ -146,7 +147,7 @@ export const GmailItemsModal: React.FC<GmailItemsModalProps> = ({
     setHasMore(false);
 
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const params = new URLSearchParams({
         maxResults: '50',
         query: query,
@@ -185,7 +186,7 @@ export const GmailItemsModal: React.FC<GmailItemsModalProps> = ({
     setLoadingContent(prev => new Set(prev).add(emailId));
 
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const threadCount = getThreadMessageCount(threadId);
       const isThread = threadCount > 1;
 

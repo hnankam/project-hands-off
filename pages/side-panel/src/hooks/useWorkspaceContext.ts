@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { API_CONFIG } from '../constants';
 
 interface WorkspaceContext {
   file_count: number;
@@ -40,7 +41,7 @@ export function useWorkspaceContext() {
 
     const fetchContext = async () => {
       try {
-        const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+        const baseURL = API_CONFIG.BASE_URL;
         const response = await fetch(`${baseURL}/api/workspace/summary`, {
           credentials: 'include',
         });

@@ -15,6 +15,7 @@ import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { IncrementalMarkdownRenderer } from '../chat/IncrementalMarkdownRenderer';
 import { CodeBlock } from '../chat/slots/CustomCodeBlock';
 import type { ActionPhase } from './ActionStatus';
+import { API_CONFIG } from '../../constants';
 
 // ========== Auto-Scroll Component ==========
 
@@ -254,7 +255,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
     setFetchError(null);
     
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/workspace/files/${fileId}/content`, {
         credentials: 'include',
       });

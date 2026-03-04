@@ -5,6 +5,7 @@ import { FilesPanel } from './FilesPanel';
 import { NotesPanel } from './NotesPanel';
 import { ConnectionsPanel } from './ConnectionsPanel';
 import { CredentialsPanel } from './CredentialsPanel';
+import { API_CONFIG } from '../../constants';
 
 interface WorkspaceTabProps {
   isLight: boolean;
@@ -47,7 +48,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({ isLight }) => {
   // Load workspace summary
   const loadSummary = useCallback(async () => {
     try {
-      const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+      const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/workspace/summary`, {
         credentials: 'include',
       });

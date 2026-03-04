@@ -5,6 +5,7 @@ import { authClient } from '../../lib/auth-client';
 import { OrganizationSelector, TeamSelector, TeamMultiSelector } from './selectors';
 import { Checkbox, Radio } from './form-controls';
 import { CodeMirrorJsonEditor } from './editors';
+import { API_CONFIG } from '../../constants';
 
 interface Organization {
   id: string;
@@ -222,7 +223,7 @@ const TransportSelector: React.FC<TransportSelectorProps> = ({ isLight, value, o
 };
 
 const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselectedOrgId, onError, onSuccess }) => {
-  const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+  const baseURL = API_CONFIG.BASE_URL;
 
   // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';

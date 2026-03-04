@@ -1,5 +1,5 @@
 import { debug as baseDebug } from '@extension/shared';
-import { COPIOLITKIT_CONFIG } from '../../constants';
+import { COPIOLITKIT_CONFIG, API_CONFIG} from '../../constants';
 import { ensureFirebase, uploadDataUrlToStorage, type FirebaseConfig } from '../../utils/firebaseStorage';
 import { authClient } from '../../lib/auth-client';
 
@@ -250,7 +250,7 @@ async function uploadAndBuildManifest(
       // Register screenshot in workspace if userId is available and upload succeeded
       if (hostedUrl && userId) {
         try {
-          const baseURL = process.env.CEB_API_URL || 'http://localhost:3001';
+          const baseURL = API_CONFIG.BASE_URL;
           const response = await fetch(`${baseURL}/api/workspace/files/register`, {
             method: 'POST',
             credentials: 'include',
