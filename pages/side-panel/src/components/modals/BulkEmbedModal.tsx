@@ -5,7 +5,7 @@
  * Shows the list of tabs that will be activated for embedding.
  */
 
-import React from 'react';
+import * as React from 'react';
 import { cn } from '@extension/ui';
 
 // ============================================================================

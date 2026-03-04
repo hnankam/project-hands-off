@@ -4,7 +4,8 @@
  * Wraps CopilotChatAssistantMessage with custom MarkdownRenderer
  * and styled toolbar buttons matching user message design (right-aligned, no gradient).
  */
-import React, { useMemo, useCallback, useState } from 'react';
+import * as React from 'react';
+import { useMemo, useCallback, useState } from 'react';
 import { CopilotChatAssistantMessage, useCopilotChat } from '../../hooks/copilotkit';
 import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';
 import { 

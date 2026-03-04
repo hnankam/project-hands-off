@@ -4,7 +4,8 @@
  * Modal for submitting support tickets.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { cn } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
 import { useAuth } from '../../context/AuthContext';

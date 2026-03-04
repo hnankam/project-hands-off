@@ -5,7 +5,7 @@
  * Provides consistent styling and behavior across all admin tabs.
  */
 
-import React from 'react';
+import * as React from 'react';
 import { cn } from '@extension/ui';
 
 export interface AdminConfirmDialogProps {

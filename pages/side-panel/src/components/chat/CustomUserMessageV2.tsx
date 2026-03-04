@@ -17,7 +17,8 @@
  * - Edit history tracking
  */
 
-import React, { useMemo, useState, useCallback } from 'react';
+import * as React from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { CopilotChatUserMessage, useCopilotChat, deleteMessagesFromBackend } from '../../hooks/copilotkit';
 import { useStorage, persistenceLock } from '@extension/shared';
 import { themeStorage } from '@extension/storage';

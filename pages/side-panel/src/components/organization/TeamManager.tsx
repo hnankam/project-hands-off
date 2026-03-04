@@ -4,7 +4,8 @@
  * Allows users to create, view, and manage teams within their organization.
  */
 
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { authClient } from '../../lib/auth-client';
 

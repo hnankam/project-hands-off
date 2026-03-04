@@ -5,7 +5,7 @@
  * V2: Uses Zod schemas for parameter definitions.
  */
 
-import React from 'react';
+import * as React from 'react';
 import { z } from 'zod';
 import type { SemanticSearchManager } from '../../lib/SemanticSearchManager';
 import { ActionStatus } from '../../components/feedback/ActionStatus';

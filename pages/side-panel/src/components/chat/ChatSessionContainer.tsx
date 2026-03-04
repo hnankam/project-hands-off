@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
+import * as React from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, memo, startTransition } from 'react';
 import type { FC, CSSProperties } from 'react';
 import { useStorage, sessionStorageDBWrapper, debug, type SessionMetadata } from '@extension/shared';
 import { preferencesStorage } from '@extension/storage';
@@ -405,7 +406,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
 
       if (prevSessionIdRef.current && prevSessionIdRef.current !== sessionId) {
         // OPTIMIZATION: Batch state updates using startTransition to reduce re-renders
-        React.startTransition(() => {
+        startTransition(() => {
           setUserMessagesCount(0);
           setAssistantMessagesCount(0);
           setIsCounterReady(false);
@@ -1790,8 +1791,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
             showThoughtBlocks={showThoughtBlocks}
             onAgentChange={handleAgentChange}
             onModelChange={handleModelChange}
-            onShowSuggestionsChange={show => preferencesStorage.setShowSuggestions(show)}
-            onShowThoughtBlocksChange={show => preferencesStorage.setShowThoughtBlocks(show)}
+            onShowSuggestionsChange={(show: boolean) => preferencesStorage.setShowSuggestions(show)}
+            onShowThoughtBlocksChange={(show: boolean) => preferencesStorage.setShowThoughtBlocks(show)}
             onExpandSettingsClick={() => setIsSettingsOpen(true)}
           />
 
@@ -1809,10 +1810,10 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           teamId={activeTeam || undefined}
           sharedContexts={sharedContexts}
           onClose={() => setIsSettingsOpen(false)}
-          onShowAgentCursorChange={show => preferencesStorage.setShowAgentCursor(show)}
-          onShowSuggestionsChange={show => preferencesStorage.setShowSuggestions(show)}
-          onShowThoughtBlocksChange={show => preferencesStorage.setShowThoughtBlocks(show)}
-          onAgentModeChatChange={enabled => preferencesStorage.setAgentModeChat(enabled)}
+          onShowAgentCursorChange={(show: boolean) => preferencesStorage.setShowAgentCursor(show)}
+          onShowSuggestionsChange={(show: boolean) => preferencesStorage.setShowSuggestions(show)}
+          onShowThoughtBlocksChange={(show: boolean) => preferencesStorage.setShowThoughtBlocks(show)}
+          onAgentModeChatChange={(enabled: boolean) => preferencesStorage.setAgentModeChat(enabled)}
         />
 
         {/* Usage Popup */}

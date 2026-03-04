@@ -4,7 +4,8 @@
  * Manage organization settings, members, and invitations.
  */
 
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { authClient } from '../../lib/auth-client';
 

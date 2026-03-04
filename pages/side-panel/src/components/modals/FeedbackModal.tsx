@@ -4,7 +4,7 @@
  * Reusable modal for collecting user feedback.
  */
 
-import React from 'react';
+import * as React from 'react';
 import { cn } from '@extension/ui';
 import { RichTextEditor } from '../admin/editors';
 

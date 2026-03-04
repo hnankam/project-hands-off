@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import * as React from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '@extension/ui';
 import { useStorage } from '@extension/shared';
 import { themeStorage, preferencesStorage, type ChatFontSize } from '@extension/storage';

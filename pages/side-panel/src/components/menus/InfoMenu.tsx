@@ -5,7 +5,8 @@
  * Manages feedback and support modals internally.
  */
 
-import React, { useState } from 'react';
+import * as React from 'react';
+import { useState } from 'react';
 import { cn } from '@extension/ui';
 import FeedbackModal from '../modals/FeedbackModal';
 import SupportRequestModal, { type SupportRequestData } from '../modals/SupportRequestModal';

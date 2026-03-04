@@ -3,7 +3,8 @@
  * 
  * Displays suggestion pills that users can click to send predefined prompts.
  */
-import React, { useMemo } from 'react';
+import * as React from 'react';
+import { useMemo } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 

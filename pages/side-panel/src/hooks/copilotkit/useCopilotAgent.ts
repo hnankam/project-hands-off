@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useMemo, useRef, useCallback, useEffect, memo, useState } from 'react';
+import * as React from 'react';
+import { createContext, useContext, useMemo, useRef, useCallback, useEffect, memo, useState } from 'react';
 import { useAgent } from '@copilotkit/react-core/v2';
 import { debug } from '@extension/shared';
 

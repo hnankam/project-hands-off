@@ -2,7 +2,8 @@ import { RichTextEditor } from '../admin/editors/RichTextEditor';
 import { AdminConfirmDialog } from '../admin/modals/AdminConfirmDialog';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { cn } from '@extension/ui';
-import React, { useState, useEffect, useCallback } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface WorkspaceNote {
   id: string;

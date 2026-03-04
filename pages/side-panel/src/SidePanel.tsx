@@ -16,7 +16,8 @@
 
 import './SidePanel.css';
 // CopilotKit styles now imported in index.css (after Tailwind base for @layer support)
-import React, { useCallback, useEffect } from 'react';
+import * as React from 'react';
+import { useCallback, useEffect } from 'react';
 import {
   useStorage,
   useSessionStorageDB,

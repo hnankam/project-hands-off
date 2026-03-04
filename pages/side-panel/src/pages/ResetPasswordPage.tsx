@@ -5,7 +5,8 @@
  * Validates the token and allows the user to set a new password.
  */
 
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';

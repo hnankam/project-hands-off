@@ -5,7 +5,7 @@
  * V2: Uses Zod schemas for parameter definitions.
  */
 
-import React from 'react';
+import * as React from 'react';
 import { z } from 'zod';
 import { ImageGalleryCard } from '../../components/cards/ImageGalleryCard';
 

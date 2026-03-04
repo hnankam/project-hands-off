@@ -4,7 +4,7 @@
  * A reusable alert/toast banner component with dismiss functionality.
  */
 
-import React from 'react';
+import * as React from 'react';
 import { cn } from '@extension/ui';
 import type { AlertState } from '../../hooks/useAlerts';
 import { Z_INDEX } from '../../constants/ui';

@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import * as React from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { cn } from '@extension/ui';
 import { useClickOutside, useDropdownPosition } from '../hooks';
 import { ToolIcon, ChevronDownIcon, CloseIcon } from '../icons';

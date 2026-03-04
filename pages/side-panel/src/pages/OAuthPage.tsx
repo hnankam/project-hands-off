@@ -6,7 +6,8 @@
  * the OAuth flow using the Better Auth client.
  */
 
-import React, { useEffect, useState } from 'react';
+import * as React from 'react';
+import { useEffect, useState } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';

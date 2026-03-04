@@ -6,7 +6,8 @@
  */
 
 import type { FC } from 'react';
-import React, { useState, useMemo, useEffect, memo, useRef, useCallback } from 'react';
+import * as React from 'react';
+import { useState, useMemo, useEffect, memo, useRef, useCallback } from 'react';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { 
   SpinningLoader, 

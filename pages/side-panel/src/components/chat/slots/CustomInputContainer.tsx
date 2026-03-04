@@ -7,7 +7,7 @@
  * Currently maintains default behavior - customizations can be added later.
  */
 
-import React from 'react';
+import * as React from 'react';
 import { CopilotChat } from '../../../hooks/copilotkit';
 
 export type CustomInputContainerProps = React.HTMLAttributes<HTMLDivElement> & {

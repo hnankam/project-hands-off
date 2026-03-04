@@ -7,7 +7,8 @@
  * - Fullscreen mode
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { cn } from '@extension/ui';
 import { openInPopupWindow, openInNewTab, getCurrentViewMode, isPopupWindow, closePopupWindow, toggleWindowMaximize } from '../../utils/windowManager';
 

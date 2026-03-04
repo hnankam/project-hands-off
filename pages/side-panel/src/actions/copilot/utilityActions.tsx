@@ -5,7 +5,7 @@
  * V2: Uses Zod schemas for parameter definitions.
  */
 
-import React from 'react';
+import * as React from 'react';
 import { z } from 'zod';
 import { debug } from '@extension/shared';
 import { WaitCountdown } from '../../components/feedback/WaitCountdown';

@@ -5,7 +5,8 @@
  * Validates the invitation ID against the API before proceeding.
  */
 
-import React, { useState, useCallback } from 'react';
+import * as React from 'react';
+import { useState, useCallback } from 'react';
 import { cn } from '@extension/ui';
 import { Modal } from './Modal';
 

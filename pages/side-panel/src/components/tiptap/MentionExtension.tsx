@@ -1,4 +1,5 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useState, useMemo, useRef } from 'react';
+import * as React from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useState, useMemo, useRef } from 'react';
 import { ReactRenderer } from '@tiptap/react';
 import { SuggestionOptions, SuggestionProps } from '@tiptap/suggestion';
 import tippy, { Instance as TippyInstance } from 'tippy.js';

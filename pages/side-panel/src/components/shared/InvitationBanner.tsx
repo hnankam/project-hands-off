@@ -4,7 +4,7 @@
  * A banner component for displaying pending organization invitations.
  */
 
-import React from 'react';
+import * as React from 'react';
 import { cn } from '@extension/ui';
 
 /** Minimal invitation type for the banner (compatible with usePendingInvitations) */

@@ -3,7 +3,8 @@
  * Includes SSO (Single Sign-On) provider management
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { authClient, listSSOProviders, registerSSOProvider, deleteSSOProvider, requestDomainVerification, verifyDomain, type SSOProvider, type OIDCConfig } from '../../lib/auth-client';
 import { useAuth } from '../../context/AuthContext';

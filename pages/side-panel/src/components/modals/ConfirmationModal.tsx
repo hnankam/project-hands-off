@@ -3,7 +3,7 @@
  * Used for destructive actions across the application
  */
 
-import React from 'react';
+import * as React from 'react';
 import { cn } from '@extension/ui';
 
 // ============================================================================

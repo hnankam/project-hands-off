@@ -2,7 +2,8 @@ import { Extension } from '@tiptap/core';
 import { ReactRenderer } from '@tiptap/react';
 import Suggestion, { SuggestionOptions } from '@tiptap/suggestion';
 import tippy, { Instance as TippyInstance } from 'tippy.js';
-import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
+import * as React from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 
 export interface SlashCommand {
   title: string;

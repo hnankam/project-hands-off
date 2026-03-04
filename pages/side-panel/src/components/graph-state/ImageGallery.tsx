@@ -6,7 +6,8 @@
  */
 
 import type { FC } from 'react';
-import React, { useState, memo } from 'react';
+import * as React from 'react';
+import { useState, memo } from 'react';
 
 interface ImageGalleryProps {
   urls: string[];

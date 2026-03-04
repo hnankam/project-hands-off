@@ -17,7 +17,8 @@
  * but React forwardRef components have `typeof === "object"`. To work around this,
  * we wrap the forwardRef component in a regular function component.
  */
-import React, { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react';
+import * as React from 'react';
+import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react';
 import { CopilotChatInput, type CopilotChatInputProps } from '@copilotkitnext/react';
 import { CustomTiptapTextArea } from './CustomTiptapTextArea';
 import { useCopilotChatContext } from '../../hooks/copilotkit';

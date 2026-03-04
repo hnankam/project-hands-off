@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import * as React from 'react';
+import { useState, useRef } from 'react';
 import { cn } from '@extension/ui';
 import { useClickOutside, useDropdownPosition } from '../hooks';
 import { ModelIcon, ChevronDownIcon, CloseIcon } from '../icons';

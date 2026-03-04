@@ -4,7 +4,8 @@
  * Provides instructions and commands for installing the extension as a desktop app
  */
 
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@extension/ui';
 
 interface InstallAppHelperProps {

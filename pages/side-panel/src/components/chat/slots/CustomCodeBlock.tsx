@@ -5,7 +5,8 @@
  * - CodeBlock: Shared code block with syntax highlighting (used by graph card, markdown, etc.)
  * - CustomCodeBlockWrapper: Wrapper for CopilotKit that extracts code from children and handles mermaid diagrams
  */
-import React, { useState, useCallback, Children, isValidElement, memo } from 'react';
+import * as React from 'react';
+import { useState, useCallback, Children, isValidElement, memo } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { MermaidBlock } from '../MermaidBlock';

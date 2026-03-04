@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import * as React from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { ChatSessionContainer } from '../components/chat/ChatSessionContainer';
 import { ErrorBoundary } from '../components/utilities/ErrorBoundary';
 import { ChatSkeleton, MessagesOnlySkeleton, StatusBarSkeleton, SelectorsBarSkeleton } from '../components/feedback/LoadingStates';

@@ -4,7 +4,8 @@
  * A reusable horizontal tab bar with localStorage persistence.
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import * as React from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { cn } from '@extension/ui';
 import { ANIMATION_DURATIONS } from '../../constants/ui';
 

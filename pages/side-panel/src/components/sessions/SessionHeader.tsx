@@ -4,7 +4,7 @@
  * Renders the header for the SessionsPage with session tabs, actions dropdown, and navigation.
  */
 
-import React from 'react';
+import * as React from 'react';
 import {
   cn,
   Button,

@@ -3,7 +3,7 @@
  * 
  * Renders links with chip-style appearance matching the editor
  */
-import React from 'react';
+import * as React from 'react';
 import { cn } from '@extension/ui';
 
 interface CustomLinkProps extends React.AnchorHTMLAttributes<HTMLAnchorElement> {

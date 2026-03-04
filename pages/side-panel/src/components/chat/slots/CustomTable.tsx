@@ -5,7 +5,8 @@
  * - Table: Styled table matching graph card design
  * - CustomTableWrapper: Wrapper for Streamdown table elements
  */
-import React, { useState, useCallback, useMemo, useRef, useEffect, memo, FC } from 'react';
+import * as React from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect, memo, FC } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 

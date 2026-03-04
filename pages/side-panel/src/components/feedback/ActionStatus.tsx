@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';

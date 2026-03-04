@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import * as React from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '@extension/ui';
 import { useStorage, useSessionStorageDB, sessionStorageDBWrapper } from '@extension/shared';
 import { themeStorage } from '@extension/storage';

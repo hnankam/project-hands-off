@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { cn } from '@extension/ui';
 import { FilesPanel } from './FilesPanel';
 import { NotesPanel } from './NotesPanel';

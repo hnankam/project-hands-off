@@ -2,7 +2,8 @@
  * Users Tab Component for Admin Page
  */
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { authClient, adminResetPassword, banUser, unbanUser } from '../../lib/auth-client';
 import { cn } from '@extension/ui';

@@ -4,7 +4,8 @@
  * Allows users to switch between organizations and manage organization settings.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { authClient } from '../../lib/auth-client';
 import { cn } from '@extension/ui';

@@ -1,4 +1,5 @@
-import React, { FC, useEffect, useRef, useMemo, useState } from 'react';
+import * as React from 'react';
+import { FC, useEffect, useRef, useMemo, useState } from 'react';
 import { UsageDisplay } from './UsageDisplay';
 import type { CumulativeUsage, UsageData } from '../../hooks/useUsageStream';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';

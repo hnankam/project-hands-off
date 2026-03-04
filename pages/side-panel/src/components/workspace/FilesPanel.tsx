@@ -4,7 +4,8 @@ import { ensureFirebase, ensureFirebaseAuth } from '../../utils/firebaseStorage'
 import { AdminConfirmDialog } from '../admin/modals/AdminConfirmDialog';
 import { cn, DropdownMenu, DropdownMenuItem } from '@extension/ui';
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { CodeBlock } from '../chat/slots/CustomCodeBlock';

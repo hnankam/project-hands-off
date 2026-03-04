@@ -1,5 +1,6 @@
 import type { FC, CSSProperties } from 'react';
-import React, { memo, useMemo } from 'react';
+import * as React from 'react';
+import { memo, useMemo } from 'react';
 import { UsageDisplay } from '../menus/UsageDisplay';
 import type { CumulativeUsage, UsageData } from '../../hooks/useUsageStream';
 

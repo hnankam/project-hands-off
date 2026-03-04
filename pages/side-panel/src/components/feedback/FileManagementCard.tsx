@@ -5,7 +5,8 @@
  * Matches ImageGalleryCard design with proper borders, background, shimmer, and accordion.
  * Supports progressive streaming rendering with auto-scroll (like GraphCard).
  */
-import React, { useState, memo, useMemo, useEffect, useRef, useCallback, FC } from 'react';
+import * as React from 'react';
+import { useState, memo, useMemo, useEffect, useRef, useCallback, FC } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import untruncateJson from 'untruncate-json';

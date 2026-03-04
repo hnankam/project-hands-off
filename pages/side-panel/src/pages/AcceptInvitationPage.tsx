@@ -7,7 +7,8 @@
  * 3. Automatically accept invitation after authentication
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '@extension/ui';
 import { useStorage } from '@extension/shared';

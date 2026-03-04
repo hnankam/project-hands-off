@@ -3,7 +3,8 @@
  * Refactored to use separate tab components and shared UI components
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { authClient } from '../lib/auth-client';
 import { useAuth } from '../context/AuthContext';
 import { cn, Button } from '@extension/ui';

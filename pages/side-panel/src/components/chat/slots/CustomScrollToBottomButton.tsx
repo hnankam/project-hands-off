@@ -6,7 +6,8 @@
  * 
  * Usage: Pass to CopilotChat's scrollToBottomButton slot
  */
-import React, { useState } from 'react';
+import * as React from 'react';
+import { useState } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 

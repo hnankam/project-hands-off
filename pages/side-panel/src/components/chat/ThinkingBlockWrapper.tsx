@@ -8,7 +8,8 @@
  * This ensures "Thought" is shown for static content (e.g., after page reload) and
  * "Thinking..." transitions to "Thought" only when streaming actually completes.
  */
-import React, { useState, useEffect, useRef } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ThinkingBlock } from './ThinkingBlock';
 
 interface ThinkingBlockWrapperProps {

@@ -29,7 +29,8 @@
 // ================================================================================
 
 import type { FC } from 'react';
-import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
+import * as React from 'react';
+import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 
 // Centralized CopilotKit Hooks, Components & Types (v2 migration ready)
 import {

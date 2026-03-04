@@ -3,7 +3,7 @@
  * 
  * Displays a disclaimer text (e.g., "AI can make mistakes") below the input.
  */
-import React from 'react';
+import * as React from 'react';
 
 export interface CustomDisclaimerProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Custom disclaimer text. If not provided, uses default. */

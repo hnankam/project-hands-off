@@ -1,4 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
+import * as React from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { cn } from '@extension/ui';
 import { GraphStateCard, convertToGraphAgentState, type UnifiedAgentState } from '../graph-state';
 import { useCopilotAgent } from '../../hooks/copilotkit/useCopilotAgent';

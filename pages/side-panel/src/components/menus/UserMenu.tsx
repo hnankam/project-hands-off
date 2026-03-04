@@ -4,7 +4,8 @@
  * Displays user info, organization selector, and logout button.
  */
 
-import React, { useState } from 'react';
+import * as React from 'react';
+import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '@extension/ui';
 import OrganizationSelector from '../selectors/OrganizationSelector';

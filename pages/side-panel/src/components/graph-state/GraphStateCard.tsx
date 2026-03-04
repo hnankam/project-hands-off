@@ -10,7 +10,8 @@
  */
 
 import type { FC } from 'react';
-import React, { useState, useMemo, useEffect, useRef, memo } from 'react';
+import * as React from 'react';
+import { useState, useMemo, useEffect, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { useCopilotChat } from '../../hooks/copilotkit';
 import { useCopilotAgent } from '../../hooks/copilotkit/useCopilotAgent';

@@ -1,5 +1,6 @@
 import type { FC } from 'react';
-import React, { useState } from 'react';
+import * as React from 'react';
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useCopilotChat } from '../../hooks/copilotkit';
 import { useStorage, sessionStorageDBWrapper } from '@extension/shared';

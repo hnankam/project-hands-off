@@ -7,7 +7,8 @@
  */
 
 import type { FC } from 'react';
-import React, { useState, useMemo, memo } from 'react';
+import * as React from 'react';
+import { useState, useMemo, memo } from 'react';
 import { MermaidBlock } from '../chat/MermaidBlock';
 import { 
   SpinningLoader, 

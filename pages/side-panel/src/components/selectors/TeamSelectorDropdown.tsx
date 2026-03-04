@@ -4,7 +4,8 @@
  * Allows users to switch between teams within their active organization.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { authClient } from '../../lib/auth-client';
 import { API_CONFIG } from '../../constants';

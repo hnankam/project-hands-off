@@ -4,7 +4,7 @@
  * A reusable footer component for pages with version display and actions.
  */
 
-import React from 'react';
+import * as React from 'react';
 import { cn } from '@extension/ui';
 
 export interface PageFooterProps {

@@ -11,7 +11,8 @@
  * - Per update (streaming): O(k) where k = size of modified block (typically O(1))
  * - Memory: O(b) where b = number of blocks (cached rendered outputs)
  */
-import React, { memo, useMemo, useRef, useCallback } from 'react';
+import * as React from 'react';
+import { memo, useMemo, useRef, useCallback } from 'react';
 import { Streamdown } from 'streamdown';
 import { CustomCodeBlockWrapper } from './slots/CustomCodeBlock';
 import { CustomTableWrapper } from './slots/CustomTable';

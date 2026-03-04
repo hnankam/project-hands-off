@@ -28,7 +28,8 @@
  * </Modal>
  */
 
-import React, { useEffect, ReactNode } from 'react';
+import * as React from 'react';
+import { useEffect, ReactNode } from 'react';
 import { cn } from '@extension/ui';
 
 export interface ModalProps {

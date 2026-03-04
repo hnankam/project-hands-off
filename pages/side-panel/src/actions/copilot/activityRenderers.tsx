@@ -10,7 +10,8 @@
  * Configure via CopilotKitProvider's renderActivityMessages prop.
  */
 
-import React, { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import { z } from 'zod';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';

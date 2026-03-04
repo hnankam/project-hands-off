@@ -11,7 +11,8 @@
  * - Memoized Streamdown component config
  * - Optimized regex execution (only when custom tags likely present)
  */
-import React, { useMemo, useRef, useCallback } from 'react';
+import * as React from 'react';
+import { useMemo, useRef, useCallback } from 'react';
 import { Streamdown } from 'streamdown';
 import { CustomCodeBlockWrapper } from './slots/CustomCodeBlock';
 import { CustomTableWrapper } from './slots/CustomTable';

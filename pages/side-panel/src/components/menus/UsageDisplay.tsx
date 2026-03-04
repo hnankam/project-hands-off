@@ -1,4 +1,5 @@
-import React, { FC } from 'react';
+import * as React from 'react';
+import { FC } from 'react';
 import type { CumulativeUsage, UsageData } from '../../hooks/useUsageStream';
 
 export interface UsageDisplayProps {

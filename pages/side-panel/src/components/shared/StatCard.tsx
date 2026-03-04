@@ -4,7 +4,7 @@
  * A reusable statistics card component for dashboards.
  */
 
-import React from 'react';
+import * as React from 'react';
 import { cn } from '@extension/ui';
 
 export type StatCardIcon = 'activity' | 'sparkles' | 'stack' | 'team' | 'chart' | 'clock';

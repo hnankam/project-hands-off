@@ -13,7 +13,7 @@
  * Configure via CopilotKitProvider's renderToolCalls prop.
  */
 
-import React from 'react';
+import * as React from 'react';
 import { z } from 'zod';
 import { ActionStatus } from '../../components/feedback/ActionStatus';
 import { ImageGalleryCard } from '../../components/cards/ImageGalleryCard';

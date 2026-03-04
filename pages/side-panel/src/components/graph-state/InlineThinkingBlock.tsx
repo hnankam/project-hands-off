@@ -6,7 +6,8 @@
  */
 
 import type { FC } from 'react';
-import React, { useState, useRef, memo } from 'react';
+import * as React from 'react';
+import { useState, useRef, memo } from 'react';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 
 interface InlineThinkingBlockProps {

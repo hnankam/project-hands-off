@@ -4,7 +4,7 @@
  * Displays extension information including version, Chromium version, and OS.
  */
 
-import React from 'react';
+import * as React from 'react';
 import { cn } from '@extension/ui';
 import { PROJECT_URL_OBJECT } from '@extension/shared';
 import { Modal } from './Modal';

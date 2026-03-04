@@ -11,7 +11,8 @@
  * - Enter to send
  * - File paste handling
  */
-import React, { useMemo, useRef, useEffect, useImperativeHandle, forwardRef, useContext } from 'react';
+import * as React from 'react';
+import { useMemo, useRef, useEffect, useImperativeHandle, forwardRef, useContext } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';

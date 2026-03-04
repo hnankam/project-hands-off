@@ -1,5 +1,6 @@
 import type { FC } from 'react';
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';

@@ -1,4 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
+import * as React from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { cn } from '@extension/ui';
 import { PlanStateCard } from '../cards/PlanStateCard';
 import type { UnifiedAgentState } from '../graph-state/types';

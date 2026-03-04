@@ -4,7 +4,8 @@
  * Provides authentication state and methods throughout the application.
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import * as React from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import { authClient, Session, User, Organization, Member } from '../lib/auth-client';
 import { API_CONFIG } from '../constants';

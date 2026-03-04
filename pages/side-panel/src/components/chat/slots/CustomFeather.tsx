@@ -4,7 +4,7 @@
  * Creates a gradient fade effect at the bottom of the chat scroll area
  * to smoothly transition content into the input area.
  */
-import React from 'react';
+import * as React from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 

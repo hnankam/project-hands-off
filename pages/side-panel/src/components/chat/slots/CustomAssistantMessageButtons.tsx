@@ -4,7 +4,8 @@
  * Custom CopyButton and RegenerateButton components matching V1 styling and behavior.
  */
 
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 

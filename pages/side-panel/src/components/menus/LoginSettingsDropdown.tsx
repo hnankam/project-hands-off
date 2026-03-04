@@ -5,7 +5,8 @@
  * Combines theme switching (Light/Dark/System) with window management options.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { cn } from '@extension/ui';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
