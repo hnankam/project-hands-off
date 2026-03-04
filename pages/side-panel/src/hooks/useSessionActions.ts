@@ -48,6 +48,7 @@ export interface UseSessionActionsReturn {
   handleRegisterResetFunction: (sessionId: string, fn: () => void) => void;
   handleRegisterSaveFunction: (sessionId: string, fn: () => void) => void;
   handleRegisterLoadFunction: (sessionId: string, fn: () => void) => void;
+  handleRegisterGetMessagesFunction: (sessionId: string, fn: () => any[]) => void;
   
   // Track initial session attempt
   hasAttemptedInitialSessionRef: React.MutableRefObject<boolean>;
@@ -69,6 +70,7 @@ export function useSessionActions(
   const resetFunctionsRef = useRef<Record<string, () => void>>({});
   const saveFunctionsRef = useRef<Record<string, () => void>>({});
   const loadFunctionsRef = useRef<Record<string, () => void>>({});
+  const getMessagesFunctionsRef = useRef<Record<string, () => any[]>>({});
   const hasAttemptedInitialSessionRef = useRef(false);
 
   // Basic session actions
@@ -110,13 +112,15 @@ export function useSessionActions(
   // Export handlers
   const handleExportAsMarkdown = useCallback(async (messages?: any[]) => {
     if (currentSessionId) {
-      await exportSessionAsMarkdown(currentSessionId, sessions, messages || []);
+      const msgs = messages || getMessagesFunctionsRef.current[currentSessionId]?.() || [];
+      await exportSessionAsMarkdown(currentSessionId, sessions, msgs);
     }
   }, [currentSessionId, sessions]);
 
   const handleExportAsHTML = useCallback(async (messages?: any[]) => {
     if (currentSessionId) {
-      await exportSessionAsHTML(currentSessionId, sessions, messages);
+      const msgs = messages || getMessagesFunctionsRef.current[currentSessionId]?.();
+      await exportSessionAsHTML(currentSessionId, sessions, msgs);
     }
   }, [currentSessionId, sessions]);
 
@@ -243,6 +247,10 @@ export function useSessionActions(
     loadFunctionsRef.current[sessionId] = fn;
   }, []);
 
+  const handleRegisterGetMessagesFunction = useCallback((sessionId: string, fn: () => any[]) => {
+    getMessagesFunctionsRef.current[sessionId] = fn;
+  }, []);
+
   return {
     handleNewSession,
     handleCloseSession,
@@ -268,6 +276,7 @@ export function useSessionActions(
     handleRegisterResetFunction,
     handleRegisterSaveFunction,
     handleRegisterLoadFunction,
+    handleRegisterGetMessagesFunction,
     hasAttemptedInitialSessionRef,
   };
 }

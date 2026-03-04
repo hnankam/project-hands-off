@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV /Users/hnankam/Downloads/data/project-hands-off/copilotkit-adk/agent/.venv
+set -gx VIRTUAL_ENV /Users/hnankam/Documents/Applications/project-hands-off/copilotkit-pydantic/.venv
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"bin $PATH

@@ -41,12 +41,12 @@ case "$(uname)" in
     CYGWIN*|MSYS*|MINGW*)
         # transform D:\path\to\venv to /d/path/to/venv on MSYS and MINGW
         # and to /cygdrive/d/path/to/venv on Cygwin
-        VIRTUAL_ENV=$(cygpath /Users/hnankam/Downloads/data/project-hands-off/copilotkit-adk/agent/.venv)
+        VIRTUAL_ENV=$(cygpath /Users/hnankam/Documents/Applications/project-hands-off/copilotkit-pydantic/.venv)
         export VIRTUAL_ENV
         ;;
     *)
         # use the path as-is
-        export VIRTUAL_ENV=/Users/hnankam/Downloads/data/project-hands-off/copilotkit-adk/agent/.venv
+        export VIRTUAL_ENV=/Users/hnankam/Documents/Applications/project-hands-off/copilotkit-pydantic/.venv
         ;;
 esac
 

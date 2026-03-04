@@ -53,7 +53,7 @@ const storage = createStorage<PreferencesStateType>(
     showSuggestions: true, // Default to showing suggestions
     showThoughtBlocks: true, // Default to showing thought blocks
     agentModeChat: false, // Default to disabled (normal chat mode)
-    chatFontSize: 'small', // Default to small font size
+    chatFontSize: 'medium', // Default to medium font size
     userOrgTeamPrefs: {}, // User-specific org/team preferences
     lastUserId: null, // Track last logged in user
   },

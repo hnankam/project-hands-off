@@ -1,4 +1,4 @@
-#!/Users/hnankam/Downloads/data/project-hands-off/copilotkit-adk/agent/.venv/bin/python3
+#!/Users/hnankam/Documents/Applications/project-hands-off/copilotkit-pydantic/.venv/bin/python3.12
 
 import sys
 import json

@@ -103,6 +103,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     handleRegisterResetFunction,
     handleRegisterSaveFunction,
     handleRegisterLoadFunction,
+    handleRegisterGetMessagesFunction,
     hasAttemptedInitialSessionRef,
   } = useSessionActions(currentSessionId, sessions, sessionMessageCounts);
   
@@ -324,6 +325,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   onRegisterResetFunction={handleRegisterResetFunction}
                   onRegisterSaveFunction={handleRegisterSaveFunction}
                   onRegisterLoadFunction={handleRegisterLoadFunction}
+                  onRegisterGetMessagesFunction={handleRegisterGetMessagesFunction}
                   onReady={handleSessionReady}
                   onMessagesLoadingChange={handleMessagesLoadingChange}
                 />

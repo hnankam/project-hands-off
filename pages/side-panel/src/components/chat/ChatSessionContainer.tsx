@@ -339,6 +339,7 @@ interface ChatSessionContainerProps {
   onRegisterResetFunction?: (sessionId: string, resetFn: () => void) => void;
   onRegisterSaveFunction?: (sessionId: string, saveFn: () => void) => void;
   onRegisterLoadFunction?: (sessionId: string, loadFn: () => void) => void;
+  onRegisterGetMessagesFunction?: (sessionId: string, fn: () => any[]) => void;
   onReady?: (sessionId: string) => void;
   onMessagesLoadingChange?: (sessionId: string, isLoading: boolean) => void;
 }
@@ -362,6 +363,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     onRegisterResetFunction,
     onRegisterSaveFunction,
     onRegisterLoadFunction,
+    onRegisterGetMessagesFunction,
     onReady,
     onMessagesLoadingChange,
   }) => {
@@ -1481,6 +1483,20 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         onRegisterResetFunction(sessionId, resetWrapper);
       }
     }, [onRegisterResetFunction, sessionId]);
+
+    // Register getMessages function so parent can retrieve current messages for export
+    useEffect(() => {
+      if (onRegisterGetMessagesFunction) {
+        const getMessages = () => {
+          if (saveMessagesRef.current) {
+            const data = saveMessagesRef.current();
+            return data.filteredMessages || data.allMessages || [];
+          }
+          return [];
+        };
+        onRegisterGetMessagesFunction(sessionId, getMessages);
+      }
+    }, [onRegisterGetMessagesFunction, sessionId]);
 
     // Note: Save/Load functions removed - CopilotKit v1.50 handles persistence automatically
 

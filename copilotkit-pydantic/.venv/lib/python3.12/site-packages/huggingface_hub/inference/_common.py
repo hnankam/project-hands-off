@@ -21,25 +21,13 @@ import logging
 import mimetypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    AsyncIterable,
-    BinaryIO,
-    Dict,
-    Iterable,
-    List,
-    Literal,
-    NoReturn,
-    Optional,
-    Union,
-    overload,
-)
+from typing import TYPE_CHECKING, Any, AsyncIterable, BinaryIO, Iterable, Literal, NoReturn, Optional, Union, overload
 
-from requests import HTTPError
+import httpx
 
 from huggingface_hub.errors import (
     GenerationError,
+    HfHubHTTPError,
     IncompleteGenerationError,
     OverloadedError,
     TextGenerationError,
@@ -47,12 +35,11 @@ from huggingface_hub.errors import (
     ValidationError,
 )
 
-from ..utils import get_session, is_aiohttp_available, is_numpy_available, is_pillow_available
+from ..utils import get_session, is_numpy_available, is_pillow_available
 from ._generated.types import ChatCompletionStreamOutput, TextGenerationStreamOutput
 
 
 if TYPE_CHECKING:
-    from aiohttp import ClientResponse, ClientSession
     from PIL.Image import Image
 
 # TYPES
@@ -60,7 +47,7 @@ UrlT = str
 PathT = Union[str, Path]
 ContentT = Union[bytes, BinaryIO, PathT, UrlT, "Image", bytearray, memoryview]
 
-# Use to set a Accept: image/png header
+# Use to set an Accept: image/png header
 TASKS_EXPECTING_IMAGES = {"text-to-image", "image-to-image"}
 
 logger = logging.getLogger(__name__)
@@ -71,9 +58,9 @@ class RequestParameters:
     url: str
     task: str
     model: Optional[str]
-    json: Optional[Union[str, Dict, List]]
+    json: Optional[Union[str, dict, list]]
     data: Optional[bytes]
-    headers: Dict[str, Any]
+    headers: dict[str, Any]
 
 
 class MimeBytes(bytes):
@@ -102,15 +89,6 @@ class MimeBytes(bytes):
 
 
 ## IMPORT UTILS
-
-
-def _import_aiohttp():
-    # Make sure `aiohttp` is installed on the machine.
-    if not is_aiohttp_available():
-        raise ImportError("Please install aiohttp to use `AsyncInferenceClient` (`pip install aiohttp`).")
-    import aiohttp
-
-    return aiohttp
 
 
 def _import_numpy():
@@ -166,7 +144,7 @@ def _open_as_mime_bytes(content: Optional[ContentT]) -> Optional[MimeBytes]:
     if hasattr(content, "read"):  # duck-typing instead of isinstance(content, BinaryIO)
         logger.debug("Reading content from BinaryIO")
         data = content.read()
-        mime_type = mimetypes.guess_type(content.name)[0] if hasattr(content, "name") else None
+        mime_type = mimetypes.guess_type(str(content.name))[0] if hasattr(content, "name") else None
         if isinstance(data, str):
             raise TypeError("Expected binary stream (bytes), but got text stream")
         return MimeBytes(data, mime_type=mime_type)
@@ -240,7 +218,7 @@ def _b64_to_image(encoded_image: str) -> "Image":
     return Image.open(io.BytesIO(base64.b64decode(encoded_image)))
 
 
-def _bytes_to_list(content: bytes) -> List:
+def _bytes_to_list(content: bytes) -> list:
     """Parse bytes from a Response object into a Python list.
 
     Expects the response body to be JSON-encoded data.
@@ -251,7 +229,7 @@ def _bytes_to_list(content: bytes) -> List:
     return json.loads(content.decode())
 
 
-def _bytes_to_dict(content: bytes) -> Dict:
+def _bytes_to_dict(content: bytes) -> dict:
     """Parse bytes from a Response object into a Python dictionary.
 
     Expects the response body to be JSON-encoded data.
@@ -271,7 +249,7 @@ def _bytes_to_image(content: bytes) -> "Image":
     return Image.open(io.BytesIO(content))
 
 
-def _as_dict(response: Union[bytes, Dict]) -> Dict:
+def _as_dict(response: Union[bytes, dict]) -> dict:
     return json.loads(response) if isinstance(response, bytes) else response
 
 
@@ -279,13 +257,13 @@ def _as_dict(response: Union[bytes, Dict]) -> Dict:
 
 
 def _stream_text_generation_response(
-    bytes_output_as_lines: Iterable[bytes], details: bool
+    output_lines: Iterable[str], details: bool
 ) -> Union[Iterable[str], Iterable[TextGenerationStreamOutput]]:
     """Used in `InferenceClient.text_generation`."""
     # Parse ServerSentEvents
-    for byte_payload in bytes_output_as_lines:
+    for line in output_lines:
         try:
-            output = _format_text_generation_stream_output(byte_payload, details)
+            output = _format_text_generation_stream_output(line, details)
         except StopIteration:
             break
         if output is not None:
@@ -293,13 +271,13 @@ def _stream_text_generation_response(
 
 
 async def _async_stream_text_generation_response(
-    bytes_output_as_lines: AsyncIterable[bytes], details: bool
+    output_lines: AsyncIterable[str], details: bool
 ) -> Union[AsyncIterable[str], AsyncIterable[TextGenerationStreamOutput]]:
     """Used in `AsyncInferenceClient.text_generation`."""
     # Parse ServerSentEvents
-    async for byte_payload in bytes_output_as_lines:
+    async for line in output_lines:
         try:
-            output = _format_text_generation_stream_output(byte_payload, details)
+            output = _format_text_generation_stream_output(line, details)
         except StopIteration:
             break
         if output is not None:
@@ -307,17 +285,17 @@ async def _async_stream_text_generation_response(
 
 
 def _format_text_generation_stream_output(
-    byte_payload: bytes, details: bool
+    line: str, details: bool
 ) -> Optional[Union[str, TextGenerationStreamOutput]]:
-    if not byte_payload.startswith(b"data:"):
+    if not line.startswith("data:"):
         return None  # empty line
 
-    if byte_payload.strip() == b"data: [DONE]":
+    if line.strip() == "data: [DONE]":
         raise StopIteration("[DONE] signal received.")
 
     # Decode payload
-    payload = byte_payload.decode("utf-8")
-    json_payload = json.loads(payload.lstrip("data:").rstrip("/n"))
+    payload = line.lstrip("data:").rstrip("/n")
+    json_payload = json.loads(payload)
 
     # Either an error as being returned
     if json_payload.get("error") is not None:
@@ -329,12 +307,12 @@ def _format_text_generation_stream_output(
 
 
 def _stream_chat_completion_response(
-    bytes_lines: Iterable[bytes],
+    lines: Iterable[str],
 ) -> Iterable[ChatCompletionStreamOutput]:
     """Used in `InferenceClient.chat_completion` if model is served with TGI."""
-    for item in bytes_lines:
+    for line in lines:
         try:
-            output = _format_chat_completion_stream_output(item)
+            output = _format_chat_completion_stream_output(line)
         except StopIteration:
             break
         if output is not None:
@@ -342,12 +320,12 @@ def _stream_chat_completion_response(
 
 
 async def _async_stream_chat_completion_response(
-    bytes_lines: AsyncIterable[bytes],
+    lines: AsyncIterable[str],
 ) -> AsyncIterable[ChatCompletionStreamOutput]:
     """Used in `AsyncInferenceClient.chat_completion`."""
-    async for item in bytes_lines:
+    async for line in lines:
         try:
-            output = _format_chat_completion_stream_output(item)
+            output = _format_chat_completion_stream_output(line)
         except StopIteration:
             break
         if output is not None:
@@ -355,17 +333,16 @@ async def _async_stream_chat_completion_response(
 
 
 def _format_chat_completion_stream_output(
-    byte_payload: bytes,
+    line: str,
 ) -> Optional[ChatCompletionStreamOutput]:
-    if not byte_payload.startswith(b"data:"):
+    if not line.startswith("data:"):
         return None  # empty line
 
-    if byte_payload.strip() == b"data: [DONE]":
+    if line.strip() == "data: [DONE]":
         raise StopIteration("[DONE] signal received.")
 
     # Decode payload
-    payload = byte_payload.decode("utf-8")
-    json_payload = json.loads(payload.lstrip("data:").rstrip("/n"))
+    json_payload = json.loads(line.lstrip("data:").strip())
 
     # Either an error as being returned
     if json_payload.get("error") is not None:
@@ -375,13 +352,9 @@ def _format_chat_completion_stream_output(
     return ChatCompletionStreamOutput.parse_obj_as_instance(json_payload)
 
 
-async def _async_yield_from(client: "ClientSession", response: "ClientResponse") -> AsyncIterable[bytes]:
-    try:
-        async for byte_payload in response.content:
-            yield byte_payload.strip()
-    finally:
-        # Always close the underlying HTTP session to avoid resource leaks
-        await client.close()
+async def _async_yield_from(client: httpx.AsyncClient, response: httpx.Response) -> AsyncIterable[str]:
+    async for line in response.aiter_lines():
+        yield line.strip()
 
 
 # "TGI servers" are servers running with the `text-generation-inference` backend.
@@ -391,7 +364,7 @@ async def _async_yield_from(client: "ClientSession", response: "ClientResponse")
 #
 # Both approaches have very similar APIs, but not exactly the same. What we do first in
 # the `text_generation` method is to assume the model is served via TGI. If we realize
-# it's not the case (i.e. we receive an HTTP 400 Bad Request), we fallback to the
+# it's not the case (i.e. we receive an HTTP 400 Bad Request), we fall back to the
 # default API with a warning message. When that's the case, We remember the unsupported
 # attributes for this model in the `_UNSUPPORTED_TEXT_GENERATION_KWARGS` global variable.
 #
@@ -402,14 +375,14 @@ async def _async_yield_from(client: "ClientSession", response: "ClientResponse")
 # For more details, see https://github.com/huggingface/text-generation-inference and
 # https://huggingface.co/docs/api-inference/detailed_parameters#text-generation-task.
 
-_UNSUPPORTED_TEXT_GENERATION_KWARGS: Dict[Optional[str], List[str]] = {}
+_UNSUPPORTED_TEXT_GENERATION_KWARGS: dict[Optional[str], list[str]] = {}
 
 
-def _set_unsupported_text_generation_kwargs(model: Optional[str], unsupported_kwargs: List[str]) -> None:
+def _set_unsupported_text_generation_kwargs(model: Optional[str], unsupported_kwargs: list[str]) -> None:
     _UNSUPPORTED_TEXT_GENERATION_KWARGS.setdefault(model, []).extend(unsupported_kwargs)
 
 
-def _get_unsupported_text_generation_kwargs(model: Optional[str]) -> List[str]:
+def _get_unsupported_text_generation_kwargs(model: Optional[str]) -> list[str]:
     return _UNSUPPORTED_TEXT_GENERATION_KWARGS.get(model, [])
 
 
@@ -420,7 +393,7 @@ def _get_unsupported_text_generation_kwargs(model: Optional[str]) -> List[str]:
 # ----------------------
 
 
-def raise_text_generation_error(http_error: HTTPError) -> NoReturn:
+def raise_text_generation_error(http_error: HfHubHTTPError) -> NoReturn:
     """
     Try to parse text-generation-inference error message and raise HTTPError in any case.
 
@@ -429,6 +402,8 @@ def raise_text_generation_error(http_error: HTTPError) -> NoReturn:
             The HTTPError that have been raised.
     """
     # Try to parse a Text Generation Inference error
+    if http_error.response is None:
+        raise http_error
 
     try:
         # Hacky way to retrieve payload in case of aiohttp error
