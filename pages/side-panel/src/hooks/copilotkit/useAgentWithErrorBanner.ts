@@ -88,7 +88,7 @@ export function useAgentWithErrorBanner(
   config: AgentWithErrorBannerConfig
 ): AgentWithErrorBannerResult {
   const {
-    errorBannerAutoDismissMs = 15000,
+    errorBannerAutoDismissMs = 60 * 60 * 1000, // 1 hour
     agentUpdates = ['OnRunStatusChanged'], // Default: only re-render on run status changes
     onRetry,
     ...restConfig

@@ -211,7 +211,7 @@ export function useAgentEventSubscriber(
   const {
     agentId = 'dynamic_agent',
     debug: debugEnabled = false,
-    errorAutoDismissMs = 15000,
+    errorAutoDismissMs = 60 * 60 * 1000, // 1 hour
     agentUpdates = ['OnRunStatusChanged'], // Default: only re-render on run status changes
     onRunStarted,
     onRunFinished,

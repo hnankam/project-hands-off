@@ -21,9 +21,9 @@ export const ANIMATION_DURATIONS = {
 } as const;
 
 export const AUTO_DISMISS_DELAYS = {
-  error: 8000,
-  success: 5000,
-  errorLong: 15000,
+  error: 60 * 60 * 1000, // 1 hour
+  success: 60 * 60 * 1000, // 1 hour
+  errorLong: 60 * 60 * 1000, // 1 hour
 } as const;
 
 export const SKELETON_TIMINGS = {

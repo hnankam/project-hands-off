@@ -371,7 +371,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     // Removed: const { sessions } = useSessionStorageDB();
     // This was causing unnecessary re-renders on every session update.
     // Agent/model loading is now handled by useSessionData hook.
-    const { showAgentCursor, showSuggestions, showThoughtBlocks, agentModeChat, chatFontSize } = useStorage(preferencesStorage);
+    const { showSuggestions, showThoughtBlocks, agentModeChat, chatFontSize } = useStorage(preferencesStorage);
     const { user, organization, member, activeTeam } = useAuth();
     const [userMessagesCount, setUserMessagesCount] = useState<number>(0);
     const [assistantMessagesCount, setAssistantMessagesCount] = useState<number>(0);
@@ -1800,7 +1800,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         <SettingsModal
           isOpen={isSettingsOpen}
           isLight={isLight}
-          showAgentCursor={showAgentCursor}
           showSuggestions={showSuggestions}
           showThoughtBlocks={showThoughtBlocks}
           agentModeChat={agentModeChat}
@@ -1810,7 +1809,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           teamId={activeTeam || undefined}
           sharedContexts={sharedContexts}
           onClose={() => setIsSettingsOpen(false)}
-          onShowAgentCursorChange={(show: boolean) => preferencesStorage.setShowAgentCursor(show)}
           onShowSuggestionsChange={(show: boolean) => preferencesStorage.setShowSuggestions(show)}
           onShowThoughtBlocksChange={(show: boolean) => preferencesStorage.setShowThoughtBlocks(show)}
           onAgentModeChatChange={(enabled: boolean) => preferencesStorage.setAgentModeChat(enabled)}

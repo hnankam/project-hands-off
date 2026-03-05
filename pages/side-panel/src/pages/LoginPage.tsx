@@ -48,12 +48,12 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
     return undefined;
   }, [error]);
 
-  // Auto-dismiss success message after 10 seconds
+  // Auto-dismiss success message after 1 hour
   useEffect(() => {
     if (successMessage) {
       const timer = setTimeout(() => {
         setSuccessMessage(null);
-      }, 10000);
+      }, AUTO_DISMISS_DELAYS.success);
       return () => clearTimeout(timer);
     }
     return undefined;

@@ -22,7 +22,7 @@ export const ChatErrorDisplay: React.FC<ChatErrorDisplayProps> = ({
   error,
   retry,
   isLight = true,
-  autoDismissMs = 10000, // Default: 10 seconds
+  autoDismissMs = 60 * 60 * 1000, // Default: 1 hour
 }) => {
   const [isVisible, setIsVisible] = useState(true);
   const [isClosing, setIsClosing] = useState(false);
@@ -161,7 +161,7 @@ export const ChatErrorDisplayCompact: React.FC<ChatErrorDisplayProps> = ({
   error,
   retry,
   isLight = true,
-  autoDismissMs = 8000,
+  autoDismissMs = 60 * 60 * 1000, // 1 hour
 }) => {
   const [isVisible, setIsVisible] = useState(true);
   const [isClosing, setIsClosing] = useState(false);

@@ -284,7 +284,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // Replaces manual renderError callback that was never connected
   const { error: agentError, handleRetry: handleAgentRetry, handleDismiss: handleAgentDismiss } = useAgentWithErrorBanner({
     agentId: 'dynamic_agent',
-    errorBannerAutoDismissMs: 15000,
+    errorBannerAutoDismissMs: 60 * 60 * 1000, // 1 hour
     debug: process.env.NODE_ENV === 'development',
     
     // Retry logic: reload last assistant or user message
@@ -949,7 +949,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
               error={agentError}
               retry={handleAgentRetry}
               isLight={isLight}
-              autoDismissMs={15000}
+              autoDismissMs={60 * 60 * 1000}
             />
           )}
           

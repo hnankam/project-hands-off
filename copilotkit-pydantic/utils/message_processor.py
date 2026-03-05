@@ -2,7 +2,11 @@
 
 import json
 from collections import defaultdict
+from collections.abc import Sequence
+from functools import lru_cache
 from typing import Any
+
+import tiktoken
 from pydantic_ai import RunContext
 from pydantic_ai.messages import (
     ModelMessage,
@@ -22,6 +26,57 @@ from config import logger
 from core.models import AgentState, UnifiedDeps
 from pydantic_ai.models import ModelRequestParameters
 
+@lru_cache(maxsize=1)
+def _get_tiktoken_encoding() -> tiktoken.Encoding:
+    """Get cl100k_base encoding (used by GPT-4, GPT-3.5-turbo). Cached for reuse."""
+    return tiktoken.get_encoding("cl100k_base")
+
+
+def _extract_text_from_messages(messages: Sequence[ModelMessage]) -> list[str]:
+    """Extract all text content from messages for token counting."""
+    texts: list[str] = []
+    for msg in messages:
+        if isinstance(msg, ModelRequest):
+            for part in msg.parts:
+                if isinstance(part, UserPromptPart):
+                    if isinstance(part.content, str):
+                        texts.append(part.content)
+                    else:
+                        for item in part.content:
+                            if isinstance(item, dict) and "text" in item:
+                                texts.append(str(item.get("text", "")))
+                elif isinstance(part, SystemPromptPart):
+                    texts.append(part.content)
+                elif isinstance(part, ToolReturnPart):
+                    texts.append(str(part.content))
+        elif isinstance(msg, ModelResponse):
+            for response_part in msg.parts:
+                if isinstance(response_part, TextPart):
+                    texts.append(response_part.content)
+                elif isinstance(response_part, ToolCallPart):
+                    texts.append(response_part.tool_name)
+                    texts.append(str(response_part.args))
+    return texts
+
+
+def count_tokens_approximately(messages: Sequence[ModelMessage]) -> int:  # pragma: no branch
+    """Count tokens using tiktoken (cl100k_base encoding, used by GPT-4/GPT-3.5).
+
+    Uses tiktoken for accurate token counts instead of character-based heuristics.
+    Adds ~3 tokens per message for structure overhead (role/content keys in chat format).
+
+    Args:
+        messages: Sequence of messages to count tokens for.
+
+    Returns:
+        Token count.
+    """
+    encoding = _get_tiktoken_encoding()
+    texts = _extract_text_from_messages(messages)
+    total = sum(len(encoding.encode(t)) for t in texts)
+    # Add overhead for message structure (role, content keys, etc.) - ~3 per message
+    structure_overhead = 3 * len(messages) if messages else 0
+    return total + structure_overhead
 
 async def get_model_config_from_agent(ctx: RunContext) -> tuple[dict, ModelRequestParameters]:
     """Extract model settings and tools from agent for accurate token counting.
@@ -198,7 +253,9 @@ async def keep_recent_messages(
 
     # Get model settings and tools from agent (via adapter) for accurate token counting
     model_settings, model_request_params = await get_model_config_from_agent(ctx)
-    
+    all_messages_token_count = count_tokens_approximately(messages)
+    current_tokens: int | None = None
+
     try:
         # logger.info(f"Model Settings: {model_settings}")
         # logger.info(f"Model Request Parameters: {model_request_params}")
@@ -207,9 +264,14 @@ async def keep_recent_messages(
     except Exception as e:
         logger.debug(f"Token counting not supported or failed: {e}")
     # Note: AsyncAnthropicBedrock client does not support `count_tokens` api.
-    # We rely on ctx.usage from actual API responses instead.
 
+    # count_tokens returns RequestUsage; extract input_tokens. Fall back to tiktoken approx.
+    if current_tokens is not None and hasattr(current_tokens, "input_tokens"):
+        effective_token_count = current_tokens.input_tokens
+    else:
+        effective_token_count = all_messages_token_count
     logger.info(f"Message History Usage: {ctx.usage.total_tokens} = {ctx.usage.input_tokens} + {ctx.usage.output_tokens}")
+    logger.info(f"Message History Token Count: {effective_token_count}")
 
     # --- Pre-sanitization: drop duplicates within a message ---
     def _get_tool_return_id(part: Any) -> str | None:
@@ -281,6 +343,43 @@ async def keep_recent_messages(
                 except Exception:
                     continue
         return ids
+
+    def _remove_orphaned_tool_returns(
+        removed_msgs: list[ModelMessage], kept_msgs: list[ModelMessage], log_prefix: str = ""
+    ) -> list[ModelMessage]:
+        """Remove tool_result parts from kept_msgs that reference tool_calls in removed_msgs."""
+        removed_tool_call_ids: set[str] = set()
+        for msg in removed_msgs:
+            for part in getattr(msg, "parts", []) or []:
+                if isinstance(part, ToolCallPart):
+                    try:
+                        cid = getattr(part, "tool_call_id", None)
+                        if isinstance(cid, (str, int)):
+                            removed_tool_call_ids.add(str(cid))
+                    except Exception:
+                        pass
+
+        cleaned: list[ModelMessage] = []
+        for idx, msg in enumerate(kept_msgs):
+            original_parts = getattr(msg, "parts", []) or []
+            cleaned_parts = []
+            for part in original_parts:
+                if _is_tool_result_part(part):
+                    rid = _get_tool_return_id(part)
+                    if rid and rid in removed_tool_call_ids:
+                        logger.info(f"{log_prefix}Removing orphaned tool return with id={rid} at message {idx}")
+                        continue
+                cleaned_parts.append(part)
+            if cleaned_parts:
+                if hasattr(msg, "parts"):
+                    try:
+                        msg.parts = cleaned_parts
+                    except Exception:
+                        pass
+                cleaned.append(msg)
+            else:
+                logger.info(f"{log_prefix}Skipping message {idx} - all parts were orphaned tool returns")
+        return cleaned
 
     total_msgs = len(messages)
     keep_full_after_index = max(0, total_msgs - 2)  # keep only the last 2 messages untouched
@@ -515,37 +614,56 @@ async def keep_recent_messages(
             return msgs + [ModelRequest(parts=[])]
         return msgs
 
-    # Dynamic message window based on token usage
-    # Aggressive cutting when over 1.2M tokens, gentle cutting when over 200k
+    # Dynamic message window based on token count
+    # Gemini models have 1M+ context; Claude/Anthropic have 200k. Use model-specific thresholds.
+    model_name = ""
+    try:
+        model_name = str(getattr(ctx.model, "model_name", "") or "")
+    except Exception:
+        pass
+    is_gemini = "gemini" in model_name.lower()
+    is_anthropic = "anthropic" in model_name.lower() or "claude" in model_name.lower()
+
+    if is_gemini:
+        high_threshold, low_threshold = 200_000, 150_000
+        model_context_limit = 1_000_000
+    elif is_anthropic:
+        # Claude has 200k limit; cut earlier to leave buffer for safe-cut overshoot
+        high_threshold, low_threshold = 100_000, 70_000
+        model_context_limit = 200_000
+    else:
+        high_threshold, low_threshold = 120_000, 80_000
+        model_context_limit = 200_000
+
     skip_safe_cut_search = False  # Flag to skip safe cut search (used for first message)
-    
-    if ctx.usage.input_tokens > 1_000_000:
-        # High token usage: Keep 90% of messages (cut 10% from the beginning)
-        target_messages_to_keep = int(len(messages) * 0.90)
-        logger.info(f"Token usage {ctx.usage.input_tokens} > 1M, targeting 90% of messages ({target_messages_to_keep}/{len(messages)})")
+    is_first_message = ctx.usage.input_tokens == 0
+
+    if effective_token_count > high_threshold:
+        # High token usage: 50% if first message, else 15%
+        high_ratio = 0.50 if is_first_message else 0.15
+        target_messages_to_keep = int(len(messages) * high_ratio)
+        reduced_messages = messages[-target_messages_to_keep:] if target_messages_to_keep > 0 else []
+        reduced_token_count = count_tokens_approximately(reduced_messages) if reduced_messages else 0
+        logger.info(f"Token count {effective_token_count} > {high_threshold:,}, targeting {int(high_ratio * 100)}% of messages ({target_messages_to_keep}/{len(messages)}), reduced token count: {reduced_token_count:,}")
         
         if len(messages) <= target_messages_to_keep:
             logger.info(f"Returning {len(messages)} messages (<={target_messages_to_keep})")
             return _ensure_ends_with_request(messages)
-    elif ctx.usage.input_tokens > 200_000:
-        # Moderate token usage: Keep 99.5% of messages (cut 0.5% from the beginning)
-        target_messages_to_keep = int(len(messages) * 0.995)
-        logger.info(f"Token usage {ctx.usage.input_tokens} > 200k, targeting 99.5% of messages ({target_messages_to_keep}/{len(messages)})")
+    elif effective_token_count > low_threshold:
+        # Moderate token usage: 70% if first message, else 35%
+        low_ratio = 0.70 if is_first_message else 0.35
+        target_messages_to_keep = int(len(messages) * low_ratio)
+        reduced_messages = messages[-target_messages_to_keep:] if target_messages_to_keep > 0 else []
+        reduced_token_count = count_tokens_approximately(reduced_messages) if reduced_messages else 0
+        logger.info(f"Token count {effective_token_count} > {low_threshold:,}, targeting {int(low_ratio * 100)}% of messages ({target_messages_to_keep}/{len(messages)}), reduced token count: {reduced_token_count:,}")
         
         if len(messages) <= target_messages_to_keep:
             logger.info(f"Returning {len(messages)} messages (<={target_messages_to_keep})")
             return _ensure_ends_with_request(messages)
     else:
         # Under token limit - return all messages without cutting
-        # Special case: first message (token usage = 0) - limit to 200 messages max
-        if ctx.usage.input_tokens == 0 and len(messages) > 150:
-            logger.info(f"First message with {len(messages)} messages, forcing cut to 150")
-            # For first message, skip safe cut search and go directly to forced cut
-            skip_safe_cut_search = True
-            target_messages_to_keep = 150
-        else:
-            logger.info(f"Token usage {ctx.usage.input_tokens} <= 200k, returning all {len(messages)} messages")
-            return _ensure_ends_with_request(messages)
+        logger.info(f"Token count {effective_token_count} <= {low_threshold:,}, returning all {len(messages)} messages")
+        return _ensure_ends_with_request(messages)
     
     # Find system prompt if it exists
     system_prompt = None
@@ -592,56 +710,47 @@ async def keep_recent_messages(
             # If we cut off the system prompt, prepend it back
             if system_prompt is not None and system_prompt_index is not None and safe_cut_found > system_prompt_index:
                 result = [system_prompt] + result
+
+            # Verify result stays under model limit (safe cut can keep more than target)
+            result_token_count = count_tokens_approximately(result)
+            buffer = 20_000
+            # Tiktoken undercounts vs Anthropic tokenizer (~2.45x). Use lower effective limit for Anthropic.
+            if is_anthropic:
+                max_result_tokens = 78_000  # ~78k tiktoken ≈ ~191k Anthropic tokens (under 200k limit)
+            else:
+                max_result_tokens = model_context_limit - buffer
+            while result_token_count > max_result_tokens and len(result) > 1:
+                logger.warning(
+                    f"Safe cut result {result_token_count:,} tokens exceeds limit {max_result_tokens:,}, "
+                    f"cutting again (had {len(result)} messages)"
+                )
+                # Re-cut: keep ~50% of current result
+                target_messages_to_keep = max(1, int(len(result) * 0.5))
+                target_cut = len(result) - target_messages_to_keep
+                if target_cut <= 0:
+                    break
+
+                # Keep messages from target_cut onward, remove orphaned tool returns
+                result = _remove_orphaned_tool_returns(
+                    result[:target_cut], result[target_cut:], log_prefix="Re-cut: "
+                )
+
+                # Re-prepend system prompt if we had one (re-cut may have removed it)
+                if system_prompt is not None and system_prompt_index is not None and safe_cut_found > system_prompt_index:
+                    result = [system_prompt] + result
+                result_token_count = count_tokens_approximately(result)
+                logger.info(f"After re-cut: {len(result)} messages, {result_token_count:,} tokens")
             
-            logger.info(f"Returning {len(result)} messages after safe cut")
+            logger.info(f"Returning {len(result)} messages after safe cut ({result_token_count:,} tokens)")
             return _ensure_ends_with_request(result)
         
         # No safe cut found - force cut at target_cut and clean up orphaned tool returns
         logger.warning(f"No safe cut found, forcing cut at index={target_cut} and cleaning orphaned tool returns")
     
-    # Collect all tool_call_ids that exist in the messages being removed
+    # Keep messages from target_cut onward, remove orphaned tool returns
     removed_messages = messages[:target_cut]
-    removed_tool_call_ids = set()
-    for msg in removed_messages:
-        for part in getattr(msg, 'parts', []) or []:
-            if isinstance(part, ToolCallPart):
-                try:
-                    call_id = getattr(part, 'tool_call_id', None)
-                    if isinstance(call_id, (str, int)):
-                        removed_tool_call_ids.add(str(call_id))
-                except Exception:
-                    pass
-    
-    logger.info(f"Found {len(removed_tool_call_ids)} tool call IDs in removed messages")
-    
-    # Keep messages from target_cut onward, but remove orphaned tool returns
     kept_messages = messages[target_cut:]
-    cleaned_messages = []
-    
-    for idx, msg in enumerate(kept_messages):
-        original_parts = getattr(msg, 'parts', []) or []
-        cleaned_parts = []
-        
-        for part in original_parts:
-            # Check if this is a tool return for a removed tool call
-            if _is_tool_result_part(part):
-                tool_call_id = _get_tool_return_id(part)
-                if tool_call_id and tool_call_id in removed_tool_call_ids:
-                    logger.info(f"Removing orphaned tool return with id={tool_call_id} at message {idx}")
-                    continue
-            
-            cleaned_parts.append(part)
-        
-        # Only keep message if it has parts after cleaning
-        if cleaned_parts:
-            if hasattr(msg, 'parts'):
-                try:
-                    msg.parts = cleaned_parts
-                except Exception:
-                    pass
-            cleaned_messages.append(msg)
-        else:
-            logger.info(f"Skipping message {idx} - all parts were orphaned tool returns")
+    cleaned_messages = _remove_orphaned_tool_returns(removed_messages, kept_messages)
     
     # If we cut off the system prompt, prepend it back
     if system_prompt is not None and system_prompt_index is not None and target_cut > system_prompt_index:
