@@ -34,13 +34,16 @@
  */
 
 import express from 'express';
+import { AnthropicFoundry } from '@anthropic-ai/foundry-sdk';
 import { getPool } from '../config/database.js';
 import { log, logError } from '../utils/logger.js';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { syncTeamAssociations } from '../lib/team-helpers.js';
+import { invalidateCache as invalidateDbCache } from '../config/db-loaders.js';
+import { invalidateCache as invalidateLoaderCache } from '../config/loader.js';
 import {
   sanitizeJSON,
-  ensureHttps,
+  normalizeAzureOpenAIEndpoint,
   safeJsonParse,
   extractErrorMessage,
   ensureAuthenticated,
@@ -49,6 +52,15 @@ import {
 } from '../utils/route-helpers.js';
 
 const router = express.Router();
+
+/**
+ * Invalidate configuration caches after provider changes
+ * Ensures /api/config and deployment manager see fresh data
+ */
+function invalidateConfigCaches() {
+  invalidateDbCache();
+  invalidateLoaderCache();
+}
 
 // ============================================================================
 // Constants
@@ -61,6 +73,7 @@ const router = express.Router();
 const SUPPORTED_PROVIDER_TYPES = new Set([
   'anthropic',
   'anthropic_bedrock',
+  'anthropic_foundry',
   'google',
   'openai',
   'azure_openai',
@@ -127,9 +140,7 @@ async function testAzureOpenAIProvider(credentials) {
     throw new Error('endpoint is required to test Azure OpenAI connectivity');
   }
 
-  const endpoint = ensureHttps(
-    endpointRaw.includes('.openai.azure.com') ? endpointRaw : `${endpointRaw}.openai.azure.com`,
-  ).replace(/\/$/, '');
+  const endpoint = normalizeAzureOpenAIEndpoint(endpointRaw);
 
   const url = `${endpoint}/openai/deployments?api-version=${encodeURIComponent(apiVersion)}`;
 
@@ -330,6 +341,41 @@ async function testBedrockProvider(credentials) {
 }
 
 /**
+ * Test Anthropic Foundry provider connectivity
+ * Uses Anthropic Foundry SDK to send a minimal messages request
+ * @param {Object} credentials - Provider credentials (api_key, base_url)
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ * @throws {Error} If connectivity test fails
+ */
+async function testAnthropicFoundryProvider(credentials) {
+  const apiKey = credentials?.api_key || credentials?.apiKey;
+  const baseUrl = credentials?.base_url || credentials?.baseUrl;
+  if (!apiKey) {
+    throw new Error('api_key is required to test Anthropic Foundry connectivity');
+  }
+  if (!baseUrl) {
+    throw new Error('base_url is required to test Anthropic Foundry connectivity');
+  }
+
+  const baseURL = baseUrl.replace(/\/$/, '');
+  const client = new AnthropicFoundry({
+    apiKey,
+    baseURL,
+  });
+
+  await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1,
+    messages: [{ role: 'user', content: 'Hi' }],
+  });
+
+  return {
+    provider: 'anthropic_foundry',
+    message: 'Successfully connected to Anthropic Foundry',
+  };
+}
+
+/**
  * Test provider connectivity based on provider type
  * Routes to the appropriate provider-specific test function
  * @param {string} providerType - Provider type (openai, azure_openai, google, anthropic, anthropic_bedrock)
@@ -351,6 +397,8 @@ async function testProviderConnectivity(providerType, credentials, bedrockModelS
       return testAnthropicProvider(credentials);
     case 'anthropic_bedrock':
       return testBedrockProvider(credentials, bedrockModelSettings);
+    case 'anthropic_foundry':
+      return testAnthropicFoundryProvider(credentials);
     default:
       throw new Error(`Connectivity test for provider type "${providerType}" is not supported yet`);
   }
@@ -577,6 +625,7 @@ router.post('/', async (req, res, next) => {
     const provider = toCamelProvider(rows[0]);
     
     log('[Providers API] Created provider', { providerId: provider.id, providerKey });
+    invalidateConfigCaches();
 
     res.status(201).json({ provider });
   } catch (err) {
@@ -719,6 +768,7 @@ router.put('/:providerId', async (req, res, next) => {
     const provider = toCamelProvider(rows[0]);
     
     log('[Providers API] Updated provider', { providerId });
+    invalidateConfigCaches();
 
     res.json({ provider });
   } catch (err) {
@@ -1003,6 +1053,7 @@ router.delete('/:providerId', async (req, res, next) => {
     }
 
     log('[Providers API] Deleted provider', { providerId, providerKey: deleteResult.rows[0].provider_key });
+    invalidateConfigCaches();
     res.status(204).send();
   } catch (err) {
     next(err);

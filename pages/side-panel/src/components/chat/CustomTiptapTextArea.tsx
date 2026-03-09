@@ -18,6 +18,22 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { Mention } from '@tiptap/extension-mention';
 import Link from '@tiptap/extension-link';
+
+const LinkWithLength = Link.extend({
+  inclusive: false, // Cursor after link stays outside; typing doesn't extend the link
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      'data-length': {
+        parseHTML: () => null,
+        renderHTML: (attributes) => {
+          const len = attributes.href?.length;
+          return len != null ? { 'data-length': String(len) } : {};
+        },
+      },
+    };
+  },
+});
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import { common, createLowlight } from 'lowlight';
 import { Markdown } from 'tiptap-markdown';
@@ -25,6 +41,7 @@ import { useCopilotRuntimeContext, useCopilotChatContext } from '../../hooks/cop
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { EnterToSend } from '../tiptap/EnterToSendExtension';
+import { LinkChip } from '../tiptap/LinkChipExtension';
 import { createSlashCommandExtension, type SlashCommand } from '../tiptap/SlashCommandExtension';
 import { createMentionSuggestion, type MentionSuggestion } from '../tiptap/MentionExtension';
 import { editorToMarkdown } from '../tiptap/markdownSerializer';
@@ -32,6 +49,44 @@ import { PageSelectorContext } from './CustomInputV2';
 
 // Create lowlight instance for code highlighting
 const lowlight = createLowlight(common);
+
+/** URL pattern for pasted content - matches http(s) URLs or bare domains */
+const URL_PATTERN = /^(https?:\/\/)?[\w.-]+\.[a-z]{2,}(?:\/[\S]*)?$/i;
+/** Email pattern - matches standard email format */
+const EMAIL_PATTERN = /^[\w.-]+@[\w.-]+\.[a-z]{2,}$/i;
+
+function extractPastedUrl(text: string, html: string): string | null {
+  // Prefer single <a href="..."> from HTML
+  if (html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const links = doc.querySelectorAll('a[href]');
+    if (links.length === 1) {
+      const href = (links[0] as HTMLAnchorElement).href;
+      if (href && href !== '#' && !href.startsWith('javascript:')) return href;
+    }
+  }
+  // Plain text that looks like a single URL
+  const trimmed = text?.trim();
+  if (trimmed && URL_PATTERN.test(trimmed)) {
+    return trimmed.startsWith('http') ? trimmed : `https://${trimmed}`;
+  }
+  return null;
+}
+
+function extractPastedEmail(text: string, html: string): string | null {
+  if (html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const links = doc.querySelectorAll('a[href^="mailto:"]');
+    if (links.length === 1) {
+      const href = (links[0] as HTMLAnchorElement).href;
+      const email = href.replace(/^mailto:/i, '').split('?')[0].trim();
+      if (email && EMAIL_PATTERN.test(email)) return email;
+    }
+  }
+  const trimmed = text?.trim();
+  if (trimmed && EMAIL_PATTERN.test(trimmed)) return trimmed;
+  return null;
+}
 
 export interface CustomTiptapTextAreaHandle {
   getMarkdown: () => string;
@@ -279,9 +334,11 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
           codeBlock: false, // We'll use CodeBlockLowlight instead
           link: false, // Disable Link in StarterKit to avoid duplicate with our Link extension
         }),
-        Link.configure({
+        LinkChip,
+        LinkWithLength.configure({
           openOnClick: false,
           autolink: true,
+          linkOnPaste: false, // We intercept URL paste and insert LinkChip (atomic) instead
           defaultProtocol: 'https',
           HTMLAttributes: {
             class: 'editor-link',
@@ -469,8 +526,97 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
             const items = Array.from(event.clipboardData?.items || []);
             const fileItems = items.filter((i) => i.kind === 'file');
 
+            console.log('[CustomTiptapTextArea] handlePaste: fileItems=', fileItems.length);
+
             if (fileItems.length === 0) {
-              // No files, let Tiptap handle text paste normally
+              // Text paste: default ProseMirror/Tiptap parses clipboard HTML; <pre><code> becomes block code.
+              // We intercept when clipboard would produce a code block and use context instead:
+              // in paragraph → inline code, otherwise → block code.
+              let text = event.clipboardData?.getData('text/plain')?.trim() || '';
+              const html = event.clipboardData?.getData('text/html') || '';
+              const wouldBeCodeBlock = html && /<pre[\s>]|<code[\s>]/i.test(html);
+
+              const { state } = view;
+              const { $from } = state.selection;
+              const parent = $from.parent;
+              const isInParagraph = parent.type.name === 'paragraph';
+
+              // Email paste: insert as inline code (inline block style)
+              const emailMatch = extractPastedEmail(text, html);
+              if (editor && emailMatch) {
+                event.preventDefault();
+                editor
+                  .chain()
+                  .focus()
+                  .insertContent([
+                    { type: 'text', text: emailMatch, marks: [{ type: 'code' }] },
+                    { type: 'text', text: ' ' },
+                  ])
+                  .run();
+                return true;
+              }
+
+              // URL paste: insert LinkChip (atomic) so cursor cannot enter it; treated as single item
+              const urlMatch = extractPastedUrl(text, html);
+              if (editor && urlMatch && !urlMatch.startsWith('mailto:')) {
+                event.preventDefault();
+                // Insert chip + space in one go so cursor lands in text node (thin cursor), not at atomic node boundary (block cursor)
+                editor
+                  .chain()
+                  .focus()
+                  .insertContent([
+                    { type: 'linkChip', attrs: { href: urlMatch } },
+                    { type: 'text', text: ' ' },
+                  ])
+                  .run();
+                return true;
+              }
+
+              console.log('[CustomTiptapTextArea] handlePaste: text=', JSON.stringify(text?.slice(0, 80)), 'htmlLen=', html?.length, 'wouldBeCodeBlock=', wouldBeCodeBlock, 'isInParagraph=', isInParagraph, 'parent.type=', parent.type.name);
+              if (html && !wouldBeCodeBlock) {
+                console.log('[CustomTiptapTextArea] handlePaste: html snippet (no pre/code match)=', html.slice(0, 300));
+              }
+
+              // Intercept when: (a) clipboard would produce code block, or (b) we have HTML+text in paragraph (default often produces block from various HTML structures)
+              const shouldIntercept = editor && (text || html) && (wouldBeCodeBlock || (html && isInParagraph));
+
+              if (shouldIntercept) {
+                if (!text && html) {
+                  const div = document.createElement('div');
+                  div.innerHTML = html;
+                  text = div.textContent || div.innerText || '';
+                }
+                if (!text?.trim()) {
+                  console.log('[CustomTiptapTextArea] handlePaste: no text after extract, returning false');
+                  return false;
+                }
+                event.preventDefault();
+
+                const isEmptyParagraph = isInParagraph && parent.textContent.trim() === '';
+                const useInlineCode = isInParagraph && !isEmptyParagraph;
+
+                if (useInlineCode) {
+                  // Inline code when paragraph has content: replace newlines with spaces
+                  const inlineText = text.replace(/\n/g, ' ');
+                  console.log('[CustomTiptapTextArea] handlePaste: inserting INLINE code');
+                  editor
+                    .chain()
+                    .focus()
+                    .insertContent({ type: 'text', text: inlineText, marks: [{ type: 'code' }] })
+                    .run();
+                } else {
+                  // Block code when empty paragraph or not in paragraph (e.g. heading, code block)
+                  console.log('[CustomTiptapTextArea] handlePaste: inserting BLOCK code (isEmptyParagraph=', isEmptyParagraph, ')');
+                  editor
+                    .chain()
+                    .focus()
+                    .insertContent({ type: 'codeBlock', content: [{ type: 'text', text }] })
+                    .insertContent({ type: 'paragraph' }) // New paragraph so cursor is outside code block
+                    .run();
+                }
+                return true;
+              }
+              console.log('[CustomTiptapTextArea] handlePaste: not intercepting, returning false');
               return false;
             }
 

@@ -35,6 +35,7 @@
  */
 
 import express from 'express';
+import { AnthropicFoundry } from '@anthropic-ai/foundry-sdk';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { getPool } from '../config/database.js';
 import { invalidateCache as invalidateDbCache } from '../config/db-loaders.js';
@@ -43,7 +44,7 @@ import { log, logError } from '../utils/logger.js';
 import { syncTeamAssociations } from '../lib/team-helpers.js';
 import {
   sanitizeJSON,
-  ensureHttps,
+  normalizeAzureOpenAIEndpoint,
   safeJsonParse,
   extractErrorMessage,
   ensureAuthenticated,
@@ -117,7 +118,8 @@ async function testOpenAIModel(credentials, modelName, modelKey) {
 
 /**
  * Test Azure OpenAI model connectivity
- * Tries multiple deployment names (modelName, modelKey) until one succeeds
+ * Sends a minimal chat completion request to verify the deployment is reachable.
+ * Uses POST (chat completions) instead of GET deployment, which may not exist on Cognitive Services.
  * @param {Object} credentials - Provider credentials
  * @param {string} credentials.api_key - Azure OpenAI API key
  * @param {string} credentials.endpoint - Azure OpenAI endpoint
@@ -128,11 +130,8 @@ async function testOpenAIModel(credentials, modelName, modelKey) {
  * @throws {Error} If connectivity test fails
  */
 async function testAzureOpenAIModel(credentials, modelName, modelKey) {
-  const candidateNames = Array.from(
-    new Set([modelName, modelKey].filter(Boolean).map(value => value.trim()).filter(Boolean))
-  );
-  
-  if (candidateNames.length === 0) {
+  const deployment = resolveModelIdentifier(modelName, modelKey);
+  if (!deployment) {
     throw new Error('Deployment name is required to test Azure OpenAI connectivity');
   }
 
@@ -148,39 +147,36 @@ async function testAzureOpenAIModel(credentials, modelName, modelKey) {
     throw new Error('endpoint is required to test Azure OpenAI connectivity');
   }
 
-  const endpoint = ensureHttps(
-    endpointRaw.includes('.openai.azure.com') ? endpointRaw : `${endpointRaw}.openai.azure.com`,
-  ).replace(/\/$/, '');
+  const endpoint = normalizeAzureOpenAIEndpoint(endpointRaw);
+  const url = `${endpoint}/openai/deployments/${encodeURIComponent(deployment)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
 
-  let lastNotFound = null;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'api-key': apiKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messages: [{ role: 'user', content: 'Hi' }],
+      max_completion_tokens: 10,
+    }),
+  });
 
-  // Try each candidate deployment name
-  for (const deployment of candidateNames) {
-    const url = `${endpoint}/openai/deployments/${encodeURIComponent(deployment)}?api-version=${encodeURIComponent(apiVersion)}`;
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'api-key': apiKey,
-      },
-    });
+  const payload = await safeJsonParse(response);
 
-    if (response.ok) {
-      return {
-        provider: 'azure_openai',
-        message: `Azure OpenAI deployment "${deployment}" is reachable`,
-      };
-    }
-
-    // If not 404, it's a real error (not just "deployment not found")
-    if (response.status !== 404) {
-      const payload = await safeJsonParse(response);
-      throw new Error(extractErrorMessage(payload, `Azure OpenAI API responded with status ${response.status}`));
-    }
-
-    lastNotFound = deployment;
+  if (!response.ok) {
+    throw new Error(
+      extractErrorMessage(
+        payload?.error || payload,
+        `Azure OpenAI deployment "${deployment}" test failed (${response.status})`
+      )
+    );
   }
 
-  throw new Error(`Azure OpenAI deployment "${lastNotFound}" was not found or is inaccessible`);
+  return {
+    provider: 'azure_openai',
+    message: `Azure OpenAI deployment "${deployment}" is reachable`,
+  };
 }
 
 /**
@@ -347,9 +343,50 @@ async function testBedrockModel(credentials, modelName, modelKey) {
 }
 
 /**
+ * Test Anthropic Foundry model connectivity
+ * Uses Anthropic Foundry SDK with the specified model
+ * @param {Object} credentials - Provider credentials (api_key, base_url)
+ * @param {string} modelName - Model name (deployment name) to test
+ * @param {string} modelKey - Model key (fallback)
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ */
+async function testAnthropicFoundryModel(credentials, modelName, modelKey) {
+  const identifier = resolveModelIdentifier(modelName, modelKey);
+  if (!identifier) {
+    throw new Error('Model name is required to test Anthropic Foundry connectivity');
+  }
+
+  const apiKey = credentials?.api_key || credentials?.apiKey;
+  const baseUrl = credentials?.base_url || credentials?.baseUrl;
+  if (!apiKey) {
+    throw new Error('api_key is required to test Anthropic Foundry connectivity');
+  }
+  if (!baseUrl) {
+    throw new Error('base_url is required to test Anthropic Foundry connectivity');
+  }
+
+  const baseURL = baseUrl.replace(/\/$/, '');
+  const client = new AnthropicFoundry({
+    apiKey,
+    baseURL,
+  });
+
+  await client.messages.create({
+    model: identifier,
+    max_tokens: 1,
+    messages: [{ role: 'user', content: 'Hi' }],
+  });
+
+  return {
+    provider: 'anthropic_foundry',
+    message: `Anthropic Foundry model "${identifier}" is reachable`,
+  };
+}
+
+/**
  * Test model connectivity based on provider type
  * Routes to the appropriate provider-specific test function
- * @param {string} providerType - Provider type (openai, azure_openai, google, anthropic, anthropic_bedrock)
+ * @param {string} providerType - Provider type (openai, azure_openai, google, anthropic, anthropic_bedrock, anthropic_foundry)
  * @param {Object} credentials - Provider credentials
  * @param {string} modelName - Model name to test
  * @param {string} modelKey - Model key (fallback)
@@ -368,6 +405,8 @@ async function testModelConnectivity(providerType, credentials, modelName, model
       return testAnthropicModel(credentials, modelName, modelKey);
     case 'anthropic_bedrock':
       return testBedrockModel(credentials, modelName, modelKey);
+    case 'anthropic_foundry':
+      return testAnthropicFoundryModel(credentials, modelName, modelKey);
     default:
       throw new Error(`Connectivity test for provider type "${providerType}" is not supported yet`);
   }

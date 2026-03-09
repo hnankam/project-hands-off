@@ -92,7 +92,6 @@ import {
   runCachedSanitization,
   applySanitizationIfChanged,
   filterValidMessages,
-  findLastMessageByRole,
   computeMessagesSignature,
 } from '../../utils/sanitizationHelper';
 
@@ -287,10 +286,11 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     errorBannerAutoDismissMs: 60 * 60 * 1000, // 1 hour
     debug: process.env.NODE_ENV === 'development',
     
-    // Retry logic: reload last assistant or user message
+    // Retry logic: same as regenerate button on last message - find last message,
+    // if assistant find preceding user and reload from user, else reload from that message
     onRetry: () => {
-      debug.log('[ChatInner] Error retry triggered');
-      
+      debug.log('[ChatInner] Error retry triggered (same as regenerate on last message)');
+
       const currentMessages = messages || [];
       let sanitizedMessagesArr: unknown[] = currentMessages;
 
@@ -314,7 +314,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         debug.warn?.('[ChatInner] Failed to sanitize before retry:', err);
       }
 
-      // Find last message to reload
       const validMessages = filterValidMessages(sanitizedMessagesArr);
 
       if (validMessages.length === 0) {
@@ -322,19 +321,39 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         return;
       }
 
-      // Try last assistant message first, then last user message
-      const lastAssistant = findLastMessageByRole(validMessages, 'assistant');
-      if (lastAssistant?.id) {
-        debug.log('[ChatInner] Reloading from assistant message:', lastAssistant.id);
-        reloadMessages(lastAssistant.id);
-      } else {
-        const lastUser = findLastMessageByRole(validMessages, 'user');
-        if (lastUser?.id) {
-          debug.log('[ChatInner] Reloading from user message:', lastUser.id);
-          reloadMessages(lastUser.id);
-        } else {
-          debug.warn?.('[ChatInner] No valid message found to reload');
+      // Same logic as CustomAssistantMessageV2 handleRegenerate: use last message in conversation
+      const lastMessage = validMessages[validMessages.length - 1] as { id?: string; role?: string };
+      const lastMessageId = lastMessage?.id;
+      if (!lastMessageId) {
+        debug.warn?.('[ChatInner] Last message has no id');
+        return;
+      }
+
+      const lastRole = lastMessage?.role;
+      if (lastRole === 'assistant') {
+        // Find preceding user message (same as regenerate button)
+        let userMessageIndex = -1;
+        for (let i = validMessages.length - 2; i >= 0; i--) {
+          const role = (validMessages[i] as { role?: string })?.role;
+          if (role === 'user') {
+            userMessageIndex = i;
+            break;
+          }
         }
+        const userMessage = userMessageIndex >= 0 ? (validMessages[userMessageIndex] as { id?: string }) : null;
+        if (userMessage?.id) {
+          debug.log('[ChatInner] Reloading from user message (same as regenerate):', userMessage.id);
+          reloadMessages(userMessage.id);
+        } else {
+          debug.log('[ChatInner] Reloading from assistant message (fallback):', lastMessageId);
+          reloadMessages(lastMessageId);
+        }
+      } else if (lastRole === 'user') {
+        debug.log('[ChatInner] Reloading from user message:', lastMessageId);
+        reloadMessages(lastMessageId);
+      } else {
+        debug.log('[ChatInner] Last message is not user/assistant, reloading from it:', lastMessageId);
+        reloadMessages(lastMessageId);
       }
     },
     

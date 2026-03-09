@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useState, useRef, useCallback } from 'react';
 import { cn } from '@extension/ui';
+import { debug } from '@extension/shared';
 import { PlanStateCard } from '../cards/PlanStateCard';
 import type { UnifiedAgentState } from '../graph-state/types';
 
@@ -88,6 +89,16 @@ export const PlansPanel: React.FC<PlansPanelProps> = ({
   }
 
   const planEntries = plans ? Object.entries(plans) : [];
+
+  // DEBUG: Log plans received by PlansPanel
+  React.useEffect(() => {
+    const planIds = Object.keys(plans ?? {});
+    debug.log('[SessionPlans] PlansPanel plans prop updated:', {
+      sessionId: sessionId?.slice(0, 8),
+      planCount: planIds.length,
+      planIds,
+    });
+  }, [plans, sessionId]);
 
   return (
     <>
@@ -186,9 +197,19 @@ export const PlansPanel: React.FC<PlansPanelProps> = ({
               };
               
               // Create setState handler if onPlansUpdate is provided
+              // IMPORTANT: Merge with existing plans - each PlanStateCard receives scoped state
+              // with only its plan, so newState.plans contains only that plan's update.
+              // We must merge into the full plans object to avoid wiping out other plans.
               const handleSetState = onPlansUpdate ? (newState: UnifiedAgentState) => {
                 if (newState.plans) {
-                  onPlansUpdate(newState.plans);
+                  const merged = { ...plans, ...newState.plans };
+                  debug.log('[SessionPlans] PlansPanel handleSetState called:', {
+                    planId,
+                    incomingPlanIds: Object.keys(newState.plans),
+                    existingPlanIds: Object.keys(plans ?? {}),
+                    mergedPlanIds: Object.keys(merged),
+                  });
+                  onPlansUpdate(merged);
                 }
               } : undefined;
               

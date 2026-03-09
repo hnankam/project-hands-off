@@ -63,6 +63,13 @@ function jsonToMarkdown(node: any, depth = 0, listContext?: { type: 'bullet' | '
     return text;
   }
 
+  // Handle linkChip nodes - atomic pasted links, serialize as markdown link
+  if (node.type === 'linkChip') {
+    const href = node.attrs?.href || '';
+    const display = href; // Full URL in markdown; display truncation is visual only
+    return `[${display}](${href})`;
+  }
+
   // Handle mention nodes - serialize with type prefix for agent
   if (node.type === 'mention') {
     console.log('[markdownSerializer] Mention node:', {

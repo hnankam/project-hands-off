@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable, TYPE_CHECKING, Union
 import uuid
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, UsageLimits
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter
 from pydantic_ai.messages import BinaryImage
 from ag_ui.core import RunAgentInput, UserMessage
@@ -252,7 +252,10 @@ async def run_worker_step(
         )
         
         # Run the agent and capture streaming text + tool calls
-        event_stream = adapter.run_stream(on_complete=on_complete)
+        event_stream = adapter.run_stream(
+            on_complete=on_complete,
+            usage_limits=UsageLimits(request_limit=None),
+        )
         
         # Process all events
         event_count = await process_sub_agent_events(

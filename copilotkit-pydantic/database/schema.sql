@@ -12,7 +12,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS providers (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     provider_key VARCHAR(100) NOT NULL UNIQUE,
-    provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('google', 'anthropic', 'anthropic_bedrock', 'openai', 'azure_openai')),
+    provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('google', 'anthropic', 'anthropic_bedrock', 'anthropic_foundry', 'openai', 'azure_openai')),
     credentials JSONB NOT NULL, -- Encrypted credentials
     organization_id TEXT REFERENCES organization(id) ON DELETE SET NULL,
     team_id TEXT REFERENCES team(id) ON DELETE SET NULL,

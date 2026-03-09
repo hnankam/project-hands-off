@@ -76,12 +76,27 @@ function aggressiveCompactEvents(events, options = {}) {
   
   /**
    * Flush accumulated state deltas as a single STATE_SNAPSHOT
+   * 
+   * CRITICAL: When lastStateSnapshot is null (e.g. compacting a single run that only has
+   * STATE_DELTA, like the second plan's creation), we must NOT convert to STATE_SNAPSHOT.
+   * The delta is relative to state from a previous run - applying it to {} would produce
+   * incomplete state (e.g. only plan 2, losing plan 1). Preserve raw STATE_DELTA events
+   * so they are correctly applied in context when loading combined history.
    */
   const flushStateDeltas = () => {
     if (stateDeltas.length === 0) return;
     
-    // Build the final state by applying all patches
-    let finalState = lastStateSnapshot ? { ...lastStateSnapshot } : {};
+    // If no prior snapshot, deltas are relative to state from another run - preserve as-is
+    if (!lastStateSnapshot) {
+      for (const deltaEvent of stateDeltas) {
+        result.push(deltaEvent);
+      }
+      stateDeltas = [];
+      return;
+    }
+    
+    // Build the final state by applying all patches to lastStateSnapshot
+    let finalState = { ...lastStateSnapshot };
     
     for (const deltaEvent of stateDeltas) {
       if (deltaEvent.delta && Array.isArray(deltaEvent.delta)) {

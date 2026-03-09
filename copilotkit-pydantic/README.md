@@ -773,13 +773,26 @@ toolsets = load_mcp_toolsets(server_configs)
 CREATE TABLE providers (
     id UUID PRIMARY KEY,
     provider_key VARCHAR(100) UNIQUE,
-    provider_type VARCHAR(50),  -- google, anthropic, openai, etc.
+    provider_type VARCHAR(50),  -- google, anthropic, anthropic_bedrock, anthropic_foundry, openai, azure_openai
     credentials JSONB,          -- Encrypted credentials
     organization_id TEXT,
     model_settings JSONB,
     enabled BOOLEAN DEFAULT true
 );
+```
 
+**Provider types and credentials:**
+
+| provider_type | Required credentials | Notes |
+|---------------|----------------------|-------|
+| `google` | `api_key` | Google AI Studio (Gemini) |
+| `anthropic` | `api_key` | Anthropic API directly |
+| `anthropic_bedrock` | `aws_access_key_id`, `aws_secret_access_key`, `region` | Claude via AWS Bedrock |
+| `anthropic_foundry` | `api_key`, `base_url` | Claude via [Microsoft Foundry](https://ai.azure.com/). base_url: e.g. `https://{resource}.services.ai.azure.com/anthropic` |
+| `openai` | `api_key` | OpenAI API |
+| `azure_openai` | `endpoint`, `api_version`, `api_key` | Azure OpenAI |
+
+```sql
 -- AI Models
 CREATE TABLE models (
     id UUID PRIMARY KEY,

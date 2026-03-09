@@ -166,11 +166,12 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
         }
         setMissingContext(false);
 
-        // Add icons to the fetched agents
+        // Add icons to the fetched agents and sort by name alphabetically
         const agentsWithIcons = data.agents.map((agent: { id: string; label: string; description?: string; enabled?: boolean; allowedModels?: string[] | null }) => ({
           ...agent,
           icon: getAgentIcon(agent.id),
         }));
+        agentsWithIcons.sort((a: Agent, b: Agent) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
         
         if (!isActive) {
           return;

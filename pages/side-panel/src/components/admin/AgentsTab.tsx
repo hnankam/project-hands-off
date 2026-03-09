@@ -493,11 +493,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       const effectiveTeamIds = teamIds.filter(id => id && id.trim() !== '');
 
       return models.filter(model => {
-        // Filter out disabled models
-        if (!model.enabled) {
-          return false;
-        }
-
+        // Include disabled models - admins can assign them; they remain usable at runtime
         const modelTeamIds = model.teams.map(t => t.id);
         
         if (scope === 'organization') {

@@ -115,6 +115,24 @@ export const ensureHttps = (value) => {
 };
 
 /**
+ * Normalizes Azure OpenAI endpoint for API calls.
+ * - Full URLs (openai.azure.com or cognitiveservices.azure.com) are used as-is
+ * - Resource names (e.g. "my-resource") get .openai.azure.com appended
+ * @param {string} endpointRaw - Endpoint from credentials (URL or resource name)
+ * @returns {string} Normalized endpoint URL
+ */
+export const normalizeAzureOpenAIEndpoint = (endpointRaw) => {
+  if (!endpointRaw || typeof endpointRaw !== 'string') return endpointRaw;
+  const trimmed = endpointRaw.trim();
+  const isFullUrl =
+    trimmed.includes('.openai.azure.com') ||
+    trimmed.includes('cognitiveservices.azure.com') ||
+    trimmed.includes('cognitiveservices.az');
+  const base = isFullUrl ? trimmed : `${trimmed}.openai.azure.com`;
+  return ensureHttps(base).replace(/\/$/, '');
+};
+
+/**
  * Safely parses JSON response from fetch, returns null on error
  * Prevents crashes when API returns non-JSON or malformed responses
  * 

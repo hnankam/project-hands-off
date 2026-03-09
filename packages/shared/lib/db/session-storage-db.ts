@@ -1022,7 +1022,16 @@ export class SessionStorageDB {
       'SELECT * FROM session_agent_state WHERE sessionId = $id LIMIT 1;',
       { id: sessionId }
     );
-    return (result[0]?.[0] || null) as SessionAgentState | null;
+    const row = result[0]?.[0] || null;
+    const state = row as SessionAgentState | null;
+    const planIds = state?.plans ? Object.keys(state.plans) : [];
+    log('[SessionPlans] SessionStorageDB getAgentState:', {
+      sessionId: sessionId.slice(0, 8),
+      found: !!state,
+      plansCount: planIds.length,
+      planIds,
+    });
+    return state;
   }
 
   /**
@@ -1041,6 +1050,13 @@ export class SessionStorageDB {
       plans: state.plans || {},
       graphs: state.graphs || {},
     };
+
+    const planIds = Object.keys(payload.plans);
+    log('[SessionPlans] SessionStorageDB updateAgentState:', {
+      sessionId: sessionId.slice(0, 8),
+      plansCount: planIds.length,
+      planIds,
+    });
     
     // Include deferred tool requests if present
     if (state.deferred_tool_requests !== undefined) {

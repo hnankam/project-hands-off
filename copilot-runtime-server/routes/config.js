@@ -130,8 +130,10 @@ export async function getAgentsHandler(req, res, next) {
     });
     
     // Format for AgentSelector component
-    // Include all agents (enabled and disabled) for UI display
-    const agents = config.agents.map(agent => ({
+    // Only include enabled agents (disabled are hidden from sessions page selectors)
+    const agents = config.agents
+      .filter(agent => agent.enabled)
+      .map(agent => ({
       id: agent.type,
       label: agent.name,
       description: agent.description || '',
@@ -194,14 +196,17 @@ export async function getModelsHandler(req, res, next) {
     const providerDisplayNames = {
       'anthropic': 'Anthropic',
       'anthropic_bedrock': 'Anthropic',
+      'anthropic_foundry': 'Anthropic',
       'google': 'Google',
       'azure_openai': 'OpenAI',
       'openai': 'OpenAI'
     };
     
     // Format for ModelSelector component
-    // Include all models (enabled and disabled) for UI display
-    const models = config.models.map(model => ({
+    // Only include enabled models (disabled are hidden from sessions page selectors)
+    const models = config.models
+      .filter(model => model.enabled)
+      .map(model => ({
       id: model.key,
       label: model.name,
       provider: providerDisplayNames[model.provider] || model.provider,
@@ -310,6 +315,7 @@ export async function getCompleteConfigHandler(req, res, next) {
     const providerDisplayNames = {
       'anthropic': 'Anthropic',
       'anthropic_bedrock': 'Anthropic',
+      'anthropic_foundry': 'Anthropic',
       'google': 'Google',
       'azure_openai': 'OpenAI',
       'openai': 'OpenAI'

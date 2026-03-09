@@ -168,6 +168,8 @@ export const CodeMirrorJsonEditor: React.FC<CodeMirrorJsonEditorProps> = ({
   const viewRef = useRef<EditorView | null>(null);
   const themeCompartmentRef = useRef<Compartment | null>(null);
   const readOnlyCompartmentRef = useRef<Compartment | null>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     if (!editorRef.current) return;
@@ -191,7 +193,7 @@ export const CodeMirrorJsonEditor: React.FC<CodeMirrorJsonEditorProps> = ({
         EditorView.updateListener.of((update: any) => {
           if (update.docChanged) {
             const newValue = update.state.doc.toString();
-            onChange(newValue);
+            onChangeRef.current(newValue);
           }
         }),
         EditorView.theme({

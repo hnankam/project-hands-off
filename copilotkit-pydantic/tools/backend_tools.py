@@ -36,7 +36,7 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, RunContext, BinaryImage, ToolReturn
+from pydantic_ai import Agent, RunContext, BinaryImage, ToolReturn, UsageLimits
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter, run_ag_ui
 from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, CustomEvent, RunAgentInput, UserMessage, BaseEvent, ActivitySnapshotEvent, ActivityDeltaEvent
 from ag_ui.encoder import EventEncoder
@@ -201,16 +201,17 @@ async def create_plan(
     # Activity message for this specific plan
     activity_message_id = f"plan-{plan_id}"
     
+    # Always send FULL plans in activity content so client doesn't overwrite with partial state.
+    # Each activity message renders one plan, but content must include all plans for proper merge.
+    activity_content = {
+        "plans": {pid: p.model_dump() for pid, p in ctx.deps.state.plans.items()},
+        "sessionId": session_id,
+    }
+
     # Choose between full snapshot (first plan) or delta (subsequent plans)
     if is_first_plan:
         # Send full snapshot to establish state structure
         state_dict = ctx.deps.state.model_dump()
-        
-        # For first plan, use ActivitySnapshotEvent to establish activity structure
-        activity_content = {
-            "plans": {plan_id: plan_instance.model_dump()},
-            "sessionId": session_id,
-        }
 
         result = ToolReturn(
             return_value=f'Plan "{name}" (ID: {plan_id}) created with {len(steps)} steps',
@@ -235,13 +236,7 @@ async def create_plan(
                 value=plan_instance.model_dump()
             )
         ]
-        
-        # Always send ActivitySnapshotEvent to create a new chat message for each plan
-        activity_content = {
-            "plans": {plan_id: plan_instance.model_dump()},
-            "sessionId": session_id,
-        }
-        
+
         result = ToolReturn(
             return_value=f'Plan "{name}" (ID: {plan_id}) created with {len(steps)} steps',
             metadata=[
@@ -895,39 +890,36 @@ async def run_aux_agent_streaming(
     # Use parent_ctx.messages (ModelMessages) with keep_recent_messages to properly limit
     # while preserving tool call/result pairs, then convert to AG-UI format
     # Skip history for certain agent types that don't need context
-    
-    model_messages = parent_ctx.messages
-    
-    if model_messages and aux_type not in NO_TOOLS_AUX_TYPES:
-        logger.info(
-            f"Sub-agent '{aux_type}': using parent_ctx.messages ({len(model_messages)} ModelMessages), "
-            "applying keep_recent_messages to preserve tool call/result pairs"
-        )
-        processed_model_messages = await keep_recent_messages(parent_ctx, model_messages)
-        logger.info(
-            f"Sub-agent '{aux_type}': after keep_recent_messages, {len(processed_model_messages)} messages"
-        )
-        
-        # Convert ModelMessages to AG-UI format for RunAgentInput
-        # RunAgentInput.messages expects AG-UI messages (UserMessage/AssistantMessage) not ModelMessages
-        agui_messages = pydantic_to_agui_messages(processed_model_messages)
-        
-        logger.info(
-            f"Sub-agent '{aux_type}': converted {len(processed_model_messages)} ModelMessages "
-            f"to {len(agui_messages)} AG-UI messages"
-        )
-        
-        # Append new user message
-        agui_messages.append(UserMessage(id=str(uuid.uuid4()), content=user_message))
-        sub_messages = agui_messages
-        
-    else:
-        # No parent messages OR history excluded for this agent type - just create new user message
-        sub_messages = [UserMessage(id=str(uuid.uuid4()), content=user_message)]
-        if aux_type in NO_TOOLS_AUX_TYPES:
-            logger.info(f"Sub-agent '{aux_type}': excluding message history (agent type doesn't need context)")
-        else:
-            logger.info(f"Sub-agent '{aux_type}': no parent messages, starting with new user message")
+    #
+    # TEMPORARILY DISABLED: sending history to subagents
+    # model_messages = parent_ctx.messages
+    #
+    # if model_messages and aux_type not in NO_TOOLS_AUX_TYPES:
+    #     logger.info(
+    #         f"Sub-agent '{aux_type}': using parent_ctx.messages ({len(model_messages)} ModelMessages), "
+    #         "applying keep_recent_messages to preserve tool call/result pairs"
+    #     )
+    #     processed_model_messages = await keep_recent_messages(parent_ctx, model_messages)
+    #     logger.info(
+    #         f"Sub-agent '{aux_type}': after keep_recent_messages, {len(processed_model_messages)} messages"
+    #     )
+    #     agui_messages = pydantic_to_agui_messages(processed_model_messages)
+    #     logger.info(
+    #         f"Sub-agent '{aux_type}': converted {len(processed_model_messages)} ModelMessages "
+    #         f"to {len(agui_messages)} AG-UI messages"
+    #     )
+    #     agui_messages.append(UserMessage(id=str(uuid.uuid4()), content=user_message))
+    #     sub_messages = agui_messages
+    # else:
+    #     sub_messages = [UserMessage(id=str(uuid.uuid4()), content=user_message)]
+    #     if aux_type in NO_TOOLS_AUX_TYPES:
+    #         logger.info(f"Sub-agent '{aux_type}': excluding message history (agent type doesn't need context)")
+    #     else:
+    #         logger.info(f"Sub-agent '{aux_type}': no parent messages, starting with new user message")
+
+    # TEMPORARY: always start with just the new user message (no history)
+    sub_messages = [UserMessage(id=str(uuid.uuid4()), content=user_message)]
+    logger.info(f"Sub-agent '{aux_type}': excluding message history (temporarily disabled)")
     
     logger.info(
         f"Sub-agent '{aux_type}': starting with {len(sub_messages)} AG-UI messages "
@@ -1001,6 +993,7 @@ async def run_aux_agent_streaming(
             run_input=sub_run_input,
             deps=parent_ctx.deps,
             on_complete=capture_result,
+            usage_limits=UsageLimits(request_limit=None),
         ):
             # If stream is closed, stop processing immediately
             if stream_closed:

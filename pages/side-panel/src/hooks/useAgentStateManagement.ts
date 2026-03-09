@@ -227,11 +227,13 @@ export const useAgentStateManagement = ({
     // Skip if no initial plans to restore
     const numPlans = Object.keys(initialScopedPlans).length;
     if (numPlans === 0) {
+      debug.log(`[SessionPlans] useAgentStateManagement skip restore: no initial plans (session ${sessionId.slice(0, 8)})`);
       return;
     }
     
     // Skip if already restored for this session
     if (hasRestoredFromInitialRef.current) {
+      debug.log(`[SessionPlans] useAgentStateManagement skip restore: already restored (session ${sessionId.slice(0, 8)})`);
       return;
     }
     
@@ -239,12 +241,23 @@ export const useAgentStateManagement = ({
     // (user may have added plans after initial load)
     const currentPlansCount = Object.keys(dynamicAgentState.plans || {}).length;
     if (dynamicAgentState.sessionId === sessionId && currentPlansCount > 0) {
+      debug.log(`[SessionPlans] useAgentStateManagement skip restore:`, {
+        reason: 'currentPlansCount > 0',
+        currentPlansCount,
+        currentPlanIds: Object.keys(dynamicAgentState.plans || {}),
+        initialPlanIds: Object.keys(initialScopedPlans),
+      });
       hasRestoredFromInitialRef.current = true; // Mark as "restored" since we have data
       return;
     }
     
     // Restore initial plans from DB
-    debug.log(`[AgentStepState] Restoring ${numPlans} plans from DB for session ${sessionId.slice(0, 8)}`);
+    const initialPlanIds = Object.keys(initialScopedPlans);
+    debug.log(`[SessionPlans] useAgentStateManagement restoring ${numPlans} plans:`, {
+      planIds: initialPlanIds,
+      skipped: false,
+      reason: 'currentPlansCount was 0',
+    });
     hasRestoredFromInitialRef.current = true;
     setRawDynamicAgentState({ sessionId, plans: initialScopedPlans, graphs: {} });
   }, [initialScopedPlans, dynamicAgentState, sessionId, setRawDynamicAgentState]);

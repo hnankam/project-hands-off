@@ -64,6 +64,7 @@ interface ProviderFormState {
 const PROVIDER_TYPES: Array<{ value: string; label: string }> = [
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'anthropic_bedrock', label: 'Anthropic (Bedrock)' },
+  { value: 'anthropic_foundry', label: 'Anthropic (Foundry)' },
   { value: 'google', label: 'Google' },
   { value: 'openai', label: 'OpenAI' },
   { value: 'azure_openai', label: 'Azure OpenAI' },

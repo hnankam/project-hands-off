@@ -231,6 +231,13 @@ const AgentStateSync: FC<{
         plans,
         graphs,
       };
+
+      const planIds = Object.keys(plans);
+      debug.log('[SessionPlans] AgentStateSync syncing to parent:', {
+        sessionId: sessionId.slice(0, 8),
+        plansCount: planIds.length,
+        planIds,
+      });
       
       // Notify parent with the actual data to trigger re-render
       onStateChange?.(plans, graphs);
@@ -720,8 +727,16 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     const [agentGraphs, setAgentGraphs] = useState<Record<string, any>>({});
     const dynamicAgentStateRef = useRef<{ plans?: Record<string, any>; graphs?: Record<string, any> }>({ plans: {}, graphs: {} });
     
+    const sessionIdRefForLog = useRef(sessionId);
+    sessionIdRefForLog.current = sessionId;
     // Memoized callback to prevent infinite loops - only updates when sessionId changes
     const handleAgentStateChange = useCallback((plans: Record<string, any>, graphs: Record<string, any>) => {
+      const planIds = Object.keys(plans ?? {});
+      debug.log('[SessionPlans] ChatSessionContainer handleAgentStateChange:', {
+        sessionId: sessionIdRefForLog.current?.slice(0, 8),
+        plansCount: planIds.length,
+        planIds,
+      });
       // Update state with new object references to trigger re-renders
       setAgentPlans({ ...plans }); // Create new object reference
       setAgentGraphs({ ...graphs }); // Create new object reference
@@ -1758,6 +1773,12 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                     onClosePlans={() => setShowPlansPanel(false)}
                     onCloseGraphs={() => setShowGraphsPanel(false)}
                     onPlansUpdate={(updatedPlans: any) => {
+                      const planIds = Object.keys(updatedPlans ?? {});
+                      debug.log('[SessionPlans] ChatSessionContainer onPlansUpdate:', {
+                        sessionId: sessionId?.slice(0, 8),
+                        plansCount: planIds.length,
+                        planIds,
+                      });
                       setAgentPlans({ ...updatedPlans });
                       dynamicAgentStateRef.current = {
                         ...dynamicAgentStateRef.current,

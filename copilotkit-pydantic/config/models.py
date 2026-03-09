@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 from typing import Any, Dict, List, Tuple
 
-from anthropic import AsyncAnthropic, AsyncAnthropicBedrock
+from anthropic import AsyncAnthropic, AsyncAnthropicBedrock, AsyncAnthropicFoundry
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 
 from pydantic_ai import ModelSettings
@@ -70,7 +70,7 @@ def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
             
             providers[provider_key] = GoogleProvider(api_key=api_key)
             
-        elif provider_type in 'anthropic_bedrock':
+        elif provider_type == 'anthropic_bedrock':
             # Bedrock Anthropic - pass credentials directly to the client
             aws_access_key_id = credentials.get('aws_access_key_id')
             aws_secret_access_key = credentials.get('aws_secret_access_key')
@@ -96,7 +96,7 @@ def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
                 )
             )
         
-        elif provider_type in 'anthropic':
+        elif provider_type == 'anthropic':
             # Anthropic - pass credentials directly to the client
             api_key = credentials.get('api_key')
             if not api_key:
@@ -111,6 +111,17 @@ def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
                     api_key=api_key,
                     default_headers=extra_headers if extra_headers else None,
                 )
+            )
+
+        elif provider_type == 'anthropic_foundry':
+            api_key = credentials.get('api_key')
+            base_url = credentials.get('base_url')
+            if not api_key:
+                raise ValueError(f"Provider '{provider_key}': api_key is required in credentials")
+            if not base_url:
+                raise ValueError(f"Provider '{provider_key}': base_url is required in credentials")
+            providers[provider_key] = AnthropicProvider(
+                anthropic_client=AsyncAnthropicFoundry(api_key=api_key, base_url=base_url)
             )
             
         elif provider_type == 'openai':
@@ -169,6 +180,13 @@ def _create_model_instance(
         settings_cfg = {k: v for k, v in per_model_settings_cfg.items() if k != 'extra_headers'}
         
         settings = BedrockModelSettings(**settings_cfg)
+        from pydantic_ai.models.anthropic import AnthropicModel
+        model_instance = AnthropicModel(model_name, provider=provider)
+        return model_instance, settings
+
+    elif provider_type == 'anthropic_foundry':
+        settings_cfg = {k: v for k, v in per_model_settings_cfg.items() if k != 'extra_headers'}
+        settings = AnthropicModelSettings(**settings_cfg)
         from pydantic_ai.models.anthropic import AnthropicModel
         model_instance = AnthropicModel(model_name, provider=provider)
         return model_instance, settings

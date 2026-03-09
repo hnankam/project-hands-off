@@ -63,19 +63,20 @@
   color: #6b7280 !important; /* gray-500 for dark mode */
 }
 
-/* Code block styling */
-.ProseMirror pre {
+/* Code block styling - match inline code: same font-size, color, font-family */
+.ProseMirror pre,
+.ProseMirror pre.code-block {
   background: rgba(0, 0, 0, 0.05);
   border-radius: 6px;
   color: inherit;
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 13px;
+  font-size: 12.5px; /* match inline code */
   margin: 8px 0;
   padding: 12px;
   overflow-x: auto;
 }
 
-.dark .ProseMirror pre {
+.dark .ProseMirror pre,
+.dark .ProseMirror pre.code-block {
   background: rgba(255, 255, 255, 0.05);
 }
 
@@ -90,6 +91,16 @@
 
 .dark .ProseMirror code {
   background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Code block inner content - inherit from pre for consistency */
+.ProseMirror pre code,
+.ProseMirror pre.code-block code {
+  font-size: inherit;
+  font-family: inherit;
+  color: inherit;
+  background: transparent;
+  padding: 0;
 }
 
 /* Bold and Italic */
@@ -188,18 +199,20 @@
   list-style-type: square;
 }
 
-/* Links - styled like mentions with icon */
+/* Links - match base text, with chain icon and length */
 .ProseMirror a.editor-link {
-  color: #6b7280; /* gray-500 */
-  background-color: rgba(107, 114, 128, 0.1);
+  color: #374151 !important; /* gray-700 - match tiptap-editor base text */
+  font-weight: 400;
+  font-family: inherit;
+  font-size: inherit;
+  background-color: rgba(0, 0, 0, 0.05);
   border-radius: 3px;
-  padding: 1px 4px 1px 2px;
-  font-weight: 500;
+  padding: 2px 6px;
   cursor: pointer;
   text-decoration: none;
   transition: background-color 150ms;
   display: inline-block;
-  max-width: 300px;
+  max-width: min(480px, 80%); /* dynamic with panel, caps at 480px, leaves room so link stays inline */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -215,20 +228,27 @@
   display: inline-block;
   width: 12px;
   height: 12px;
+  margin-right: 4px;
   flex-shrink: 0;
+  vertical-align: middle;
   background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%236b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>');
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
 }
 
+.ProseMirror a.editor-link[data-length]::after {
+  content: ' (' attr(data-length) ' chars)';
+  white-space: nowrap;
+}
+
 .ProseMirror a.editor-link:hover {
-  background-color: rgba(107, 114, 128, 0.2);
+  background-color: rgba(0, 0, 0, 0.08);
 }
 
 .dark .ProseMirror a.editor-link {
-  color: #9ca3af; /* gray-400 */
-  background-color: rgba(156, 163, 175, 0.15);
+  color: #d1d5db !important; /* gray-300 - match tiptap-editor dark mode */
+  background-color: rgba(255, 255, 255, 0.08);
 }
 
 .dark .ProseMirror a.editor-link::before {
@@ -236,7 +256,63 @@
 }
 
 .dark .ProseMirror a.editor-link:hover {
-  background-color: rgba(156, 163, 175, 0.25);
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+/* LinkChip - atomic pasted link node, single unit (cursor cannot enter) */
+.ProseMirror span.editor-link-chip {
+  display: inline;
+  vertical-align: middle;
+}
+
+.ProseMirror span.editor-link-chip .editor-link-chip-anchor {
+  color: #374151 !important;
+  font-weight: 400;
+  font-family: inherit;
+  font-size: inherit;
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+  padding: 2px 6px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 150ms;
+  display: inline-block;
+  max-width: min(480px, 80%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+/* Icon inside gray bordered area */
+.ProseMirror span.editor-link-chip .editor-link-chip-anchor::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  vertical-align: middle;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%236b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.ProseMirror span.editor-link-chip .editor-link-chip-anchor:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.dark .ProseMirror span.editor-link-chip .editor-link-chip-anchor::before {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%239ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>');
+}
+
+.dark .ProseMirror span.editor-link-chip .editor-link-chip-anchor {
+  color: #d1d5db !important;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark .ProseMirror span.editor-link-chip .editor-link-chip-anchor:hover {
+  background-color: rgba(255, 255, 255, 0.12);
 }
 
 /* Slash Commands Dropdown - matching app dropdown style */
@@ -605,18 +681,20 @@
   list-style-type: square;
 }
 
-/* Links - styled like mentions with icon */
+/* Links - match base text, with chain icon and length */
 .ProseMirror a.editor-link {
-  color: #6b7280; /* gray-500 */
-  background-color: rgba(107, 114, 128, 0.1);
+  color: #374151 !important; /* gray-700 - match tiptap-editor base text */
+  font-weight: 400;
+  font-family: inherit;
+  font-size: inherit;
+  background-color: rgba(0, 0, 0, 0.05);
   border-radius: 3px;
-  padding: 1px 4px 1px 2px;
-  font-weight: 500;
+  padding: 2px 6px;
   cursor: pointer;
   text-decoration: none;
   transition: background-color 150ms;
   display: inline-block;
-  max-width: 300px;
+  max-width: min(480px, 80%); /* dynamic with panel, caps at 480px, leaves room so link stays inline */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -632,20 +710,27 @@
   display: inline-block;
   width: 12px;
   height: 12px;
+  margin-right: 6px;
   flex-shrink: 0;
+  vertical-align: middle;
   background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%236b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>');
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
 }
 
+.ProseMirror a.editor-link[data-length]::after {
+  content: ' (' attr(data-length) ' chars)';
+  white-space: nowrap;
+}
+
 .ProseMirror a.editor-link:hover {
-  background-color: rgba(107, 114, 128, 0.2);
+  background-color: rgba(0, 0, 0, 0.08);
 }
 
 .dark .ProseMirror a.editor-link {
-  color: #9ca3af; /* gray-400 */
-  background-color: rgba(156, 163, 175, 0.15);
+  color: #d1d5db !important; /* gray-300 - match tiptap-editor dark mode */
+  background-color: rgba(255, 255, 255, 0.08);
 }
 
 .dark .ProseMirror a.editor-link::before {
@@ -653,7 +738,7 @@
 }
 
 .dark .ProseMirror a.editor-link:hover {
-  background-color: rgba(156, 163, 175, 0.25);
+  background-color: rgba(255, 255, 255, 0.12);
 }
 
 /* =============================================================================

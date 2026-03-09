@@ -139,60 +139,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
         }
         setMissingContext(false);
         
-        // Sort models: Provider priority, then by version (descending), then by tier
-        const sortedModels = data.models.sort((a: Model, b: Model) => {
-          // Provider priority: Anthropic (Claude) > Google (Gemini) > OpenAI (GPT)
-          const providerOrder: Record<string, number> = {
-            'Anthropic': 0,
-            'Google': 1,
-            'OpenAI': 2,
-          };
-          
-          const aProviderPriority = providerOrder[a.provider] ?? 999;
-          const bProviderPriority = providerOrder[b.provider] ?? 999;
-          
-          if (aProviderPriority !== bProviderPriority) {
-            return aProviderPriority - bProviderPriority;
-          }
-          
-          // Extract version numbers from model IDs (e.g., "4.5" from "claude-4.5-haiku")
-          const versionRegex = /(\d+)\.(\d+)/;
-          const aVersionMatch = a.id.match(versionRegex);
-          const bVersionMatch = b.id.match(versionRegex);
-          
-          if (aVersionMatch && bVersionMatch) {
-            const aVersion = parseFloat(`${aVersionMatch[1]}.${aVersionMatch[2]}`);
-            const bVersion = parseFloat(`${bVersionMatch[1]}.${bVersionMatch[2]}`);
-            
-            if (aVersion !== bVersion) {
-              return bVersion - aVersion; // Descending order (higher version first)
-            }
-          }
-          
-          // Within same version, sort by tier (based on common naming patterns)
-          const tierPatterns = ['opus', 'sonnet', 'haiku', 'pro', 'flash', 'mini', 'lite'];
-          const getTierPriority = (id: string): number => {
-            const lowerID = id.toLowerCase();
-            if (lowerID.includes('opus')) return 0;
-            if (lowerID.includes('sonnet')) return 1;
-            if (lowerID.includes('pro')) return 2;
-            if (lowerID.includes('haiku')) return 3;
-            if (lowerID.includes('flash') && !lowerID.includes('lite')) return 4;
-            if (lowerID.includes('mini')) return 5;
-            if (lowerID.includes('lite')) return 6;
-            return 999;
-          };
-          
-          const aTierPriority = getTierPriority(a.id);
-          const bTierPriority = getTierPriority(b.id);
-          
-          if (aTierPriority !== bTierPriority) {
-            return aTierPriority - bTierPriority;
-          }
-          
-          // Fallback to alphabetical by label
-          return a.label.localeCompare(b.label);
-        });
+        // Sort models by name alphabetically
+        const sortedModels = [...data.models].sort((a: Model, b: Model) =>
+          a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })
+        );
         
         if (!isActive) {
           return;
@@ -358,10 +308,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
           isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
           isOpen ? 'pointer-events-auto model-selector-dropdown' : 'opacity-0 pointer-events-none'
         )}>
-        {models.map(model => {
+        {models
+          .filter(model => model.enabled !== false)
+          .map(model => {
           // Check if model is allowed for the selected agent
           const isAllowedForAgent = allowedModels === null || allowedModels.includes(model.id);
-          const isDisabled = model.enabled === false || !isAllowedForAgent;
+          const isDisabled = !isAllowedForAgent;
           
           return (
             <button

@@ -367,9 +367,11 @@ export const useSessionData = (
           }
         }
         
-        debug.log(`[useSessionData] DB query result for session ${sessionId.slice(0, 8)}:`, {
+        const storedPlanIds = Object.keys(storedState?.plans ?? {});
+        debug.log(`[SessionPlans] useSessionData DB query for session ${sessionId.slice(0, 8)}:`, {
           found: !!storedState,
-          plansCount: Object.keys(storedState?.plans ?? {}).length,
+          plansCount: storedPlanIds.length,
+          planIds: storedPlanIds,
         });
         
         if (!isCancelled) {
@@ -383,7 +385,7 @@ export const useSessionData = (
           
           const numPlans = Object.keys(storedState?.plans ?? {}).length;
           const numGraphs = Object.keys(storedState?.graphs ?? {}).length;
-          debug.log(`[useSessionData] Set currentAgentStepState for session ${sessionId.slice(0, 8)}:`, {
+          debug.log(`[SessionPlans] useSessionData setState for session ${sessionId.slice(0, 8)}:`, {
             numPlans,
             numGraphs,
           });

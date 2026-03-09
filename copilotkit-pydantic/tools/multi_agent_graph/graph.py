@@ -11,6 +11,7 @@ from typing import Literal, Any
 import json
 
 from pydantic_graph.beta import GraphBuilder, StepContext, TypeExpression
+from pydantic_ai import UsageLimits
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter
 
 from config import logger
@@ -135,7 +136,10 @@ async def create_multi_agent_graph(
                 result_holder[0] = result
             
             # Run orchestrator and capture streaming content AND tool calls
-            async for event in orchestrator_adapter.run_stream(on_complete=capture_result):
+            async for event in orchestrator_adapter.run_stream(
+                on_complete=capture_result,
+                usage_limits=UsageLimits(request_limit=None),
+            ):
                 if isinstance(event, str):
                     try:
                         for line in event.split('\n'):

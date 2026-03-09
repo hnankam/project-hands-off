@@ -33,6 +33,7 @@ from anyio.streams.memory import MemoryObjectSendStream
 from pydantic import ValidationError
 
 from services.deployment_manager import DeploymentError
+from pydantic_ai import UsageLimits
 from pydantic_ai.ag_ui import AGUIAdapter, run_ag_ui
 from pydantic_ai.ui import SSE_CONTENT_TYPE
 from ag_ui.core import CustomEvent, RunAgentInput
@@ -368,7 +369,8 @@ def register_agent_routes(app: FastAPI) -> None:
                         agent=agent_instance,
                         run_input=run_input,
                         deps=deps,
-                        on_complete=usage_callback
+                        on_complete=usage_callback,
+                        usage_limits=UsageLimits(request_limit=None),
                     )
                     async for event in event_stream:
                         await send_stream.send(event)

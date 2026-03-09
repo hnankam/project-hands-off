@@ -29,9 +29,13 @@ export const EnterToSend = Extension.create<EnterToSendOptions>({
         return false;
       },
       'Shift-Enter': () => {
-        // Shift+Enter = new paragraph (not hard break)
-        // This allows markdown input rules to work on the new line
-        // because input rules fire at the start of new paragraphs
+        // When inside a list, split the list item to create a new list item (bullet/number)
+        if (this.editor.isActive('bulletList') || this.editor.isActive('orderedList')) {
+          if (this.editor.commands.splitListItem('listItem')) {
+            return true;
+          }
+        }
+        // Otherwise, new paragraph (allows markdown input rules to work on the new line)
         this.editor.commands.splitBlock();
         return true; // Prevent default hard break
       },

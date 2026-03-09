@@ -251,8 +251,9 @@ async def ensure_agent_ready(
         raise ModelNotAvailableError(
             f"Model '{model_key}' is not configured for this context"
         )
-    if not model_meta.get('enabled', True):
-        raise EndpointDisabledError(f"Model '{model_key}' is disabled for this context")
+    # Allow disabled models - admins can assign them in agents tab and use them at runtime
+    # if not model_meta.get('enabled', True):
+    #     raise EndpointDisabledError(f"Model '{model_key}' is disabled for this context")
 
     # Touch the agent cache to ensure it can be created without error.
     await get_agent(agent_type, model_key, organization_id, team_id)
