@@ -315,8 +315,10 @@ export const sessionStorageDBWrapper = {
   /**
    * Add a new session
    * Requires userId to be set via setCurrentUserId() first
+   * @param title - User-chosen session name
+   * @param apiBaseUrl - Optional API base URL to persist title to backend (for restore after reinstall)
    */
-  async addSession(title: string): Promise<void> {
+  async addSession(title: string, apiBaseUrl?: string): Promise<void> {
     debug.log('[sessionStorageDBWrapper] Creating session:', title);
     
     // Verify userId is set
@@ -346,7 +348,7 @@ export const sessionStorageDBWrapper = {
       debug.log('[sessionStorageDBWrapper] Using last selected:', { lastSelectedAgent, lastSelectedModel });
     }
 
-    await sessionStorageDB.addSession({
+    const session = await sessionStorageDB.addSession({
       title,
       userId, // Explicitly pass userId
       isActive: true,
@@ -354,6 +356,10 @@ export const sessionStorageDBWrapper = {
       selectedAgent: lastSelectedAgent,
       selectedModel: lastSelectedModel,
     });
+    
+    if (apiBaseUrl) {
+      sessionStorageDB.persistSessionTitleToBackend(apiBaseUrl, session.id, title);
+    }
     
     debug.log('[sessionStorageDBWrapper] Session created successfully');
   },
@@ -397,10 +403,29 @@ export const sessionStorageDBWrapper = {
   },
 
   /**
-   * Update session title
+   * Sync sessions from backend (restore after extension reinstall)
+   * Call when local sessions are empty and user is logged in.
+   * @param apiBaseUrl - Runtime server base URL (e.g. API_CONFIG.BASE_URL)
+   * @returns Number of sessions synced, -1 on error, 0 if none found
    */
-  async updateSessionTitle(sessionId: string, title: string): Promise<void> {
+  async syncSessionsFromBackend(apiBaseUrl: string): Promise<number> {
+    const userId = sessionStorageDB.getCurrentUserId();
+    if (!userId) {
+      debug.error('[sessionStorageDBWrapper] syncSessionsFromBackend: No userId set');
+      return -1;
+    }
+    return sessionStorageDB.syncSessionsFromBackend(apiBaseUrl, userId);
+  },
+
+  /**
+   * Update session title
+   * @param apiBaseUrl - Optional API base URL to persist title to backend (for restore after reinstall)
+   */
+  async updateSessionTitle(sessionId: string, title: string, apiBaseUrl?: string): Promise<void> {
     await sessionStorageDB.updateSessionTitle(sessionId, title);
+    if (apiBaseUrl) {
+      sessionStorageDB.persistSessionTitleToBackend(apiBaseUrl, sessionId, title);
+    }
   },
 
   /**

@@ -20,6 +20,7 @@ import { ViewOptionsMenu } from '../layout/ViewOptionsMenu';
 interface SessionHeaderProps {
   isLight: boolean;
   viewMode: 'sidepanel' | 'popup' | 'newtab' | 'fullscreen';
+  apiBaseUrl?: string;
   currentSessionId: string | null;
   currentSessionTitle: string;
   sessionMessageCount: number;
@@ -45,6 +46,7 @@ interface SessionHeaderProps {
 export const SessionHeader: React.FC<SessionHeaderProps> = ({
   isLight,
   viewMode,
+  apiBaseUrl,
   currentSessionId,
   currentSessionTitle,
   sessionMessageCount,
@@ -72,7 +74,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
         isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
       )}>
       <div className="mr-2 flex min-w-0 flex-1 items-center overflow-hidden">
-        <SessionTabs isLight={isLight} viewMode={viewMode} isVisible={isVisible} className="flex-1" />
+        <SessionTabs isLight={isLight} viewMode={viewMode} isVisible={isVisible} apiBaseUrl={apiBaseUrl} className="flex-1" />
       </div>
 
       <div className="flex flex-shrink-0 items-center space-x-1">

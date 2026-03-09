@@ -3120,6 +3120,115 @@ export class PostgresAgentRunner extends AgentRunner {
   }
   
   /**
+   * Extract display title from message content (handles plain text or JSON parts)
+   * @private
+   */
+  _extractTitleFromContent(content) {
+    if (!content || typeof content !== 'string') return null;
+    const trimmed = content.trim();
+    if (!trimmed) return null;
+    try {
+      if (trimmed.startsWith('[')) {
+        const parts = JSON.parse(trimmed);
+        if (Array.isArray(parts)) {
+          const textPart = parts.find(p => p?.type === 'text' && p?.text);
+          if (textPart?.text) return String(textPart.text).trim();
+        }
+      }
+      return trimmed;
+    } catch {
+      return trimmed;
+    }
+  }
+
+  /**
+   * Create or update a thread with user-chosen title (called when user creates/renames session)
+   * @param {Object} options
+   * @param {string} options.threadId - Thread ID (same as session ID)
+   * @param {string} options.title - User-chosen session name
+   * @param {string} options.userId - User ID (required)
+   * @param {string} [options.organizationId] - Optional org
+   * @param {string} [options.teamId] - Optional team
+   */
+  async createOrUpdateThread({ threadId, title, userId, organizationId, teamId }) {
+    if (!threadId || !userId) {
+      throw new Error('threadId and userId are required for createOrUpdateThread');
+    }
+    const safeTitle = title && String(title).trim() ? String(title).trim().slice(0, 500) : null;
+    const metadataJson = safeTitle ? JSON.stringify({ title: safeTitle }) : '{}';
+    await this.pool.query(
+      `INSERT INTO agent_threads 
+       (thread_id, user_id, organization_id, team_id, metadata, is_running, created_at, updated_at, last_accessed_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, FALSE, NOW(), NOW(), NOW())
+       ON CONFLICT (thread_id) DO UPDATE SET
+         metadata = CASE WHEN $5::jsonb != '{}'::jsonb 
+           THEN COALESCE(agent_threads.metadata, '{}'::jsonb) || $5::jsonb 
+           ELSE agent_threads.metadata END,
+         updated_at = NOW(),
+         last_accessed_at = NOW()`,
+      [threadId, userId, organizationId || null, teamId || null, metadataJson]
+    );
+  }
+
+  /**
+   * List threads for a user (for session sync after extension reinstall)
+   * Uses stored title (user-chosen) when available, falls back to first user message.
+   * @param {Object} options - Filter options
+   * @param {string} options.userId - User ID (required)
+   * @param {string} [options.organizationId] - Optional org filter
+   * @param {string} [options.teamId] - Optional team filter
+   * @param {number} [options.limit=500] - Max threads to return (default 500)
+   * @returns {Promise<Array<{thread_id: string, user_id: string, agent_id: string, agent_type: string, model_type: string, title?: string, created_at: Date, last_accessed_at: Date}>>}
+   */
+  async listThreads({ userId, organizationId, teamId, limit = 500 }) {
+    if (!userId) {
+      throw new Error('userId is required for listThreads');
+    }
+    const params = [userId];
+    const clauses = ['user_id = $1'];
+    let paramIdx = 2;
+    if (organizationId) {
+      clauses.push(`organization_id = $${paramIdx}`);
+      params.push(organizationId);
+      paramIdx++;
+    }
+    if (teamId) {
+      clauses.push(`team_id = $${paramIdx}`);
+      params.push(teamId);
+      paramIdx++;
+    }
+    params.push(limit);
+    const result = await this.pool.query(
+      `SELECT t.thread_id, t.user_id, t.agent_id, t.agent_type, t.model_type, t.metadata, t.created_at, t.last_accessed_at,
+              (SELECT am.content FROM agent_messages am
+               WHERE am.thread_id = t.thread_id AND am.role = 'user'
+               ORDER BY am.created_at ASC LIMIT 1) AS first_user_content
+       FROM agent_threads t
+       WHERE ${clauses.join(' AND ')}
+       ORDER BY t.last_accessed_at DESC NULLS LAST, t.created_at DESC
+       LIMIT $${paramIdx}`,
+      params
+    );
+    const TITLE_MAX_LEN = 60;
+    return result.rows.map(row => {
+      const storedTitle = row.metadata?.title && String(row.metadata.title).trim();
+      const fallbackTitle = this._extractTitleFromContent(row.first_user_content);
+      const title = storedTitle || (fallbackTitle ? (fallbackTitle.length > TITLE_MAX_LEN ? fallbackTitle.slice(0, TITLE_MAX_LEN - 3) + '...' : fallbackTitle) : null);
+      const out = {
+        thread_id: row.thread_id,
+        user_id: row.user_id,
+        agent_id: row.agent_id,
+        agent_type: row.agent_type,
+        model_type: row.model_type,
+        created_at: row.created_at,
+        last_accessed_at: row.last_accessed_at,
+      };
+      if (title) out.title = title;
+      return out;
+    });
+  }
+
+  /**
    * Recover stalled runs on startup
    * 
    * This method should be called when the server starts to clean up any runs

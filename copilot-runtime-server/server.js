@@ -75,6 +75,7 @@ import { log } from './utils/index.js';
 // ============================================================================
 
 import { auth } from './auth/index.js';
+import { ensureAuthenticated } from './utils/route-helpers.js';
 import { getPool } from './config/database.js';
 import { getDefaultAgent, getDefaultModel } from './config/models.js';
 
@@ -951,6 +952,75 @@ const app = express();
       } catch (error) {
         log(`Error bulk deleting messages: ${error.message}`, res.locals.reqId);
         res.status(500).json({ error: 'Failed to delete messages', message: error.message });
+      }
+    });
+
+    /**
+     * POST /api/threads
+     * Create or update a thread with user-chosen title (when user creates or renames a session)
+     * Body: { threadId: string, title: string }
+     */
+    app.post('/api/threads', async (req, res) => {
+      try {
+        const session = await ensureAuthenticated(req, res);
+        if (!session) return;
+
+        const { threadId, title } = req.body || {};
+        if (!threadId || typeof threadId !== 'string') {
+          return res.status(400).json({ error: 'threadId is required' });
+        }
+
+        const userId = session.user.id;
+        const organizationId = session.session?.activeOrganizationId || null;
+        const teamId = session.session?.activeTeamId || null;
+
+        if (USE_SQLITE_RUNNER || !runner || typeof runner.createOrUpdateThread !== 'function') {
+          return res.status(501).json({ error: 'Thread create/update not supported with current runner' });
+        }
+
+        await runner.createOrUpdateThread({
+          threadId: threadId.trim(),
+          title: typeof title === 'string' ? title : null,
+          userId,
+          organizationId,
+          teamId,
+        });
+
+        res.json({ success: true, threadId: threadId.trim() });
+      } catch (error) {
+        log(`Error creating/updating thread: ${error.message}`, res.locals.reqId);
+        res.status(500).json({ error: 'Failed to create/update thread', message: error.message });
+      }
+    });
+
+    /**
+     * GET /api/threads
+     * List threads for the authenticated user (for session sync after extension reinstall)
+     */
+    app.get('/api/threads', async (req, res) => {
+      try {
+        const session = await ensureAuthenticated(req, res);
+        if (!session) return;
+
+        const userId = session.user.id;
+        const organizationId = session.session?.activeOrganizationId || null;
+        const teamId = session.session?.activeTeamId || null;
+
+        if (USE_SQLITE_RUNNER || !runner || typeof runner.listThreads !== 'function') {
+          return res.json({ threads: [] });
+        }
+
+        const threads = await runner.listThreads({
+          userId,
+          organizationId,
+          teamId,
+          limit: 500,
+        });
+
+        res.json({ threads });
+      } catch (error) {
+        log(`Error listing threads: ${error.message}`, res.locals.reqId);
+        res.status(500).json({ error: 'Failed to list threads', message: error.message });
       }
     });
 

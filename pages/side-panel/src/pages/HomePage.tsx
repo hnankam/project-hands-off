@@ -16,6 +16,8 @@ import { API_CONFIG } from '../constants';
 import { Z_INDEX, POLLING_INTERVALS } from '../constants/ui';
 import { teamsCache } from '../components/selectors/TeamSelectorDropdown';
 import { AdminConfirmDialog } from '../components/admin/modals/AdminConfirmDialog';
+import { useAlerts } from '../hooks/useAlerts';
+import { AlertBanner } from '../components/shared';
 
 // ============================================================================
 // TYPES
@@ -50,11 +52,6 @@ interface UsageSnapshot {
   total: number;
   requestCount: number;
 }
-
-type ActionMessage = {
-  type: 'success' | 'error';
-  text: string;
-};
 
 const createEmptyUsage = (): UsageSnapshot => ({
   request: 0,
@@ -162,7 +159,8 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
 
   const [creatingSession, setCreatingSession] = useState(false);
-  const [actionMessage, setActionMessage] = useState<ActionMessage | null>(null);
+  const [syncingSessions, setSyncingSessions] = useState(false);
+  const { success, error, setSuccess, setError, dismissSuccess, dismissError, clearAll } = useAlerts();
   const [metricsRefreshKey, setMetricsRefreshKey] = useState(0);
   const [usageBySession, setUsageBySession] = useState<Record<string, UsageSnapshot>>({});
   const [usageLoading, setUsageLoading] = useState(false);
@@ -516,27 +514,21 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   const handleCreateSession = useCallback(async () => {
     if (creatingSession) return;
 
-    setActionMessage(null);
+    clearAll();
     setCreatingSession(true);
 
     try {
       const fallbackTitle = `Session ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-      await sessionStorageDBWrapper.addSession(fallbackTitle);
-      setActionMessage({
-        type: 'success',
-        text: 'New session ready—taking you to the workspace.',
-      });
+      await sessionStorageDBWrapper.addSession(fallbackTitle, API_CONFIG.BASE_URL);
+      setSuccess('New session ready—taking you to the workspace.');
       onGoToSessions();
-    } catch (error) {
-      console.error('[HomePage] Failed to create session:', error);
-      setActionMessage({
-        type: 'error',
-        text: 'Something went wrong creating a session. Please try again.',
-      });
+    } catch (err) {
+      console.error('[HomePage] Failed to create session:', err);
+      setError('Something went wrong creating a session. Please try again.');
     } finally {
       setCreatingSession(false);
     }
-  }, [creatingSession, onGoToSessions]);
+  }, [creatingSession, onGoToSessions, clearAll, setSuccess, setError]);
 
   // Bulk selection handlers
   const toggleBulkSelectMode = useCallback(() => {
@@ -591,14 +583,11 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
       setMetricsRefreshKey(prev => prev + 1); // Refresh metrics
     } catch (error) {
       console.error('[HomePage] Failed to bulk delete sessions:', error);
-      setActionMessage({
-        type: 'error',
-        text: 'Failed to delete sessions. Please try again.',
-      });
+      setError('Failed to delete sessions. Please try again.');
     } finally {
       setDeleting(false);
     }
-  }, [selectedSessions]);
+  }, [selectedSessions, setError]);
 
   const handleStartRename = useCallback((session: { id: string; title?: string | null }) => {
     setRenamingSessionId(session.id);
@@ -617,18 +606,15 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
     }
 
     try {
-      await sessionStorageDBWrapper.updateSessionTitle(sessionId, renameValue.trim());
+      await sessionStorageDBWrapper.updateSessionTitle(sessionId, renameValue.trim(), API_CONFIG.BASE_URL);
       handleCancelRename();
       setMetricsRefreshKey(prev => prev + 1); // Refresh metrics
     } catch (error) {
       console.error('[HomePage] Failed to rename session:', error);
-      setActionMessage({
-        type: 'error',
-        text: 'Failed to rename session. Please try again.',
-      });
+      setError('Failed to rename session. Please try again.');
       handleCancelRename();
     }
-  }, [renameValue, sortedSessions, handleCancelRename]);
+  }, [renameValue, sortedSessions, handleCancelRename, setError]);
 
   // Focus rename input when renaming starts
   useEffect(() => {
@@ -654,14 +640,30 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
       setMetricsRefreshKey(prev => prev + 1); // Refresh metrics
     } catch (error) {
       console.error('[HomePage] Failed to delete session:', error);
-      setActionMessage({
-        type: 'error',
-        text: 'Failed to delete session. Please try again.',
-      });
+      setError('Failed to delete session. Please try again.');
     } finally {
       setDeleting(false);
     }
-  }, [sessionToDelete]);
+  }, [sessionToDelete, setError]);
+
+  const handleSyncSessions = useCallback(async () => {
+    if (syncingSessions || !canAccessSessions) return;
+    setSyncingSessions(true);
+    try {
+      const synced = await sessionStorageDBWrapper.syncSessionsFromBackend(API_CONFIG.BASE_URL);
+      if (synced > 0) {
+        setSuccess(`Restored ${synced} session${synced === 1 ? '' : 's'} from backend.`);
+      } else if (synced === 0) {
+        setSuccess('No sessions to sync from backend.');
+      } else {
+        setError('Failed to sync sessions. Make sure you are logged in.');
+      }
+    } catch (error) {
+      setError('Failed to sync sessions. Please try again.');
+    } finally {
+      setSyncingSessions(false);
+    }
+  }, [syncingSessions, canAccessSessions, setSuccess, setError]);
 
   const handleGoToSession = useCallback(async (sessionId: string) => {
     if (!canAccessSessions) {
@@ -679,9 +681,9 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
       onGoToSessions();
     } catch (error) {
       console.error('[HomePage] Failed to switch to session:', error);
-      setActionMessage({ type: 'error', text: 'Failed to open session. Please try again.'       });
+        setError('Failed to open session. Please try again.');
     }
-  }, [canAccessSessions, onGoToSessions, bulkSelectMode, toggleSessionSelection]);
+  }, [canAccessSessions, onGoToSessions, bulkSelectMode, toggleSessionSelection, setError]);
 
   const handleRefreshMetrics = useCallback(() => {
     setMetricsRefreshKey(previous => previous + 1);
@@ -832,6 +834,36 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
         </div>
       </div>
 
+      {/* Floating Alerts - same banner style as admin pages */}
+      {(success.visible || error.visible) && (
+        <div className="fixed top-[52px] left-0 right-0 z-[10002] px-4 pt-4 pointer-events-none">
+          <div className="max-w-4xl mx-auto relative">
+            {success.visible && (
+              <div className="pointer-events-auto">
+                <AlertBanner
+                  alert={success}
+                  type="success"
+                  isLight={isLight}
+                  onDismiss={dismissSuccess}
+                  stackIndex={error.visible ? 1 : 0}
+                />
+              </div>
+            )}
+            {error.visible && (
+              <div className="pointer-events-auto">
+                <AlertBanner
+                  alert={error}
+                  type="error"
+                  isLight={isLight}
+                  onDismiss={dismissError}
+                  stackIndex={success.visible ? 2 : 0}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Home Page Content */}
       <div className={cn('flex-1 min-h-0 overflow-hidden', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
         <div className="h-full min-h-0 overflow-y-auto home-page-scroll">
@@ -949,19 +981,6 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                     )}
                 </div>
               </div>
-              {actionMessage && (
-                <div
-                  className={cn(
-                    'mt-4 inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-semibold',
-                    actionMessage.type === 'success'
-                      ? isLight ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-emerald-900/20 text-emerald-300 border border-emerald-800/60'
-                      : isLight ? 'bg-red-100 text-red-600 border border-red-200' : 'bg-red-900/20 text-red-300 border border-red-800/60'
-                  )}
-                >
-                  <span className="h-2 w-2 rounded-full bg-current" />
-                  {actionMessage.text}
-                </div>
-              )}
             </div>
 
             {/* Sentinel element to detect sticky state */}
@@ -1055,18 +1074,46 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                       <h3 className={cn('text-sm font-semibold', mainTextColor)}>
                         Recent Sessions
                       </h3>
-                      <button
-                        onClick={() => onGoToSessions()}
-                        className={cn(
-                          'inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide',
-                          isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-300 hover:text-blue-200'
-                        )}
-                      >
-                        View all sessions
-                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                          <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleSyncSessions}
+                          disabled={syncingSessions || !canAccessSessions}
+                          title="Sync sessions from backend (restore after reinstall)"
+                          className={cn(
+                            'inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide transition-colors',
+                            !canAccessSessions
+                              ? 'cursor-not-allowed opacity-50'
+                              : syncingSessions
+                                ? 'cursor-wait'
+                                : isLight
+                                  ? 'text-gray-600 hover:text-gray-800'
+                                  : 'text-gray-400 hover:text-gray-200'
+                          )}
+                        >
+                          <svg
+                            className={cn('h-3 w-3 flex-shrink-0', syncingSessions && 'animate-spin')}
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                          {syncingSessions ? 'Syncing…' : 'Sync'}
+                        </button>
+                        <button
+                          onClick={() => onGoToSessions()}
+                          className={cn(
+                            'inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide',
+                            isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-300 hover:text-blue-200'
+                          )}
+                        >
+                          View all sessions
+                          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                            <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                     
                     {/* Pagination Row with Bulk Selection Controls */}

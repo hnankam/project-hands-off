@@ -75,7 +75,7 @@ export function useSessionActions(
 
   // Basic session actions
   const handleNewSession = useCallback(() => {
-    sessionStorageDBWrapper.addSession(generateSessionName());
+    sessionStorageDBWrapper.addSession(generateSessionName(), API_CONFIG.BASE_URL);
   }, []);
 
   const handleCloseSession = useCallback(() => {
@@ -220,7 +220,7 @@ export function useSessionActions(
       }
 
       try {
-        await sessionStorageDBWrapper.addSession(generateSessionName());
+        await sessionStorageDBWrapper.addSession(generateSessionName(), API_CONFIG.BASE_URL);
         hasAttemptedInitialSessionRef.current = true;
       } catch (createError) {
         console.error('[SessionActions] Failed to create new session after clearing:', createError);

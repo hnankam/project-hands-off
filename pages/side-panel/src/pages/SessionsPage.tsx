@@ -15,7 +15,7 @@ import { useSessionLoadingState } from '../hooks/useSessionLoadingState';
 import { useSessionActions } from '../hooks/useSessionActions';
 import { useSessionCache } from '../hooks/useSessionCache';
 import { CopilotKitProvider, SharedAgentProvider } from '../hooks/copilotkit';
-import { COPIOLITKIT_CONFIG } from '../constants';
+import { COPIOLITKIT_CONFIG, API_CONFIG } from '../constants';
 import { createAllToolRenderers } from '../actions/copilot/builtinToolActions';
 import { createActivityMessageRenderers } from '../actions/copilot/activityRenderers';
 
@@ -162,7 +162,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     const ensureInitialSession = async () => {
       setIsEnsuringInitialSession(true);
       try {
-        await sessionStorageDBWrapper.addSession(generateSessionName());
+        await sessionStorageDBWrapper.addSession(generateSessionName(), API_CONFIG.BASE_URL);
       } catch (error) {
         console.error('[SessionsPage] Failed to ensure initial session:', error);
         if (!isCancelled) {
@@ -268,6 +268,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       <SessionHeader
         isLight={isLight}
         viewMode={viewMode}
+        apiBaseUrl={API_CONFIG.BASE_URL}
         currentSessionId={currentSessionId}
         currentSessionTitle={currentSessionTitle}
         sessionMessageCount={currentSessionId ? sessionMessageCounts[currentSessionId] || 0 : 0}

@@ -4,6 +4,7 @@ uvicorn[standard]
 python-dotenv
 pydantic-ai>=1.65.0
 pydantic-ai-slim[ag-ui,bedrock,google,mcp]>=1.65.0
+summarization-pydantic-ai[hybrid,tiktoken]
 psycopg[binary]>=3.1
 psycopg_pool>=3.1
 openai>=1.50.0

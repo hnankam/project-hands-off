@@ -8,9 +8,10 @@ interface SessionTabsProps {
   isLight: boolean;
   viewMode?: 'sidepanel' | 'popup' | 'newtab' | 'fullscreen';
   isVisible?: boolean; // Track when the sessions page is visible
+  apiBaseUrl?: string; // Optional API base URL to persist session titles to backend
 }
 
-export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisible = true }: SessionTabsProps) => {
+export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisible = true, apiBaseUrl }: SessionTabsProps) => {
   const { sessions, currentSessionId } = useSessionStorageDB();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const previousCurrentSessionId = useRef(currentSessionId);
@@ -39,7 +40,7 @@ export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisi
   };
 
   const handleNewSession = () => {
-    sessionStorageDBWrapper.addSession(generateSessionName());
+    sessionStorageDBWrapper.addSession(generateSessionName(), apiBaseUrl);
   };
 
   const handleDoubleClick = (sessionId: string, currentTitle: string) => {
@@ -49,7 +50,7 @@ export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisi
 
   const handleEditSubmit = () => {
     if (editingSessionId && editValue.trim()) {
-      sessionStorageDBWrapper.updateSessionTitle(editingSessionId, editValue.trim());
+      sessionStorageDBWrapper.updateSessionTitle(editingSessionId, editValue.trim(), apiBaseUrl);
     }
     setEditingSessionId(null);
     setEditValue('');

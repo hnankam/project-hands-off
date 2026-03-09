@@ -366,7 +366,12 @@ async def create_agent(
 ) -> Agent:
     """Create an agent with the specified type, model, and context."""
 
-    from utils.message_processor import keep_recent_messages
+    from pydantic_ai_summarization import create_context_manager_middleware, resolve_max_tokens
+    from utils.message_processor import (
+        count_tokens_with_model_fallback,
+        keep_recent_messages,
+        set_run_context_for_token_counter,
+    )
 
     models = get_models_for_context(organization_id, team_id)
     if model_name not in models:
@@ -387,6 +392,37 @@ async def create_agent(
     model_entry = models[model_name]
     model = model_entry['model']
     model_settings = model_entry['model_settings']
+
+    # Resolve genai-prices compatible model name from model instance (provider:model format)
+    genai_model_name = getattr(model, 'model_id', None) or (
+        f"{model.system}:{model.model_name}" if hasattr(model, 'system') else None
+    )
+    # 90% of genai-prices max context window for fraction-based keep
+    max_context = resolve_max_tokens(genai_model_name) if genai_model_name else None
+    if max_context:
+        max_input_tokens = int(max_context * 0.75)
+        context_max_tokens = None  # let middleware resolve from genai-prices
+    else:
+        # Fallback when genai-prices has no context_window: 1M for Gemini, 200k otherwise
+        model_ref = (genai_model_name or getattr(model, "model_name", "") or "").lower()
+        if "gemini" in model_ref:
+            context_max_tokens = 1_000_000
+            max_input_tokens = 900_000  # 90% of 1M
+        else:
+            context_max_tokens = 200_000
+            max_input_tokens = 150_000  # 75% of 200k
+
+    context_manager = create_context_manager_middleware(
+        model_name=genai_model_name,
+        max_tokens=context_max_tokens,
+        compress_threshold=0.9,
+        keep=("fraction", 0.3),
+        max_input_tokens=max_input_tokens,
+        token_counter=count_tokens_with_model_fallback,
+        on_usage_update=lambda pct, cur, mx: logger.info(
+            f"Context: {pct:.0%} used ({cur:,}/{mx:,})"
+        ),
+    )
 
     tool_definitions = get_tools_for_context(organization_id, team_id)
     mcp_servers = get_mcp_servers_for_context(organization_id, team_id)
@@ -436,7 +472,11 @@ async def create_agent(
         instructions=instructions,
         deps_type=UnifiedDeps,
         model_settings=model_settings,
-        history_processors=[keep_recent_messages],
+        history_processors=[
+            set_run_context_for_token_counter,
+            context_manager,
+            keep_recent_messages,
+        ],
         builtin_tools=builtin_tool_instances,
         tools=backend_tools,  # Backend callable functions
         toolsets=mcp_toolsets,  # MCP toolsets loaded from static config (TESTING)

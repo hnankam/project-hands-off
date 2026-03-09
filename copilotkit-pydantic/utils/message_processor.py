@@ -1,5 +1,6 @@
 """Message history processing and compaction utilities."""
 
+import contextvars
 import json
 from collections import defaultdict
 from collections.abc import Sequence
@@ -25,6 +26,13 @@ from ag_ui.core import AssistantMessage, UserMessage, ToolMessage, ToolCall, Fun
 from config import logger
 from core.models import AgentState, UnifiedDeps
 from pydantic_ai.models import ModelRequestParameters
+
+# ContextVar for RunContext, set by set_run_context_for_token_counter before context_manager runs.
+# Used by count_tokens_with_model_fallback to access model.count_tokens.
+_run_context_var: contextvars.ContextVar[RunContext | None] = contextvars.ContextVar(
+    "run_context_for_token_counter", default=None
+)
+
 
 @lru_cache(maxsize=1)
 def _get_tiktoken_encoding() -> tiktoken.Encoding:
@@ -65,6 +73,9 @@ def count_tokens_approximately(messages: Sequence[ModelMessage]) -> int:  # prag
     Uses tiktoken for accurate token counts instead of character-based heuristics.
     Adds ~3 tokens per message for structure overhead (role/content keys in chat format).
 
+    For Anthropic models (when ctx is set), multiplies by 2 because tiktoken undercounts
+    vs Anthropic's tokenizer (~2x difference).
+
     Args:
         messages: Sequence of messages to count tokens for.
 
@@ -76,7 +87,53 @@ def count_tokens_approximately(messages: Sequence[ModelMessage]) -> int:  # prag
     total = sum(len(encoding.encode(t)) for t in texts)
     # Add overhead for message structure (role, content keys, etc.) - ~3 per message
     structure_overhead = 3 * len(messages) if messages else 0
-    return total + structure_overhead
+    result = total + structure_overhead
+    # Anthropic tokenizer counts ~2x higher than tiktoken; scale when ctx indicates Anthropic
+    ctx = _run_context_var.get()
+    if ctx is not None and hasattr(ctx, "model"):
+        system = (getattr(ctx.model, "system", "") or "").lower()
+        model_ref = (
+            getattr(ctx.model, "model_name", "") or getattr(ctx.model, "model_id", "") or ""
+        ).lower()
+        if system == "anthropic" or "anthropic" in model_ref or "claude" in model_ref:
+            result = int(result * 2)
+    return result
+
+
+async def count_tokens_with_model_fallback(messages: Sequence[ModelMessage]) -> int:
+    """Count tokens using model.count_tokens when available, else count_tokens_approximately.
+
+    Requires set_run_context_for_token_counter to run first (as a history processor) to set
+    the RunContext. Used by create_context_manager_middleware for accurate provider-specific
+    token counts (e.g. Anthropic, Google countTokens API).
+    """
+    ctx = _run_context_var.get()
+    if ctx is not None:
+        try:
+            model_settings, model_request_params = await get_model_config_from_agent(ctx)
+            current_tokens = await ctx.model.count_tokens(
+                messages,
+                model_settings=model_settings,
+                model_request_parameters=model_request_params,
+            )
+            if current_tokens is not None and hasattr(current_tokens, "input_tokens"):
+                return current_tokens.input_tokens
+        except Exception as e:
+            logger.debug(f"model.count_tokens not supported or failed: {e}")
+    return count_tokens_approximately(messages)
+
+
+async def set_run_context_for_token_counter(
+    ctx: RunContext[UnifiedDeps], messages: list[ModelMessage]
+) -> list[ModelMessage]:
+    """History processor that sets RunContext for count_tokens_with_model_fallback.
+
+    Must run before context_manager in history_processors so the token counter can
+    use model.count_tokens when available. Returns messages unchanged.
+    """
+    _run_context_var.set(ctx)
+    return messages
+
 
 async def get_model_config_from_agent(ctx: RunContext) -> tuple[dict, ModelRequestParameters]:
     """Extract model settings and tools from agent for accurate token counting.
@@ -251,21 +308,15 @@ async def keep_recent_messages(
     Reference: https://github.com/pydantic/pydantic-ai/issues/2050
     """
 
-    # Get model settings and tools from agent (via adapter) for accurate token counting
+    # --- Token management (temporarily commented out) ---
     model_settings, model_request_params = await get_model_config_from_agent(ctx)
     all_messages_token_count = count_tokens_approximately(messages)
     current_tokens: int | None = None
-
     try:
-        # logger.info(f"Model Settings: {model_settings}")
-        # logger.info(f"Model Request Parameters: {model_request_params}")
         current_tokens = await ctx.model.count_tokens(messages, model_settings=model_settings, model_request_parameters=model_request_params)
         logger.info(f"Current Tokens: {current_tokens}")
     except Exception as e:
         logger.debug(f"Token counting not supported or failed: {e}")
-    # Note: AsyncAnthropicBedrock client does not support `count_tokens` api.
-
-    # count_tokens returns RequestUsage; extract input_tokens. Fall back to tiktoken approx.
     if current_tokens is not None and hasattr(current_tokens, "input_tokens"):
         effective_token_count = current_tokens.input_tokens
     else:
@@ -614,148 +665,6 @@ async def keep_recent_messages(
             return msgs + [ModelRequest(parts=[])]
         return msgs
 
-    # Dynamic message window based on token count
-    # Gemini models have 1M+ context; Claude/Anthropic have 200k. Use model-specific thresholds.
-    model_name = ""
-    try:
-        model_name = str(getattr(ctx.model, "model_name", "") or "")
-    except Exception:
-        pass
-    is_gemini = "gemini" in model_name.lower()
-    is_anthropic = "anthropic" in model_name.lower() or "claude" in model_name.lower()
-
-    if is_gemini:
-        high_threshold, low_threshold = 200_000, 150_000
-        model_context_limit = 1_000_000
-    elif is_anthropic:
-        # Claude has 200k limit; cut earlier to leave buffer for safe-cut overshoot
-        high_threshold, low_threshold = 100_000, 70_000
-        model_context_limit = 200_000
-    else:
-        high_threshold, low_threshold = 120_000, 80_000
-        model_context_limit = 200_000
-
-    skip_safe_cut_search = False  # Flag to skip safe cut search (used for first message)
-    is_first_message = ctx.usage.input_tokens == 0
-
-    if effective_token_count > high_threshold:
-        # High token usage: 50% if first message, else 15%
-        high_ratio = 0.50 if is_first_message else 0.15
-        target_messages_to_keep = int(len(messages) * high_ratio)
-        reduced_messages = messages[-target_messages_to_keep:] if target_messages_to_keep > 0 else []
-        reduced_token_count = count_tokens_approximately(reduced_messages) if reduced_messages else 0
-        logger.info(f"Token count {effective_token_count} > {high_threshold:,}, targeting {int(high_ratio * 100)}% of messages ({target_messages_to_keep}/{len(messages)}), reduced token count: {reduced_token_count:,}")
-        
-        if len(messages) <= target_messages_to_keep:
-            logger.info(f"Returning {len(messages)} messages (<={target_messages_to_keep})")
-            return _ensure_ends_with_request(messages)
-    elif effective_token_count > low_threshold:
-        # Moderate token usage: 70% if first message, else 35%
-        low_ratio = 0.70 if is_first_message else 0.35
-        target_messages_to_keep = int(len(messages) * low_ratio)
-        reduced_messages = messages[-target_messages_to_keep:] if target_messages_to_keep > 0 else []
-        reduced_token_count = count_tokens_approximately(reduced_messages) if reduced_messages else 0
-        logger.info(f"Token count {effective_token_count} > {low_threshold:,}, targeting {int(low_ratio * 100)}% of messages ({target_messages_to_keep}/{len(messages)}), reduced token count: {reduced_token_count:,}")
-        
-        if len(messages) <= target_messages_to_keep:
-            logger.info(f"Returning {len(messages)} messages (<={target_messages_to_keep})")
-            return _ensure_ends_with_request(messages)
-    else:
-        # Under token limit - return all messages without cutting
-        logger.info(f"Token count {effective_token_count} <= {low_threshold:,}, returning all {len(messages)} messages")
-        return _ensure_ends_with_request(messages)
-    
-    # Find system prompt if it exists
-    system_prompt = None
-    system_prompt_index = None
-    for i, msg in enumerate(messages):
-        if isinstance(msg, ModelRequest) and any(isinstance(part, SystemPromptPart) for part in msg.parts):
-            system_prompt = msg
-            system_prompt_index = i
-            break
-    
-    # Calculate target cut point (remove oldest messages)
-    target_cut = len(messages) - target_messages_to_keep
-    
-    # Try to find a safe cut in the messages that will be removed
-    # (skip this for first message - go directly to forced cut)
-    if not skip_safe_cut_search:
-        # Search only within messages before target_cut, but EXCLUDE index 0
-        # (index 0 would keep all messages, defeating the purpose of cutting)
-        logger.info(f"Searching for safe cut point in messages [1:{target_cut}]")
-        
-        safe_cut_found = None
-        for cut_index in range(target_cut, 0, -1):  # Stop at 1, not 0
-            first_message = messages[cut_index]
-            
-            # Skip if first message has tool returns (orphaned without calls)
-            if any(_is_tool_result_part(part) for part in first_message.parts):
-                continue
-            
-            # Skip if first message has tool calls (violates AI model ordering rules)
-            if isinstance(first_message, ModelResponse) and any(
-                isinstance(part, ToolCallPart) for part in first_message.parts
-            ):
-                continue
-            
-            # Found a safe cut point
-            safe_cut_found = cut_index
-            logger.info(f"Found safe cut at index={cut_index}, will keep {len(messages) - cut_index} messages")
-            break
-        
-        # If safe cut found (and it's not index 0), use it
-        if safe_cut_found is not None and safe_cut_found > 0:
-            result = messages[safe_cut_found:]
-            
-            # If we cut off the system prompt, prepend it back
-            if system_prompt is not None and system_prompt_index is not None and safe_cut_found > system_prompt_index:
-                result = [system_prompt] + result
-
-            # Verify result stays under model limit (safe cut can keep more than target)
-            result_token_count = count_tokens_approximately(result)
-            buffer = 20_000
-            # Tiktoken undercounts vs Anthropic tokenizer (~2.45x). Use lower effective limit for Anthropic.
-            if is_anthropic:
-                max_result_tokens = 78_000  # ~78k tiktoken ≈ ~191k Anthropic tokens (under 200k limit)
-            else:
-                max_result_tokens = model_context_limit - buffer
-            while result_token_count > max_result_tokens and len(result) > 1:
-                logger.warning(
-                    f"Safe cut result {result_token_count:,} tokens exceeds limit {max_result_tokens:,}, "
-                    f"cutting again (had {len(result)} messages)"
-                )
-                # Re-cut: keep ~50% of current result
-                target_messages_to_keep = max(1, int(len(result) * 0.5))
-                target_cut = len(result) - target_messages_to_keep
-                if target_cut <= 0:
-                    break
-
-                # Keep messages from target_cut onward, remove orphaned tool returns
-                result = _remove_orphaned_tool_returns(
-                    result[:target_cut], result[target_cut:], log_prefix="Re-cut: "
-                )
-
-                # Re-prepend system prompt if we had one (re-cut may have removed it)
-                if system_prompt is not None and system_prompt_index is not None and safe_cut_found > system_prompt_index:
-                    result = [system_prompt] + result
-                result_token_count = count_tokens_approximately(result)
-                logger.info(f"After re-cut: {len(result)} messages, {result_token_count:,} tokens")
-            
-            logger.info(f"Returning {len(result)} messages after safe cut ({result_token_count:,} tokens)")
-            return _ensure_ends_with_request(result)
-        
-        # No safe cut found - force cut at target_cut and clean up orphaned tool returns
-        logger.warning(f"No safe cut found, forcing cut at index={target_cut} and cleaning orphaned tool returns")
-    
-    # Keep messages from target_cut onward, remove orphaned tool returns
-    removed_messages = messages[:target_cut]
-    kept_messages = messages[target_cut:]
-    cleaned_messages = _remove_orphaned_tool_returns(removed_messages, kept_messages)
-    
-    # If we cut off the system prompt, prepend it back
-    if system_prompt is not None and system_prompt_index is not None and target_cut > system_prompt_index:
-        cleaned_messages = [system_prompt] + cleaned_messages
-    
-    logger.info(f"Returning {len(cleaned_messages)} messages after forced cut and cleanup")
-    return _ensure_ends_with_request(cleaned_messages)
+    logger.info(f"Returning {len(messages)} messages (token management disabled)")
+    return _ensure_ends_with_request(messages)
 

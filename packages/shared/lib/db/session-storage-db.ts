@@ -551,6 +551,100 @@ export class SessionStorageDB {
   }
 
   /**
+   * Sync sessions from backend (restore after extension reinstall)
+   * Fetches threads from GET /api/threads and creates local session metadata.
+   * @param apiBaseUrl - Runtime server base URL (e.g. API_CONFIG.BASE_URL)
+   * @param userId - Current user ID (must match backend auth)
+   * @returns Number of sessions synced, or -1 on error
+   */
+  async syncSessionsFromBackend(apiBaseUrl: string, userId: string): Promise<number> {
+    if (!userId) {
+      debug.error('[SessionStorageDB:syncSessionsFromBackend] userId is required');
+      return -1;
+    }
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/threads`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        debug.error('[SessionStorageDB:syncSessionsFromBackend] API error:', response.status);
+        return -1;
+      }
+      const data = await response.json();
+      const threads = data?.threads ?? [];
+      if (!Array.isArray(threads) || threads.length === 0) {
+        return 0;
+      }
+      const worker = this.getWorker();
+      const existing = await this.getAllSessions();
+      const existingIds = new Set(existing.map((s) => s.id));
+      let synced = 0;
+      const toAdd: Array<{
+        thread_id: string;
+        user_id: string;
+        agent_id?: string;
+        agent_type?: string;
+        model_type?: string;
+        title?: string;
+        created_at: string | Date;
+        last_accessed_at?: string | Date;
+      }> = [];
+      for (const t of threads) {
+        const threadId = t.thread_id ?? t.threadId;
+        if (!threadId || existingIds.has(threadId)) continue;
+        existingIds.add(threadId);
+        toAdd.push(t);
+      }
+      for (const t of toAdd) {
+        const threadId = t.thread_id ?? (t as { threadId?: string }).threadId;
+        if (!threadId) continue;
+        const ts = t.last_accessed_at ?? t.created_at;
+        const timestamp = ts ? new Date(ts).getTime() : Date.now();
+        const createdAt = t.created_at ? new Date(t.created_at).getTime() : timestamp;
+        const agent = t.agent_id ?? t.agent_type ?? 'general';
+        const model = t.model_type ?? 'claude-4.5-haiku';
+        const title = (t.title && String(t.title).trim()) || 'Restored Session';
+        const newRecord = {
+          sessionId: threadId,
+          id: threadId,
+          timestamp,
+          createdAt,
+          userId: t.user_id ?? userId,
+          title,
+          isActive: false,
+          isOpen: true,
+          selectedAgent: agent,
+          selectedModel: model,
+        };
+        await worker.query('CREATE session_metadata CONTENT $rec;', { rec: newRecord });
+        synced++;
+      }
+      if (synced > 0) {
+        const firstId = toAdd[0]?.thread_id ?? (toAdd[0] as { threadId?: string })?.threadId;
+        if (firstId) {
+          await worker.query(
+            'UPDATE session_metadata SET isActive = false WHERE isActive = true AND userId = $userId;',
+            { userId }
+          );
+          await worker.query(
+            'UPDATE session_metadata SET isActive = true, isOpen = true WHERE sessionId = $id OR id = $id;',
+            { id: firstId }
+          );
+          await this.setCurrentSessionId(firstId);
+        }
+        this.notify({ type: 'sessionsUpdated' });
+        this.notify({ type: 'sessionChanged', sessionId: firstId });
+        debug.log('[SessionStorageDB:syncSessionsFromBackend] Synced', synced, 'sessions from backend');
+      }
+      return synced;
+    } catch (error) {
+      debug.error('[SessionStorageDB:syncSessionsFromBackend] Error:', error);
+      return -1;
+    }
+  }
+
+  /**
    * Set active session (LIGHTWEIGHT - no message data touched)
    * Only deactivates sessions for the same user
    */
@@ -719,6 +813,27 @@ export class SessionStorageDB {
     );
     this.invalidateSessionCache(sessionId);
     this.notify({ type: 'sessionsUpdated' });
+  }
+
+  /**
+   * Persist session title to backend (for restore after reinstall)
+   * Fire-and-forget when apiBaseUrl provided - does not throw on failure.
+   */
+  async persistSessionTitleToBackend(apiBaseUrl: string, sessionId: string, title: string): Promise<void> {
+    if (!apiBaseUrl || !sessionId) return;
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/threads`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId: sessionId, title: title || 'Untitled session' }),
+      });
+      if (!response.ok) {
+        debug.error('[SessionStorageDB] Failed to persist title to backend:', response.status);
+      }
+    } catch (error) {
+      debug.error('[SessionStorageDB] Error persisting title to backend:', error);
+    }
   }
 
   /**
