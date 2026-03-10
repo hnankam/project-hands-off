@@ -36,8 +36,6 @@ import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import {
   // Components
   CopilotChat,
-  // Types
-  type MessagesProps,
   // Hooks
   useCopilotChat,
   useCopilotReadableData,
@@ -57,7 +55,6 @@ import { cn } from '@extension/ui';
 import type { AgentStepState } from '../cards';
 // Note: Graph state rendering is handled by renderActivityMessages at Provider level
 // V2 components are used via chatView slots below
-import { CustomMessages } from './CustomMessages';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MermaidBlock } from './MermaidBlock';
 import { ChatErrorDisplay } from './ChatErrorDisplay';
@@ -86,6 +83,7 @@ import { useWorkspaceContext } from '../../hooks/useWorkspaceContext';
 import { ChatSessionIdProvider } from '../../context/ChatSessionIdContext';
 import { useAgentStateManagement } from '../../hooks/useAgentStateManagement';
 import { useAuth } from '../../context/AuthContext';
+import { useLoadMoreHistory } from '../../hooks/useLoadMoreHistory';
 
 // Utilities
 import {
@@ -421,6 +419,18 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ================================================================================
   // CUSTOM HOOKS
   // ================================================================================
+
+  // Ref for scroll preservation when loading older messages
+  const chatWrapperRef = useRef<HTMLDivElement>(null);
+
+  // Paginated history loading ("load more") - auto-triggers on scroll to top
+  const { isLoading: isLoadingMore } = useLoadMoreHistory({
+    threadId: sessionId,
+    messages,
+    setMessages,
+    enabled: true,
+    scrollContainerRef: chatWrapperRef,
+  });
 
   // Agent state management (extracted to hook)
   const { dynamicAgentState, setDynamicAgentState, latestAssistantMessageIdRef } = useAgentStateManagement({
@@ -890,14 +900,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     ],
   );
 
-  /**
-   * Custom Messages wrapper - receives MessagesProps from CopilotChat
-   */
-  const MessagesComponent = useCallback(
-    (props: MessagesProps) => <CustomMessages {...props} agentMode={agentModeChat} />,
-    [agentModeChat],
-  );
-
   // ================================================================================
   // RENDER
   // ================================================================================
@@ -973,15 +975,51 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           )}
           
           <div
+            ref={chatWrapperRef}
             className={cn(
-              'copilot-chat-wrapper relative min-h-0 flex-1 overflow-hidden',
+              'copilot-chat-wrapper relative min-h-0 flex-1 flex flex-col overflow-hidden',
               !isAgentAndModelSelected && 'chat-input-disabled',
             )}>
-            <CopilotChat
-              agentId="dynamic_agent"
-              threadId={sessionId}
-              chatView={chatView}
-            />
+            {isLoadingMore && (
+              <div
+                className={cn(
+                  'sticky flex-shrink-0 flex items-center justify-center gap-1 py-0.5 text-[10px] opacity-60',
+                  isLight ? 'text-gray-500 bg-gray-50' : 'text-gray-400 bg-[#151C24]'
+                )}
+                role="status"
+                aria-live="polite"
+              >
+                <svg
+                  className="animate-spin h-2.5 w-2.5 flex-shrink-0"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  aria-hidden
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                <span>Loading older messages…</span>
+              </div>
+            )}
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden" data-load-more-scroll>
+              <CopilotChat
+                agentId="dynamic_agent"
+                threadId={sessionId}
+                chatView={chatView}
+              />
+            </div>
           </div>
         </div>
       </PageSelectorProvider>

@@ -72,6 +72,10 @@ LOGFIRE_SERVICE_NAME = os.getenv("LOGFIRE_SERVICE_NAME", "copilotkit-pydantic")
 LOGFIRE_ENVIRONMENT = os.getenv("LOGFIRE_ENVIRONMENT", "development" if DEBUG else "production")
 LOGFIRE_CAPTURE_HEADERS = os.getenv("LOGFIRE_CAPTURE_HEADERS", "true").lower() in {"1", "true", "yes"}
 
+# Agent tool timeout (seconds)
+# Default timeout for all tools on an agent. Tools exceeding this are treated as failed and trigger a retry.
+TOOL_TIMEOUT = int(os.getenv("TOOL_TIMEOUT", "3600"))
+
 # Redis configuration
 # Enable/disable Redis for distributed caching and state (default: true)
 # Falls back to in-memory if Redis unavailable (NOT suitable for multi-instance deployment)

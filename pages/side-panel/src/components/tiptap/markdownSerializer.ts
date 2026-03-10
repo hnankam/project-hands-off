@@ -79,7 +79,10 @@ function jsonToMarkdown(node: any, depth = 0, listContext?: { type: 'bullet' | '
       hasId: !!node.attrs?.id,
       mentionType: node.attrs?.type,
     });
-    const mentionText = node.attrs?.label || node.attrs?.id || 'unknown';
+    // For folder mentions, use folderPath so agent gets the path; otherwise use label
+    const mentionText = (node.attrs?.type === 'workspace_folder' && node.attrs?.folderPath)
+      ? node.attrs.folderPath
+      : (node.attrs?.label || node.attrs?.id || 'unknown');
     const mentionType = node.attrs?.type;
     
     // Add type prefix for the agent based on mention type
@@ -99,6 +102,12 @@ function jsonToMarkdown(node: any, depth = 0, listContext?: { type: 'bullet' | '
         break;
       case 'graph':
         typePrefix = '[Graph]';
+        break;
+      case 'workspace_file':
+        typePrefix = '[File]';
+        break;
+      case 'workspace_folder':
+        typePrefix = '[Folder]';
         break;
       default:
         typePrefix = '';

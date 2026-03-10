@@ -158,7 +158,9 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   const [tabGroups, setTabGroups] = useState<TabGroup[]>([]);
   const [windows, setWindows] = useState<BrowserWindow[]>([]);
   const [loadingTabs, setLoadingTabs] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('all');
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    onNotesChange || onCredentialsChange ? 'workspace' : 'all',
+  );
   const [expandedWindows, setExpandedWindows] = useState<Set<number>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
 
@@ -1126,6 +1128,66 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
     [selectedNoteIds, onNotesChange, onNotesWithContentChange],
   );
 
+  const handleSelectAllNotes = useCallback(async () => {
+    if (!onNotesChange) return;
+    const allSelected = notes.every(n => selectedNoteIds.includes(n.id));
+    if (allSelected) {
+      const newSelection = selectedNoteIds.filter(id => !notes.some(n => n.id === id));
+      onNotesChange(newSelection);
+      if (onNotesWithContentChange) onNotesWithContentChange([]);
+    } else {
+      const newSelection = notes.map(n => n.id);
+      onNotesChange(newSelection);
+      if (onNotesWithContentChange && newSelection.length > 0) {
+        try {
+          const baseURL = API_CONFIG.BASE_URL;
+          const response = await fetch(`${baseURL}/api/workspace/notes/bulk`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: newSelection }),
+          });
+          if (response.ok) {
+            const data = await response.json();
+            onNotesWithContentChange(data.notes || []);
+          }
+        } catch (error) {
+          debug.error('[ContextSelector] Failed to fetch note content:', error);
+        }
+      }
+    }
+  }, [notes, selectedNoteIds, onNotesChange, onNotesWithContentChange]);
+
+  const handleSelectAllCredentials = useCallback(async () => {
+    if (!onCredentialsChange) return;
+    const allSelected = credentials.every(c => selectedCredentialIds.includes(c.id));
+    if (allSelected) {
+      const newSelection = selectedCredentialIds.filter(id => !credentials.some(c => c.id === id));
+      onCredentialsChange(newSelection);
+      if (onCredentialsWithMetadataChange) onCredentialsWithMetadataChange([]);
+    } else {
+      const newSelection = credentials.map(c => c.id);
+      onCredentialsChange(newSelection);
+      if (onCredentialsWithMetadataChange && newSelection.length > 0) {
+        try {
+          const baseURL = API_CONFIG.BASE_URL;
+          const response = await fetch(`${baseURL}/api/workspace/credentials/metadata`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: newSelection }),
+          });
+          if (response.ok) {
+            const data = await response.json();
+            onCredentialsWithMetadataChange(data.credentials || []);
+          }
+        } catch (error) {
+          debug.error('[ContextSelector] Failed to fetch credential metadata:', error);
+        }
+      }
+    }
+  }, [credentials, selectedCredentialIds, onCredentialsChange, onCredentialsWithMetadataChange]);
+
   const handleToggleCredential = useCallback(
     async (credentialId: string) => {
       if (!onCredentialsChange) return;
@@ -1330,9 +1392,9 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                 )}>
                 {[
                   'all',
+                  ...(onNotesChange || onCredentialsChange ? ['workspace'] : []),
                   'indexed',
                   ...(showBrowserTabs ? ['tabs'] : []),
-                  ...(onNotesChange || onCredentialsChange ? ['workspace'] : []),
                 ].map(mode => (
                   <button
                     key={mode}
@@ -1980,10 +2042,39 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                             <>
                               <div
                                 className={cn(
-                                  'px-2.5 py-1 text-[9px] font-medium tracking-wider uppercase',
+                                  'flex items-center justify-between px-2.5 py-1 text-[9px] font-medium tracking-wider uppercase',
                                   isLight ? 'bg-gray-50 text-gray-400' : 'bg-gray-800/50 text-gray-500',
                                 )}>
-                                Notes ({notes.length})
+                                <span>Notes ({notes.length})</span>
+                                {notes.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={handleSelectAllNotes}
+                                    className={cn(
+                                      'flex items-center gap-1 text-[10px] font-medium transition-colors',
+                                      isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300',
+                                    )}>
+                                    <div
+                                      className={cn(
+                                        'flex h-3 w-3 items-center justify-center rounded',
+                                        notes.every(n => selectedNoteIds.includes(n.id))
+                                          ? 'bg-blue-600'
+                                          : cn('border', isLight ? 'border-gray-400' : 'border-gray-500'),
+                                      )}>
+                                      {notes.every(n => selectedNoteIds.includes(n.id)) && (
+                                        <svg
+                                          className="h-2 w-2 text-white"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          viewBox="0 0 24 24"
+                                          strokeWidth={3}>
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      )}
+                                    </div>
+                                    All
+                                  </button>
+                                )}
                               </div>
                               {notes.map(note => {
                                 const isSelected = selectedNoteIds.includes(note.id);
@@ -2063,10 +2154,39 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                             <>
                               <div
                                 className={cn(
-                                  'px-2.5 py-1 text-[9px] font-medium tracking-wider uppercase',
+                                  'flex items-center justify-between px-2.5 py-1 text-[9px] font-medium tracking-wider uppercase',
                                   isLight ? 'bg-gray-50 text-gray-400' : 'bg-gray-800/50 text-gray-500',
                                 )}>
-                                Credentials ({credentials.length})
+                                <span>Credentials ({credentials.length})</span>
+                                {credentials.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={handleSelectAllCredentials}
+                                    className={cn(
+                                      'flex items-center gap-1 text-[10px] font-medium transition-colors',
+                                      isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300',
+                                    )}>
+                                    <div
+                                      className={cn(
+                                        'flex h-3 w-3 items-center justify-center rounded',
+                                        credentials.every(c => selectedCredentialIds.includes(c.id))
+                                          ? 'bg-blue-600'
+                                          : cn('border', isLight ? 'border-gray-400' : 'border-gray-500'),
+                                      )}>
+                                      {credentials.every(c => selectedCredentialIds.includes(c.id)) && (
+                                        <svg
+                                          className="h-2 w-2 text-white"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          viewBox="0 0 24 24"
+                                          strokeWidth={3}>
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      )}
+                                    </div>
+                                    All
+                                  </button>
+                                )}
                               </div>
                               {credentials.map(cred => {
                                 const isSelected = selectedCredentialIds.includes(cred.id);

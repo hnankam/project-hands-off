@@ -505,6 +505,25 @@
   padding: 0; /* Remove padding for flush appearance */
 }
 
+/* Accordion groups in @ menu */
+.mention-accordion-group {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.dark .mention-accordion-group {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+.mention-accordion-group:last-child {
+  border-bottom: none;
+}
+
+.mention-accordion-header {
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+}
+
 /* Search bar in mention list */
 .mention-list input[type="text"] {
   font-family: inherit;
@@ -933,6 +952,25 @@
 
 .mention-list > div {
   padding: 0; /* Remove padding for flush appearance */
+}
+
+/* Accordion groups in @ menu */
+.mention-accordion-group {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.dark .mention-accordion-group {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+.mention-accordion-group:last-child {
+  border-bottom: none;
+}
+
+.mention-accordion-header {
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
 }
 
 /* Search bar in mention list */

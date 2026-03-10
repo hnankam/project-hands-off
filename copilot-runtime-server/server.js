@@ -1056,6 +1056,73 @@ const app = express();
     });
 
     /**
+     * GET /api/threads/:threadId/history
+     * Paginated history for "load more" - returns older runs as events
+     *
+     * Query params:
+     * - before, beforeMessageId: load runs OLDER than this
+     * - afterRunId: load runs NEWER than this (fills gap when response was capped)
+     * - limit: max root runs to load (default 5)
+     *
+     * Returns: { events, hasMore, oldestRunId?, afterRunId? }
+     */
+    app.get('/api/threads/:threadId/history', async (req, res) => {
+      try {
+        const session = await ensureAuthenticated(req, res);
+        if (!session) return;
+
+        const { threadId } = req.params;
+        const { before, beforeMessageId, afterRunId, limit, excludeRoot } = req.query;
+
+        if (!threadId) {
+          return res.status(400).json({ error: 'Thread ID is required' });
+        }
+
+        const limitNum = Math.min(Math.max(parseInt(limit, 10) || 5, 1), 5);
+
+        if (USE_SQLITE_RUNNER || !runner) {
+          return res.status(501).json({ error: 'History pagination not supported with current runner' });
+        }
+
+        if (typeof afterRunId === 'string' && afterRunId) {
+          if (typeof runner.getHistoryEventsAfter !== 'function') {
+            return res.status(501).json({ error: 'History "after" pagination not supported' });
+          }
+          const beforeMsgId = typeof beforeMessageId === 'string' ? beforeMessageId : null;
+          const result = await runner.getHistoryEventsAfter(threadId, afterRunId, 20, beforeMsgId);
+          return res.json({
+            events: result.events,
+            hasMore: result.hasMore,
+            afterRunId: result.afterRunId || undefined,
+            runs: result.runs,
+          });
+        }
+
+        const beforeRunId = typeof before === 'string' ? before : null;
+        const beforeMsgId = typeof beforeMessageId === 'string' ? beforeMessageId : null;
+        if (!beforeRunId && !beforeMsgId) {
+          return res.status(400).json({ error: 'Query param "before"/"beforeMessageId" or "afterRunId" is required' });
+        }
+
+        const excludeRootBool = excludeRoot === 'true' || excludeRoot === '1';
+        const result = await runner.getHistoryEventsBefore(
+          threadId, beforeRunId || '', beforeMsgId, limitNum, excludeRootBool
+        );
+
+        res.json({
+          events: result.events,
+          hasMore: result.hasMore,
+          oldestRunId: result.oldestRunId,
+          afterRunId: result.afterRunId || undefined,
+          runs: result.runs,
+        });
+      } catch (error) {
+        log(`Error fetching history: ${error.message}`, res.locals.reqId);
+        res.status(500).json({ error: 'Failed to fetch history', message: error.message });
+      }
+    });
+
+    /**
      * GET /api/runs/:runId/tool-result/:toolCallId
      * Get the full untruncated content of a tool call result or args
      * Used by the frontend to lazy-load truncated tool results

@@ -168,6 +168,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   const [activeTeamName, setActiveTeamName] = useState<string | null>(null);
   const [teamsRefreshKey, setTeamsRefreshKey] = useState(0);
   const [sessionsPage, setSessionsPage] = useState(1);
+  const [agentIdToName, setAgentIdToName] = useState<Record<string, string>>({});
   
   // Bulk selection state
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
@@ -290,6 +291,26 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
     };
   }, [activeTeam, activeTeamName]);
 
+  // Fetch agents for agent name lookup (id -> label/name)
+  useEffect(() => {
+    if (!organization?.id || !activeTeam) {
+      setAgentIdToName({});
+      return;
+    }
+    const url = new URL(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.CONFIG_AGENTS}`);
+    url.searchParams.append('teamId', activeTeam);
+    fetch(url.toString(), { credentials: 'include' })
+      .then(res => res.ok ? res.json() : { agents: [] })
+      .then(data => {
+        const map: Record<string, string> = {};
+        (data.agents || []).forEach((a: { id: string; label: string }) => {
+          if (a.id && a.label) map[a.id] = a.label;
+        });
+        setAgentIdToName(map);
+      })
+      .catch(() => setAgentIdToName({}));
+  }, [organization?.id, activeTeam]);
+
   // Fetch aggregated usage stats from backend database (7-day range)
   // This provides accurate, authoritative usage data from the server for the Usage tab
   const [aggregatedUsage, setAggregatedUsage] = useState<UsageSnapshot>(createEmptyUsage());
@@ -311,10 +332,11 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
 
     (async () => {
       try {
-        // Fetch 7-day usage from backend database
-        const response = await fetch(`${API_CONFIG.BASE_URL}/api/admin/usage?range=7d`, {
-          credentials: 'include',
-        });
+        // Fetch 7-day usage from backend database (user-scoped to match chat counts)
+        const response = await fetch(
+          `${API_CONFIG.BASE_URL}/api/admin/usage?range=7d&userId=${encodeURIComponent(user.id)}`,
+          { credentials: 'include' }
+        );
 
         if (cancelled) {
           return;
@@ -378,12 +400,12 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
 
     (async () => {
       try {
-        // Fetch session-level aggregated data from backend
+        // Fetch session-level aggregated data from backend (user-scoped to match chat list)
         // Using metric=sessions groups data by session and provides per-session totals
         // Using range=all to get all-time stats for each session
         // Using limit=1000 to get a large number of sessions (adjust as needed)
         const response = await fetch(
-          `${API_CONFIG.BASE_URL}/api/admin/usage?metric=sessions&range=all&limit=1000`,
+          `${API_CONFIG.BASE_URL}/api/admin/usage?metric=sessions&range=all&limit=1000&userId=${encodeURIComponent(user.id)}`,
           { credentials: 'include' }
         );
 
@@ -737,18 +759,18 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   const statCards = useMemo(() => [
     {
       key: 'totalSessions',
-      label: 'Total Sessions',
+      label: 'Total Chats',
       value: formatNumber(totalSessions),
       description: `${openSessionsCount} open • ${archivedSessionsCount} archived`,
       icon: 'sparkles' as const,
     },
     {
       key: 'activeSessions',
-      label: 'Active Sessions',
+      label: 'Active Chats',
       value: formatNumber(activeSessionsCount),
       description: currentSession
-        ? `Now focused on ${currentSession.title || 'Active Session'}`
-        : 'Activate a session to jump back in.',
+        ? `Now focused on ${currentSession.title || 'Active Chat'}`
+        : 'Activate a chat to jump back in.',
       icon: 'activity' as const,
     },
     {
@@ -756,7 +778,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
       label: 'Tokens Tracked',
       value: formatNumber(aggregatedUsage.total),
       description: sessionsWithUsageCount > 0
-        ? `${formatNumber(averageTokensPerTrackedSession)} avg • ${sessionsWithUsageCount} sessions`
+        ? `${formatNumber(averageTokensPerTrackedSession)} avg • ${sessionsWithUsageCount} chats`
         : 'Usage updates once you start chatting.',
       icon: 'stack' as const,
     },
@@ -765,7 +787,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
       label: 'Agents in Play',
       value: formatNumber(uniqueAgents.length),
       description: uniqueAgents.length > 0
-        ? `${prettifyLabel(uniqueAgents[0][0])} leads with ${uniqueAgents[0][1]} sessions`
+        ? `${agentIdToName[uniqueAgents[0][0]] || prettifyLabel(uniqueAgents[0][0])} leads with ${uniqueAgents[0][1]} chats`
         : 'Select an agent to tailor your workspace.',
       icon: 'team' as const,
     },
@@ -779,6 +801,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
     sessionsWithUsageCount,
     averageTokensPerTrackedSession,
     uniqueAgents,
+    agentIdToName,
   ]);
 
   const getStatusMeta = useCallback((session: (typeof sessions)[number]) => {
@@ -908,13 +931,13 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                   </h1>
                   <p className={cn('text-sm', isLight ? 'text-gray-600' : 'text-gray-400')}>
                     {openSessionsCount > 0
-                      ? `You have ${openSessionsCount} open session${openSessionsCount === 1 ? '' : 's'} and ${formatNumber(aggregatedUsage.total)} tokens tracked over the last 7 days.`
-                      : 'Create a session to start collaborating with your agents and models.'}
+                      ? `You have ${openSessionsCount} open chat${openSessionsCount === 1 ? '' : 's'} and ${formatNumber(aggregatedUsage.total)} tokens tracked over the last 7 days.`
+                      : 'Create a chat to start collaborating with your agents and models.'}
                   </p>
                   <div className="flex flex-wrap gap-2 text-[11px]">
                     <span className={cn('inline-flex items-center gap-1 rounded-md px-2 py-1', isLight ? 'bg-gray-100 text-gray-600' : 'bg-gray-800/40 text-gray-300')}>
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                      Active session: {currentSession?.title || 'None selected'}
+                      Active chat: {currentSession?.title || 'None selected'}
                     </span>
                     <span className={cn('inline-flex items-center gap-1 rounded-md px-2 py-1', isLight ? 'bg-gray-100 text-gray-500' : 'bg-gray-800/40 text-gray-400')}>
                       <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -939,7 +962,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                     <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                       <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
-                    GO TO SESSIONS
+                    GO TO CHATS
                   </button>
                   <button
                     onClick={handleCreateSession}
@@ -962,7 +985,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         <path d="M12 4v16m8-8H4" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     )}
-                    NEW SESSION
+                    NEW CHAT
             </button>
             {onGoAdmin && (
               <button
@@ -1014,7 +1037,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
                         : 'text-gray-400 hover:bg-gray-800 hover:text-[#bcc1c7]',
                     )}>
-                    {tab}
+                    {tab === 'sessions' ? 'chats' : tab}
               </button>
                 ))}
               </div>
@@ -1072,13 +1095,13 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                     {/* Header Row */}
                     <div className="flex items-center justify-between px-4 py-2">
                       <h3 className={cn('text-sm font-semibold', mainTextColor)}>
-                        Recent Sessions
+                        Recent Chats
                       </h3>
                       <div className="flex items-center gap-2">
                         <button
                           onClick={handleSyncSessions}
                           disabled={syncingSessions || !canAccessSessions}
-                          title="Sync sessions from backend (restore after reinstall)"
+                          title="Sync chats from backend (restore after reinstall)"
                           className={cn(
                             'inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide transition-colors',
                             !canAccessSessions
@@ -1108,7 +1131,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                             isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-300 hover:text-blue-200'
                           )}
                         >
-                          View all sessions
+                          View all chats
                           <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                             <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
@@ -1161,7 +1184,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         <div className="flex items-center gap-3">
                         <span className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                           {sortedSessions.length === 0
-                            ? 'No sessions'
+                            ? 'No chats'
                             : `${((sessionsPage - 1) * SESSIONS_PER_PAGE) + 1}-${Math.min(
                                 sessionsPage * SESSIONS_PER_PAGE,
                                 sortedSessions.length,
@@ -1220,7 +1243,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                     </div>
                   ) : sortedSessions.length === 0 ? (
                     <div className={cn('px-4 py-8 text-center text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                      No sessions yet. Create a new session to see activity appear here.
+                      No chats yet. Create a new chat to see activity appear here.
                     </div>
                   ) : (
                     <div
@@ -1256,7 +1279,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                                 </div>
                               </th>
                             )}
-                            <th className={cn('px-3 py-2 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Session</th>
+                            <th className={cn('px-3 py-2 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Chat</th>
                             <th className={cn('px-3 py-2 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Agent</th>
                             <th className={cn('px-3 py-2 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Model</th>
                             <th className={cn('px-3 py-2 text-right text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Request</th>
@@ -1347,7 +1370,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                                         isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300'
                                       )}
                                     >
-                                        {session.title || 'Untitled session'}
+                                        {session.title || 'Untitled chat'}
                                       </button>
                                           {!bulkSelectMode && (
                                             <button
@@ -1364,7 +1387,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                                                     ? 'text-gray-400 hover:bg-blue-50 hover:text-blue-600'
                                                     : 'text-gray-500 hover:bg-blue-900/20 hover:text-blue-400',
                                               )}
-                                              title="Rename session">
+                                              title="Rename chat">
                                               <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                                               </svg>
@@ -1380,7 +1403,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                                   </div>
                                 </td>
                                 <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
-                                      {prettifyLabel(session.selectedAgent)}
+                                      {agentIdToName[session.selectedAgent] || prettifyLabel(session.selectedAgent)}
                                 </td>
                                 <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-700' : 'text-gray-300')}>
                                       {prettifyLabel(session.selectedModel)}
@@ -1409,7 +1432,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleDeleteSession(session.id, session.title || 'Untitled session');
+                                      handleDeleteSession(session.id, session.title || 'Untitled chat');
                                     }}
                                     className={cn(
                                       'rounded p-1 transition-colors',
@@ -1417,7 +1440,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                                         ? 'text-gray-400 hover:text-red-600'
                                         : 'text-gray-500 hover:text-red-400',
                                     )}
-                                    title="Delete session">
+                                    title="Delete chat">
                                     <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                                       <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                     </svg>
@@ -1541,7 +1564,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                       </div>
                       <div className={cn('rounded-lg border px-3 py-2', isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700')}>
                         <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                          Sessions Tracked
+                          Chats Tracked
                         </div>
                         <div className={cn('mt-1 text-lg font-semibold', mainTextColor)}>
                           {formatNumber(sessionsWithUsageCount)}
@@ -1731,11 +1754,11 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
         isOpen={bulkDeleteDialogOpen}
         onClose={() => setBulkDeleteDialogOpen(false)}
         onConfirm={confirmBulkDelete}
-        title="Delete Selected Sessions"
+        title="Delete Selected Chats"
         message={
           <span>
-            Permanently delete <strong>{selectedSessions.size}</strong> {selectedSessions.size === 1 ? 'session' : 'sessions'}?<br/><br/>
-            This will remove the selected sessions and their messages from storage and cannot be undone.
+            Permanently delete <strong>{selectedSessions.size}</strong> {selectedSessions.size === 1 ? 'chat' : 'chats'}?<br/><br/>
+            This will remove the selected chats and their messages from storage and cannot be undone.
           </span>
         }
         confirmText="Delete"
@@ -1753,7 +1776,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
           setSessionToDelete(null);
         }}
         onConfirm={confirmIndividualDelete}
-        title="Delete Session"
+        title="Delete Chat"
         message={
           <div className="flex items-start gap-3">
             <div className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full', isLight ? 'bg-red-100' : 'bg-red-900/30')}>
@@ -1763,15 +1786,15 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
             </div>
             <div className="flex-1">
               <p className={cn('text-sm font-medium', mainTextColor)}>
-                Permanently delete "{sessionToDelete?.title || 'Untitled session'}"?
+                Permanently delete "{sessionToDelete?.title || 'Untitled chat'}"?
               </p>
               <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                This session and all its messages will be permanently deleted and cannot be recovered.
+                This chat and all its messages will be permanently deleted and cannot be recovered.
               </p>
             </div>
           </div>
         }
-        confirmText="Delete Session"
+        confirmText="Delete Chat"
         variant="danger"
         isLight={isLight}
         isLoading={deleting}

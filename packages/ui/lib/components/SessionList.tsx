@@ -99,7 +99,7 @@ export const SessionList = ({ className, isLight = true, viewMode = 'sidepanel' 
             )}
           >
             <span>
-              Past Sessions
+              Past Chats
             </span>
             <svg
               className={cn(
@@ -233,7 +233,7 @@ export const SessionList = ({ className, isLight = true, viewMode = 'sidepanel' 
                     isLight ? 'text-gray-900' : 'text-gray-100'
                   )}
                 >
-                  Delete Session
+                  Delete Chat
                 </h2>
                 <button
                   onClick={() => {
@@ -291,7 +291,7 @@ export const SessionList = ({ className, isLight = true, viewMode = 'sidepanel' 
                         isLight ? 'text-gray-900' : 'text-gray-100'
                       )}
                     >
-                      Permanently delete session?
+                      Permanently delete chat?
                     </p>
                     <p
                       className={cn(

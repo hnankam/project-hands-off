@@ -5,7 +5,7 @@
  * Manages authentication, routing, theming, and top-level state.
  * 
  * Features:
- * - Multi-page navigation (Home, Sessions, Admin)
+ * - Multi-page navigation (Home, Chats, Admin)
  * - Authentication flow with login and invitation handling
  * - URL-based routing with hash navigation
  * - Theme management (light/dark/system)
@@ -288,9 +288,9 @@ const SidePanel = () => {
   
   return (
     <div className={cn('flex h-screen max-h-screen min-h-0 flex-col overflow-hidden relative', isLight ? 'bg-white' : 'bg-[#151C24]')}>
-      {/* Page Content - Sessions page stays mounted to preserve session cache */}
+      {/* Page Content - Chats page stays mounted to preserve session cache */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
-        {/* Sessions Page - Always mounted once visited to preserve LRU session cache */}
+        {/* Chats Page - Always mounted once visited to preserve LRU session cache */}
         <div 
           key="sessions" 
           className={cn(

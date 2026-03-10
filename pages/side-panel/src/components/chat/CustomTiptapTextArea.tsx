@@ -415,6 +415,18 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
                   };
                 },
               },
+              folderPath: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-folder-path'),
+                renderHTML: attributes => {
+                  if (!attributes.folderPath) {
+                    return {};
+                  }
+                  return {
+                    'data-folder-path': attributes.folderPath,
+                  };
+                },
+              },
             };
           },
           addNodeView() {

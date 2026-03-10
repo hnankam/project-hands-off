@@ -28,7 +28,8 @@ import { ContextSelector } from '../selectors/ContextSelector';
 import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
 import { useAuth } from '../../context/AuthContext';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator, cn } from '@extension/ui';
-import { COPIOLITKIT_CONFIG, API_CONFIG} from '../../constants';
+import { COPIOLITKIT_CONFIG, API_CONFIG } from '../../constants';
+import { getConnectionIcon } from '../icons/ConnectionIcons';
 import { ensureFirebase, ensureFirebaseAuth } from '../../utils/firebaseStorage';
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { useCopilotChat, type Message } from '../../hooks/copilotkit';
@@ -480,64 +481,15 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
     });
   };
   
-  // Render service logo for connections (matching ConnectionsPanel)
-  const renderServiceLogo = (service: string, size = 'w-4 h-4') => {
-    switch (service) {
-      case 'gmail':
-        return (
-          <svg className={size} viewBox="0 0 24 24" fill="none">
-            <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L12 9.545l8.073-6.052C21.69 2.28 24 3.434 24 5.457z" fill="#EA4335"/>
-          </svg>
-        );
-      case 'outlook':
-        return (
-          <svg className={size} viewBox="0 0 24 24" fill="none">
-            <rect x="3" y="4" width="9" height="9" rx="1" fill="#0078D4"/>
-            <path d="M7.5 6C6.1 6 5 7.1 5 8.5C5 9.9 6.1 11 7.5 11C8.9 11 10 9.9 10 8.5C10 7.1 8.9 6 7.5 6ZM7.5 9.5C7 9.5 6.5 9 6.5 8.5C6.5 8 7 7.5 7.5 7.5C8 7.5 8.5 8 8.5 8.5C8.5 9 8 9.5 7.5 9.5Z" fill="white"/>
-            <path d="M13 6V11L21 15V10L13 6Z" fill="#0078D4"/>
-          </svg>
-        );
-      case 'slack':
-        return (
-          <svg className={size} viewBox="0 0 24 24" fill="none">
-            <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52z" fill="#E01E5A"/>
-            <path d="M8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834z" fill="#36C5F0"/>
-            <path d="M18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834z" fill="#2EB67D"/>
-            <path d="M15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52z" fill="#ECB22E"/>
-          </svg>
-        );
-      case 'google-drive':
-        return (
-          <svg className={size} viewBox="0 0 24 24" fill="none">
-            <path d="M8 3L12 9.5L16 3H8Z" fill="#0066DA"/>
-            <path d="M16 3L20 9.5L16 16L12 9.5L16 3Z" fill="#FFC107"/>
-            <path d="M8 3L4 9.5L8 16L12 9.5L8 3Z" fill="#0F9D58"/>
-            <path d="M12 16L8 16L12 21L16 16L12 16Z" fill="#4285F4"/>
-          </svg>
-        );
-      case 'onedrive':
-        return (
-          <svg className={size} viewBox="0 0 24 24" fill="none">
-            <path d="M5.9 19.5C2.6 19.5 0 16.9 0 13.75C0 10.65 2.5 8.1 5.65 8C7.0 5.9 9.3 4.5 12 4.5C15.5 4.5 18.4 6.8 19.2 10C22.0 10 24 12.1 24 14.75C24 17.3 21.8 19.5 19.4 19.5H5.9Z" fill="#0364B8"/>
-          </svg>
-        );
-      case 'dropbox':
-        return (
-          <svg className={size} viewBox="0 0 24 24" fill="none">
-            <path d="M6 2L12 6L18 2L12 6L6 2Z" fill="#0061FF"/>
-            <path d="M12 6L6 10L12 14L18 10L12 6Z" fill="#0061FF"/>
-          </svg>
-        );
-      default:
-        return (
-          <svg className={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="2" y1="12" x2="22" y2="12" />
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-          </svg>
-        );
-    }
-  };
+  // Render service logo for connections (uses shared ConnectionIcons)
+  const renderServiceLogo = (service: string) =>
+    getConnectionIcon(service, { size: 16 }) ?? (
+      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="2" y1="12" x2="22" y2="12" />
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+      </svg>
+    );
   
   // Get connection display name
   const getConnectionDisplayName = (service: string) => {

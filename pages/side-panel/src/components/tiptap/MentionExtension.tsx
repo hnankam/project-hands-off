@@ -13,13 +13,15 @@ export interface MentionSuggestion {
   id: string;
   label: string;
   avatar?: string;
-  type?: 'user' | 'agent' | 'file' | 'variable' | 'page' | 'plan' | 'graph' | 'note' | 'credential' | 'workspace_file';
+  type?: 'user' | 'agent' | 'file' | 'variable' | 'page' | 'plan' | 'graph' | 'note' | 'credential' | 'workspace_file' | 'workspace_folder';
   pageURL?: string; // For page mentions
   planId?: string; // For plan mentions
   graphId?: string; // For graph mentions
   noteId?: string; // For note mentions
   credentialId?: string; // For credential mentions
   workspaceFileId?: string; // For workspace file mentions
+  folderPath?: string; // For workspace folder mentions
+  folder?: string; // For workspace file folder grouping
 }
 
 interface MentionListProps {
@@ -46,6 +48,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
   const [searchQuery, setSearchQuery] = useState(props.query || '');
   const [pages, setPages] = useState<Array<{ pageURL: string; pageTitle: string }>>([]);
   const [workspaceFiles, setWorkspaceFiles] = useState<any[]>([]);
+  const [workspaceFolders, setWorkspaceFolders] = useState<Array<{ name: string; path: string; file_count: number }>>([]);
   const [loading, setLoading] = useState(true);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -89,6 +92,26 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
       }
     };
     fetchWorkspaceFiles();
+  }, []);
+
+  // Fetch workspace folders on mount
+  useEffect(() => {
+    const fetchWorkspaceFolders = async () => {
+      try {
+        const baseURL = API_CONFIG.BASE_URL;
+        const response = await fetch(`${baseURL}/api/workspace/folders`, {
+          credentials: 'include',
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const folders = data.folders || [];
+          setWorkspaceFolders(folders);
+        }
+      } catch (error) {
+        console.error('[MentionList] Error fetching workspace folders:', error);
+      }
+    };
+    fetchWorkspaceFolders();
   }, []);
 
   // Convert pages to mention suggestions, filtered by selectedPageURLs if provided
@@ -186,13 +209,30 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
       label: file.file_name,
       type: 'workspace_file' as const,
       workspaceFileId: file.id,
+      folder: file.folder ?? 'root',
     }));
   }, [props.selectedFiles, workspaceFiles]);
 
-  // Combine all suggestions: pages, plans, graphs, notes, credentials, and workspace files
+  // Convert workspace folders to mention suggestions (includes Root)
+  const folderSuggestions: MentionSuggestion[] = useMemo(() => {
+    const items: MentionSuggestion[] = [
+      { id: 'workspace_folder-root', label: 'Root', type: 'workspace_folder' as const, folderPath: 'root' },
+    ];
+    for (const f of workspaceFolders) {
+      items.push({
+        id: `workspace_folder-${f.path}`,
+        label: f.name,
+        type: 'workspace_folder' as const,
+        folderPath: f.path,
+      });
+    }
+    return items;
+  }, [workspaceFolders]);
+
+  // Combine all suggestions: pages, plans, graphs, notes, credentials, files, folders
   const allSuggestions = useMemo(() => {
-    return [...pageSuggestions, ...planSuggestions, ...graphSuggestions, ...noteSuggestions, ...credentialSuggestions, ...fileSuggestions];
-  }, [pageSuggestions, planSuggestions, graphSuggestions, noteSuggestions, credentialSuggestions, fileSuggestions]);
+    return [...pageSuggestions, ...planSuggestions, ...graphSuggestions, ...noteSuggestions, ...credentialSuggestions, ...folderSuggestions, ...fileSuggestions];
+  }, [pageSuggestions, planSuggestions, graphSuggestions, noteSuggestions, credentialSuggestions, folderSuggestions, fileSuggestions]);
 
   // Filter suggestions based on search query
   const filteredSuggestions = useMemo(() => {
@@ -200,11 +240,98 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
       return allSuggestions.slice(0, 20); // Show first 20 when no search
     }
     const query = searchQuery.toLowerCase().trim();
-    return allSuggestions.filter(item => 
+    return allSuggestions.filter(item =>
       item.label.toLowerCase().includes(query) ||
-      (item.pageURL && item.pageURL.toLowerCase().includes(query))
+      (item.pageURL && item.pageURL.toLowerCase().includes(query)) ||
+      (item.folderPath && item.folderPath.toLowerCase().includes(query))
     ).slice(0, 20);
   }, [allSuggestions, searchQuery]);
+
+  // Group suggestions by type; for workspace_file, sub-group by folder
+  type AccordionGroup = { key: string; label: string; items: MentionSuggestion[] };
+  const groupedSuggestions = useMemo((): AccordionGroup[] => {
+    const typeLabels: Record<string, string> = {
+      page: 'Pages',
+      plan: 'Plans',
+      graph: 'Graphs',
+      note: 'Notes',
+      credential: 'Credentials',
+      workspace_folder: 'Folders',
+      workspace_file: 'Files',
+    };
+    const groups: AccordionGroup[] = [];
+    const byType = new Map<string, MentionSuggestion[]>();
+    for (const item of filteredSuggestions) {
+      const t = item.type || 'page';
+      if (!byType.has(t)) byType.set(t, []);
+      byType.get(t)!.push(item);
+    }
+    for (const [type, items] of byType) {
+      if (type === 'workspace_file') {
+        const byFolder = new Map<string, MentionSuggestion[]>();
+        for (const item of items) {
+          const folder = item.folder ?? 'root';
+          if (!byFolder.has(folder)) byFolder.set(folder, []);
+          byFolder.get(folder)!.push(item);
+        }
+        const sortedFolders = Array.from(byFolder.keys()).sort((a, b) =>
+          (a === 'root' ? '' : a).localeCompare(b === 'root' ? '' : b)
+        );
+        for (const folder of sortedFolders) {
+          const folderItems = byFolder.get(folder)!;
+          groups.push({
+            key: `files-${folder}`,
+            label: folder === 'root' ? 'Files / Root' : `Files / ${folder}`,
+            items: folderItems,
+          });
+        }
+      } else {
+        if (items.length > 0) {
+          groups.push({
+            key: type,
+            label: typeLabels[type] ?? type,
+            items,
+          });
+        }
+      }
+    }
+    return groups;
+  }, [filteredSuggestions]);
+
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    if (groupedSuggestions.length === 0) return;
+    setExpandedGroups(prev => {
+      const keys = new Set(groupedSuggestions.map(g => g.key));
+      if (keys.size === 0) return prev;
+      const next = new Set(prev);
+      let changed = false;
+      for (const k of keys) {
+        if (!next.has(k)) {
+          next.add(k);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [groupedSuggestions]);
+  const toggleGroup = (key: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // Visible items only (from expanded groups) - for keyboard navigation
+  const visibleItems = useMemo(() => {
+    const out: MentionSuggestion[] = [];
+    for (const g of groupedSuggestions) {
+      if (expandedGroups.has(g.key)) out.push(...g.items);
+    }
+    return out;
+  }, [groupedSuggestions, expandedGroups]);
 
   // Update search query when props.query changes (from editor typing)
   useEffect(() => {
@@ -218,31 +345,32 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
   // Users can still manually click the search input if they want to type there
 
   const selectItem = (index: number) => {
-    const item = filteredSuggestions[index];
-    if (item) {
-      console.log('[MentionExtension] Selecting item:', {
-        id: item.id,
-        label: item.label,
-        pageURL: item.pageURL,
-        type: item.type,
-      });
-      props.command(item);
-    }
+    const item = visibleItems[index];
+    if (!item) return;
+    console.log('[MentionExtension] Selecting item:', {
+      id: item.id,
+      label: item.label,
+      pageURL: item.pageURL,
+      type: item.type,
+    });
+    props.command(item);
   };
 
   const upHandler = () => {
-    setSelectedIndex((selectedIndex + filteredSuggestions.length - 1) % filteredSuggestions.length);
+    setSelectedIndex(i => (i + visibleItems.length - 1) % Math.max(1, visibleItems.length));
   };
 
   const downHandler = () => {
-    setSelectedIndex((selectedIndex + 1) % filteredSuggestions.length);
+    setSelectedIndex(i => (i + 1) % Math.max(1, visibleItems.length));
   };
 
   const enterHandler = () => {
     selectItem(selectedIndex);
   };
 
-  useEffect(() => setSelectedIndex(0), [filteredSuggestions]);
+  useEffect(() => {
+    setSelectedIndex(i => Math.min(i, Math.max(0, visibleItems.length - 1)));
+  }, [visibleItems]);
 
   useImperativeHandle(ref, () => ({
     onKeyDown: ({ event }: { event: KeyboardEvent }) => {
@@ -335,6 +463,12 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
             <polyline points="13 2 13 9 20 9" />
           </svg>
         );
+      case 'workspace_folder':
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+        );
       default: // user
         return (
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -419,67 +553,99 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
         style={{ marginTop: '0px' }}
       />
 
-      {/* Results List */}
+      {/* Results List - Accordion groups */}
       <div style={{ maxHeight: '300px', overflowY: 'auto', paddingTop: '4px' }}>
         {loading ? (
           <div className={cn('flex items-center justify-center py-6 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
             Loading pages...
           </div>
-        ) : filteredSuggestions.length > 0 ? (
-          filteredSuggestions.map((item, index) => (
-            <button
-              key={item.id}
-              className={`mention-item ${index === selectedIndex ? 'selected' : ''}`}
-              onClick={() => selectItem(index)}
-              type="button"
-            >
-              <span className="mention-icon">{getTypeIcon(item.type)}</span>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', flex: 1, minWidth: 0 }}>
-                <span className="mention-label" style={{ width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {item.label}
-                </span>
-                {item.pageURL && (
-                  <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                    {getDomain(item.pageURL)}
+        ) : groupedSuggestions.length > 0 ? (
+          (() => {
+            let visibleIndex = 0;
+            return groupedSuggestions.map((group) => {
+              const isExpanded = expandedGroups.has(group.key);
+              return (
+              <div key={group.key} className="mention-accordion-group">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.key)}
+                  className={cn(
+                    'mention-accordion-header w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium transition-colors',
+                    isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-700/50'
+                  )}
+                >
+                  <svg
+                    className={cn('w-3 h-3 flex-shrink-0 transition-transform', isExpanded && 'rotate-90')}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2.5}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span>{group.label}</span>
+                  <span className={cn('ml-auto text-[10px]', isLight ? 'text-gray-400' : 'text-gray-500')}>
+                    {group.items.length}
                   </span>
-                )}
-                {item.type === 'plan' && item.planId && props.agentState?.plans?.[item.planId] && (
-                  <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                    {props.agentState.plans[item.planId].steps?.length || 0} steps
-                  </span>
-                )}
-                {item.type === 'graph' && item.graphId && props.agentState?.graphs?.[item.graphId] && (
-                  <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                    Status: {props.agentState.graphs[item.graphId].status || 'unknown'}
-                  </span>
-                )}
-                {item.type === 'note' && item.noteId && props.selectedNotes && (
-                  <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                    {props.selectedNotes.find(n => n.id === item.noteId)?.folder || 'Workspace note'}
-                  </span>
-                )}
-                {item.type === 'credential' && item.credentialId && props.selectedCredentials && (
-                  <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                    {props.selectedCredentials.find(c => c.id === item.credentialId)?.type || 'Credential'}
-                  </span>
-                )}
-                {item.type === 'workspace_file' && item.workspaceFileId && (
-                  <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                    {(() => {
-                      // Try to find file in props.selectedFiles first, then workspaceFiles
-                      const file = (props.selectedFiles && props.selectedFiles.find(f => f.id === item.workspaceFileId)) ||
-                                   workspaceFiles.find(f => f.id === item.workspaceFileId);
-                      if (!file) return 'Workspace file';
-                      // Show folder path, or "Root" if no folder
-                      const folder = file.folder;
-                      if (!folder || folder === 'root' || folder === '') return 'Root';
-                      return folder;
-                    })()}
-                  </span>
-                )}
+                </button>
+                {isExpanded &&
+                  group.items.map((item) => {
+                    const idx = visibleIndex++;
+                    return (
+                      <button
+                        key={item.id}
+                        className={`mention-item ${idx === selectedIndex ? 'selected' : ''}`}
+                        onClick={() => selectItem(idx)}
+                        type="button"
+                      >
+                        <span className="mention-icon">{getTypeIcon(item.type)}</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', flex: 1, minWidth: 0 }}>
+                          <span className="mention-label" style={{ width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {item.label}
+                          </span>
+                          {item.pageURL && (
+                            <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              {getDomain(item.pageURL)}
+                            </span>
+                          )}
+                          {item.type === 'plan' && item.planId && props.agentState?.plans?.[item.planId] && (
+                            <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              {props.agentState.plans[item.planId].steps?.length || 0} steps
+                            </span>
+                          )}
+                          {item.type === 'graph' && item.graphId && props.agentState?.graphs?.[item.graphId] && (
+                            <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              Status: {props.agentState.graphs[item.graphId].status || 'unknown'}
+                            </span>
+                          )}
+                          {item.type === 'note' && item.noteId && props.selectedNotes && (
+                            <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              {props.selectedNotes.find(n => n.id === item.noteId)?.folder || 'Workspace note'}
+                            </span>
+                          )}
+                          {item.type === 'credential' && item.credentialId && props.selectedCredentials && (
+                            <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              {props.selectedCredentials.find(c => c.id === item.credentialId)?.type || 'Credential'}
+                            </span>
+                          )}
+                          {item.type === 'workspace_file' && item.workspaceFileId && (
+                            <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              {item.folder && item.folder !== 'root' ? item.folder : 'Root'}
+                            </span>
+                          )}
+                          {item.type === 'workspace_folder' && item.folderPath && item.folderPath !== 'root' && (
+                            <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              {item.folderPath}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
               </div>
-            </button>
-          ))
+            );
+          });
+          })()
         ) : (
           <div className={cn('mention-empty text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
             {searchQuery.trim() 

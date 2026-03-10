@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node server.js",
     "start:prod": "NODE_ENV=production node server.js",
-    "dev": "NODE_ENV=development node --watch server.js"
+    "dev": "NODE_ENV=development node --watch server.js",
+    "inspect-thread": "node scripts/inspect-thread-runs.js"
   },
   "dependencies": {
     "@anthropic-ai/foundry-sdk": "^0.2.3",

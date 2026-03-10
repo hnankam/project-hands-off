@@ -260,11 +260,11 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   }, [clearMessagesConfirmOpen, clearSessionsConfirmOpen, resetSessionConfirmOpen, setClearMessagesConfirmOpen, setClearSessionsConfirmOpen, setResetSessionConfirmOpen]);
 
   // Get current session title for modals
-  const currentSessionTitle = sessions.find(s => s.id === currentSessionId)?.title || 'this session';
+  const currentSessionTitle = sessions.find(s => s.id === currentSessionId)?.title || 'this chat';
 
   return (
     <>
-      {/* Sessions Page Header */}
+      {/* Chats Page Header */}
       <SessionHeader
         isLight={isLight}
         viewMode={viewMode}
@@ -309,9 +309,9 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
               fallback={
                 <div className="flex flex-1 items-center justify-center p-4">
                   <div className="text-center">
-                    <p className="mb-2 text-red-600 dark:text-red-400">Session Error</p>
+                    <p className="mb-2 text-red-600 dark:text-red-400">Chat Error</p>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      This session encountered an error. Try switching to another session.
+                      This chat encountered an error. Try switching to another chat.
                     </p>
                   </div>
                 </div>
@@ -343,15 +343,15 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         ) : hasSessions ? (
           <div className="flex flex-1 items-center justify-center overflow-hidden">
             <div className="text-center text-gray-500 dark:text-gray-400">
-              <p>Select a session to begin</p>
-              <p className="text-sm">Choose a session from the list below to continue chatting</p>
+              <p>Select a chat to begin</p>
+              <p className="text-sm">Choose a chat from the list below to continue</p>
             </div>
           </div>
         ) : (
           <div className="flex flex-1 items-center justify-center overflow-hidden">
             <div className="text-center text-gray-500 dark:text-gray-400">
-              <p>No active session</p>
-              <p className="text-sm">Create a new session to start chatting</p>
+              <p>No active chat</p>
+              <p className="text-sm">Create a new chat to start</p>
             </div>
           </div>
           )
@@ -399,8 +399,8 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         isOpen={clearMessagesConfirmOpen}
         onClose={() => setClearMessagesConfirmOpen(false)}
         onConfirm={handleConfirmClearMessages}
-        title="Clear All Session Messages"
-        message={`Permanently delete session messages?<br/><br/>All <strong>${messageCount}</strong> ${messageCount === 1 ? 'message' : 'messages'} from "<strong>${currentSessionTitle}</strong>" will be permanently deleted from storage and cannot be recovered.`}
+        title="Clear All Chat Messages"
+        message={`Permanently delete chat messages?<br/><br/>All <strong>${messageCount}</strong> ${messageCount === 1 ? 'message' : 'messages'} from "<strong>${currentSessionTitle}</strong>" will be permanently deleted from storage and cannot be recovered.`}
         confirmLabel="Delete All"
         cancelLabel="Cancel"
         variant="danger"
@@ -413,22 +413,22 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         isOpen={resetSessionConfirmOpen}
         onClose={() => setResetSessionConfirmOpen(false)}
         onConfirm={handleConfirmResetSession}
-        title="Reset Session"
-        message={`Clear all messages in this session?<br/><br/>All <strong>${messageCount}</strong> ${messageCount === 1 ? 'message' : 'messages'} in "<strong>${currentSessionTitle}</strong>" will be cleared from the chat. This action cannot be undone, but messages may still exist in storage.`}
-        confirmLabel="Reset Session"
+        title="Reset Chat"
+        message={`Clear all messages in this chat?<br/><br/>All <strong>${messageCount}</strong> ${messageCount === 1 ? 'message' : 'messages'} in "<strong>${currentSessionTitle}</strong>" will be cleared from the chat. This action cannot be undone, but messages may still exist in storage.`}
+        confirmLabel="Reset Chat"
         cancelLabel="Cancel"
         variant="warning"
         isLight={isLight}
         mainTextColor={mainTextColor}
       />
 
-      {/* Clear Sessions Confirmation Modal */}
+      {/* Clear Chats Confirmation Modal */}
       <ConfirmationModal
         isOpen={clearSessionsConfirmOpen}
         onClose={() => setClearSessionsConfirmOpen(false)}
         onConfirm={handleConfirmClearSessions}
-        title="Clear All Sessions"
-        message="Permanently delete all sessions?<br/><br/>This will remove all sessions and their messages from storage and cannot be undone."
+        title="Clear All Chats"
+        message="Permanently delete all chats?<br/><br/>This will remove all chats and their messages from storage and cannot be undone."
         confirmLabel="Delete All"
         cancelLabel="Cancel"
         variant="danger"

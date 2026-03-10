@@ -1,7 +1,7 @@
 /**
  * SessionHeader Component
  * 
- * Renders the header for the SessionsPage with session tabs, actions dropdown, and navigation.
+ * Renders the header for the Chats page with chat tabs, actions dropdown, and navigation.
  */
 
 import * as React from 'react';
@@ -87,7 +87,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
               ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
               : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
           )}
-          title="Add new session">
+          title="Add new chat">
           <svg
             width="12"
             height="12"
@@ -131,19 +131,19 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
             disabled={!currentSessionId || sessionMessageCount === 0}
             isLight={isLight}
           >
-            Reset Session
+            Reset Chat
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onSaveMessages} isLight={isLight}>Save Messages</DropdownMenuItem>
           <DropdownMenuItem onClick={onLoadMessages} isLight={isLight}>Load Messages</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onCloseSession} shortcut="⌘ C" isLight={isLight}>
-            Close Session
+            Close Chat
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onClearAllMessages} isLight={isLight}>Clear All Session Messages</DropdownMenuItem>
-          <DropdownMenuItem onClick={onClearAllSessions} isLight={isLight}>Clear All Sessions</DropdownMenuItem>
+          <DropdownMenuItem onClick={onClearAllMessages} isLight={isLight}>Clear All Chat Messages</DropdownMenuItem>
+          <DropdownMenuItem onClick={onClearAllSessions} isLight={isLight}>Clear All Chats</DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownAccordion label="Export Session" isLight={isLight}>
+          <DropdownAccordion label="Export Chat" isLight={isLight}>
             <DropdownMenuItem
               onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onExportAsMarkdown(); }}
@@ -205,7 +205,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
             </div>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem isLight={isLight}>Session Settings</DropdownMenuItem>
+          <DropdownMenuItem isLight={isLight}>Chat Settings</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onOpenAbout} isLight={isLight}>About Project Hands-Off</DropdownMenuItem>
           <DropdownMenuSeparator />

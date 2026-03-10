@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { cn } from '@extension/ui';
 import { API_CONFIG } from '../../constants';
+import { getConnectionIcon } from '../icons/ConnectionIcons';
 
 interface WorkspaceConnection {
   id: string;
@@ -181,89 +182,8 @@ export const ConnectionsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
     );
   }
 
-  const renderServiceLogo = (service: string) => {
-    switch (service) {
-      case 'gmail':
-        return (
-          <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none">
-            <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L12 9.545l8.073-6.052C21.69 2.28 24 3.434 24 5.457z" fill="#EA4335"/>
-          </svg>
-        );
-      case 'outlook':
-        return (
-          <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="3" y="4" width="9" height="9" rx="1" fill="#0078D4"/>
-            <path d="M7.5 6C6.1 6 5 7.1 5 8.5C5 9.9 6.1 11 7.5 11C8.9 11 10 9.9 10 8.5C10 7.1 8.9 6 7.5 6ZM7.5 9.5C7 9.5 6.5 9 6.5 8.5C6.5 8 7 7.5 7.5 7.5C8 7.5 8.5 8 8.5 8.5C8.5 9 8 9.5 7.5 9.5Z" fill="white"/>
-            <path d="M13 6V11L21 15V10L13 6Z" fill="#0078D4"/>
-            <path d="M13 11V16L21 20V15L13 11Z" fill="#28A8EA"/>
-            <path d="M13 6L21 10L17 12L13 10V6Z" fill="#0078D4" opacity="0.8"/>
-            <path d="M13 16L21 20L17 22L13 20V16Z" fill="#0078D4" opacity="0.6"/>
-          </svg>
-        );
-      case 'slack':
-        return (
-          <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none">
-            <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313z" fill="#E01E5A"/>
-            <path d="M8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312z" fill="#36C5F0"/>
-            <path d="M18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312z" fill="#2EB67D"/>
-            <path d="M15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" fill="#ECB22E"/>
-          </svg>
-        );
-      case 'google-drive':
-        return (
-          <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M8 3L12 9.5L16 3H8Z" fill="#0066DA"/>
-            <path d="M16 3L20 9.5L16 16L12 9.5L16 3Z" fill="#FFC107"/>
-            <path d="M8 3L4 9.5L8 16L12 9.5L8 3Z" fill="#0F9D58"/>
-            <path d="M4 9.5L8 16L12 16L8 9.5L4 9.5Z" fill="#0F9D58" opacity="0.7"/>
-            <path d="M20 9.5L16 16L12 16L16 9.5L20 9.5Z" fill="#F4B400" opacity="0.7"/>
-            <path d="M4 16L8 16L12 21L4 16Z" fill="#DB4437"/>
-            <path d="M20 16L16 16L12 21L20 16Z" fill="#0F9D58" opacity="0.5"/>
-            <path d="M12 16L8 16L12 21L16 16L12 16Z" fill="#4285F4"/>
-          </svg>
-        );
-      case 'onedrive':
-        return (
-          <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="onedrive-paint0" x1="3" y1="18" x2="20" y2="17" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#2086B8"/>
-                <stop offset="1" stopColor="#46D3F6"/>
-              </linearGradient>
-              <linearGradient id="onedrive-paint1" x1="18" y1="14.5" x2="22.5" y2="11" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#1694DB"/>
-                <stop offset="1" stopColor="#62C3FE"/>
-              </linearGradient>
-              <linearGradient id="onedrive-paint2" x1="6.5" y1="5.5" x2="17.5" y2="12" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#0D3D78"/>
-                <stop offset="1" stopColor="#063B83"/>
-              </linearGradient>
-              <linearGradient id="onedrive-paint3" x1="0" y1="15" x2="11" y2="11" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#16589B"/>
-                <stop offset="1" stopColor="#1464B7"/>
-              </linearGradient>
-            </defs>
-            <path d="M5.9 19.5C2.6 19.5 0 16.9 0 13.75C0 10.65 2.5 8.1 5.65 8C7.0 5.9 9.3 4.5 12 4.5C15.5 4.5 18.4 6.8 19.2 10C22.0 10 24 12.1 24 14.75C24 17.3 21.8 19.5 19.4 19.5H5.9Z" fill="#0364B8"/>
-            <path d="M5.9 19.5C4.0 19.5 2.4 18.7 1.3 17.4L13.5 12.2L23 17.5C22.2 18.6 20.9 19.5 19.5 19.5C17.3 19.5 9.0 19.5 5.9 19.5Z" fill="url(#onedrive-paint0)"/>
-            <path d="M19.2 10L13.5 12.2L23 17.5C23.6 16.8 24 15.8 24 14.75C24 12.1 22.0 10 19.4 10C19.3 10 19.2 10 19.2 10Z" fill="url(#onedrive-paint1)"/>
-            <path d="M5.3 8L13.5 12.2L19.2 10C18.4 6.8 15.5 4.5 12 4.5C9.3 4.5 7.0 5.9 5.65 8C5.5 8 5.4 8 5.3 8Z" fill="url(#onedrive-paint2)"/>
-            <path d="M1.3 17.4L13.5 12.2L5.3 8C2.3 8.3 0 10.6 0 13.75C0 15.1 0.5 16.4 1.3 17.4Z" fill="url(#onedrive-paint3)"/>
-          </svg>
-        );
-      case 'dropbox':
-        return (
-          <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M6 2L12 6L18 2L12 6L6 2Z" fill="#0061FF"/>
-            <path d="M12 6L6 10L12 14L18 10L12 6Z" fill="#0061FF"/>
-            <path d="M6 10L0 14L6 18L12 14L6 10Z" fill="#0061FF"/>
-            <path d="M18 10L24 14L18 18L12 14L18 10Z" fill="#0061FF"/>
-            <path d="M12 18L6 22L12 18L18 22L12 18Z" fill="#0061FF"/>
-          </svg>
-        );
-      default:
-        return null;
-    }
-  };
+  const renderServiceLogo = (service: string) =>
+    getConnectionIcon(service, { className: 'w-8 h-8' });
 
   const getConnection = (service: string) => {
     return connections.find(conn => conn.service_name === service && conn.status === 'active');

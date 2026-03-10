@@ -17,6 +17,7 @@ from config.models import get_models_for_context
 from config.prompts import get_agent_prompts_for_context, get_agent_info_for_context
 from config.tools import get_tools_for_context, get_mcp_servers_for_context
 from config import logger
+from config.environment import TOOL_TIMEOUT
 from core.models import AgentState, UnifiedDeps, StepStatus
 from utils.context import context_tuple
 
@@ -481,6 +482,7 @@ async def create_agent(
         tools=backend_tools,  # Backend callable functions
         toolsets=mcp_toolsets,  # MCP toolsets loaded from static config (TESTING)
         retries=10,
+        tool_timeout=TOOL_TIMEOUT,
     )
 
     # Add dynamic instructions to inject AGUI context at runtime

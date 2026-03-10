@@ -558,8 +558,8 @@ export class PostgresAgentRunner extends AgentRunner {
     const currentEvents = []; // UNTRUNCATED events for database persistence (source of truth)
     
     try {
-      // Step 1: Get parent run ID (for nested agent calls)
-      const parentRunId = await this.getLatestRunId(threadId);
+      // Step 1: Get parent run ID (latest root = user-initiated run; sub-agents become siblings under it)
+      const parentRunId = await this.getLatestRootRunId(threadId);
       
       // Step 2: Acquire lock and validate (pass agent for auth context)
       await this.acquireRunLock(threadId, runId, agent, parentRunId);
@@ -1684,8 +1684,8 @@ export class PostgresAgentRunner extends AgentRunner {
    * @returns {Array} Array of events with truncated content
    * @private
    */
-  truncateToolCallResults(events, explicitRunId = null) {
-    const TRUNCATE_THRESHOLD = 1200;
+  truncateToolCallResults(events, explicitRunId = null, maxLength = 1200) {
+    const TRUNCATE_THRESHOLD = maxLength;
     let truncatedResultCount = 0;
     let truncatedArgsCount = 0;
     
@@ -1792,6 +1792,24 @@ export class PostgresAgentRunner extends AgentRunner {
     const result = await this.pool.query(
       `SELECT run_id FROM agent_runs 
        WHERE thread_id = $1 AND status IN ('completed', 'stopped')
+       ORDER BY created_at DESC 
+       LIMIT 1`,
+      [threadId]
+    );
+    return result.rows[0]?.run_id || null;
+  }
+
+  /**
+   * Get the latest root run ID (user-initiated run; parent_run_id IS NULL).
+   * Sub-agent runs use this as parent so they become siblings under the root,
+   * enabling load-more to load all children first, then the root (user message) last.
+   * @private
+   */
+  async getLatestRootRunId(threadId) {
+    const result = await this.pool.query(
+      `SELECT run_id FROM agent_runs 
+       WHERE thread_id = $1 AND status IN ('completed', 'stopped')
+         AND parent_run_id IS NULL
        ORDER BY created_at DESC 
        LIMIT 1`,
       [threadId]
@@ -2086,6 +2104,401 @@ export class PostgresAgentRunner extends AgentRunner {
   }
   
   /**
+   * Get historic runs OLDER than beforeRunId or beforeMessageId (for pagination / "load more")
+   * Returns runs in chronological order (oldest first) for event replay.
+   *
+   * @param {string} threadId - Thread identifier
+   * @param {string} beforeRunId - Run ID of the oldest run we have; returns runs older than this
+   * @param {string} [beforeMessageId] - Alternative: message ID; look up its run's created_at
+   * @param {number} [limit=20] - Max number of root runs to return (each root includes its full subtree)
+   * @param {boolean} [excludeRoot=false] - When true, only return child runs (exclude root); used to load root last
+   * @returns {Promise<Array<{runId: string, parentRunId: string|null, events: Array, createdAt: number}>>}
+   */
+  async getHistoricRunsBefore(threadId, beforeRunId, beforeMessageId = null, limit = 20, excludeRoot = false) {
+    const statusList = this.transformErrors
+      ? "('completed', 'stopped', 'error')"
+      : "('completed', 'stopped')";
+
+    let beforeCreatedAt;
+    if (beforeMessageId) {
+      let msgResult = await this.pool.query(
+        `SELECT ar.created_at FROM agent_runs ar
+         INNER JOIN agent_messages am ON am.run_id = ar.run_id
+         WHERE am.message_id = $1 AND ar.thread_id = $2`,
+        [beforeMessageId, threadId]
+      );
+      if (msgResult.rows.length === 0) {
+        // Fallback: search RUN_STARTED events for runs containing this message.
+        // Use jsonb_array_elements for reliable id matching (avoids @> format issues).
+        // ORDER BY created_at ASC to get the OLDEST run containing the message - that's our
+        // cutoff; we want runs with created_at < that run.
+        const runsWithMessage = await this.pool.query(
+          `SELECT ar.created_at FROM agent_runs ar
+           CROSS JOIN LATERAL jsonb_array_elements(ar.events) AS evt
+           CROSS JOIN LATERAL jsonb_array_elements(
+             CASE WHEN jsonb_typeof(evt->'input'->'messages') = 'array'
+               THEN evt->'input'->'messages' ELSE '[]'::jsonb END
+           ) AS msg
+           WHERE ar.thread_id = $1 AND ar.status IN ${statusList}
+           AND evt->>'type' = 'RUN_STARTED'
+           AND msg->>'id' = $2
+           ORDER BY ar.created_at ASC
+           LIMIT 1`,
+          [threadId, beforeMessageId]
+        );
+        if (runsWithMessage.rows.length === 0) {
+          // Fallback: search any event with messageId (TEXT_MESSAGE_START, TOOL_CALL_RESULT, etc.)
+          const runsWithMessageId = await this.pool.query(
+            `SELECT ar.created_at FROM agent_runs ar
+             CROSS JOIN LATERAL jsonb_array_elements(ar.events) AS evt
+             WHERE ar.thread_id = $1 AND ar.status IN ${statusList}
+             AND evt->>'messageId' = $2
+             ORDER BY ar.created_at ASC
+             LIMIT 1`,
+            [threadId, beforeMessageId]
+          );
+          if (runsWithMessageId.rows.length === 0) {
+            if (this.debug) {
+              console.log(`[PostgresAgentRunner] getHistoricRunsBefore: message ${beforeMessageId} not found for thread ${threadId}`);
+            }
+            return [];
+          }
+          beforeCreatedAt = runsWithMessageId.rows[0].created_at;
+        } else {
+          beforeCreatedAt = runsWithMessage.rows[0].created_at;
+        }
+      } else {
+        beforeCreatedAt = msgResult.rows[0].created_at;
+      }
+    } else {
+      const beforeResult = await this.pool.query(
+        'SELECT created_at FROM agent_runs WHERE run_id = $1 AND thread_id = $2',
+        [beforeRunId, threadId]
+      );
+      if (beforeResult.rows.length === 0) {
+        if (this.debug) {
+          console.log(`[PostgresAgentRunner] getHistoricRunsBefore: run ${beforeRunId} not found for thread ${threadId}`);
+        }
+        return [];
+      }
+      beforeCreatedAt = beforeResult.rows[0].created_at;
+    }
+
+    // Cap total runs to avoid 6MB payloads (1 root can have hundreds of children). Use afterRunId to fill gap.
+    const maxTotalRuns = limit === 1 ? 20 : 50;
+
+    let result;
+    if (excludeRoot) {
+      // Load only child runs (no root) - used to load root last so Review appears at top only when fully loaded
+      const excludeQuery = `
+        SELECT run_id, parent_run_id, events, created_at, completed_at
+        FROM (
+          SELECT run_id, parent_run_id, events, created_at, completed_at
+          FROM agent_runs
+          WHERE thread_id = $1
+            AND status IN ${statusList}
+            AND parent_run_id IS NOT NULL
+            AND created_at < $2
+          ORDER BY created_at DESC
+          LIMIT $3
+        ) sub
+        ORDER BY created_at ASC
+      `;
+      result = await this.pool.query(excludeQuery, [threadId, beforeCreatedAt, maxTotalRuns]);
+    } else {
+      const query = `
+        WITH RECURSIVE older_roots AS (
+          SELECT run_id
+          FROM agent_runs
+          WHERE thread_id = $1
+            AND status IN ${statusList}
+            AND parent_run_id IS NULL
+            AND created_at < $2
+          ORDER BY created_at DESC
+          LIMIT $3
+        ),
+        run_chain AS (
+          SELECT run_id, parent_run_id, events, created_at, completed_at
+          FROM agent_runs
+          WHERE thread_id = $1
+            AND status IN ${statusList}
+            AND run_id IN (SELECT run_id FROM older_roots)
+
+          UNION ALL
+
+          SELECT ar.run_id, ar.parent_run_id, ar.events, ar.created_at, ar.completed_at
+          FROM agent_runs ar
+          INNER JOIN run_chain rc ON ar.parent_run_id = rc.run_id
+          WHERE ar.thread_id = $1
+            AND ar.status IN ${statusList}
+        ),
+        limited AS (
+          SELECT run_id, parent_run_id, events, created_at, completed_at
+          FROM (SELECT *, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn FROM run_chain) sub
+          WHERE rn <= $4
+        )
+        SELECT * FROM limited ORDER BY created_at ASC
+      `;
+      result = await this.pool.query(query, [threadId, beforeCreatedAt, limit, maxTotalRuns]);
+    }
+
+    const rootCount = result.rows.filter(r => !r.parent_run_id).length;
+    console.log(`[getHistoricRunsBefore] limit=${limit} excludeRoot=${excludeRoot} rootsReturned=${rootCount} totalRuns=${result.rows.length} threadId=${threadId?.slice(0, 8)}`);
+
+    return result.rows.map(row => ({
+      runId: row.run_id,
+      parentRunId: row.parent_run_id,
+      events: row.events,
+      createdAt: row.created_at.getTime()
+    }));
+  }
+
+  /**
+   * Get processed history events for pagination ("load more").
+   * Returns events in the same format as loadAndStreamHistory for client-side event→message conversion.
+   *
+   * @param {string} threadId - Thread identifier
+   * @param {string} beforeRunId - Run ID of the oldest run we have (or use beforeMessageId)
+   * @param {string} [beforeMessageId] - Alternative: message ID of oldest message we have
+   * @param {number} [limit=20] - Max root runs to load
+   * @returns {Promise<{events: Array, hasMore: boolean, oldestRunId: string|null}>}
+   */
+  async getHistoryEventsBefore(threadId, beforeRunId, beforeMessageId = null, limit = 20, excludeRoot = false) {
+    console.log(`[getHistoryEventsBefore] limit=${limit} excludeRoot=${excludeRoot} beforeMessageId=${beforeMessageId?.slice(0, 8)} threadId=${threadId?.slice(0, 8)}`);
+    const historicRuns = await this.getHistoricRunsBefore(threadId, beforeRunId, beforeMessageId, limit, excludeRoot);
+    if (historicRuns.length === 0) {
+      return { events: [], hasMore: false, oldestRunId: null };
+    }
+
+    const completeRuns = this.filterAndCompleteRuns(historicRuns, threadId, 'getHistoryEventsBefore', this.transformErrors);
+    const deletedMessageIds = await this.getDeletedMessageIds(threadId);
+    const toolCallIdToMessageId = this.buildToolCallToMessageIdMap(completeRuns, 'getHistoryEventsBefore');
+    const deletedToolCallIds = this.buildDeletedToolCallIds(
+      completeRuns, toolCallIdToMessageId, deletedMessageIds, 'getHistoryEventsBefore', true
+    );
+
+    // Dedupe RUN_STARTED messages: each run's input has full history; we only need to send each message once.
+    let totalMsgsBeforeDedupe = 0;
+    let totalMsgsAfterDedupe = 0;
+    const sentMessageIds = new Set();
+    const filteredEvents = completeRuns.flatMap(run => {
+      const runEvents = run.events || [];
+      const filtered = [];
+      for (const event of runEvents) {
+        if (!event.runId) event.runId = run.runId;
+        if (!event.threadId) event.threadId = threadId;
+        if (event.type === EventType.RUN_STARTED && event.input?.messages) {
+          const kept = event.input.messages.filter(msg => !deletedMessageIds.has(msg.id));
+          totalMsgsBeforeDedupe += kept.length;
+          const newMsgs = kept.filter(msg => msg.id && !sentMessageIds.has(msg.id));
+          totalMsgsAfterDedupe += newMsgs.length;
+          for (const m of newMsgs) if (m.id) sentMessageIds.add(m.id);
+          event.input.messages = newMsgs; // Only send messages we haven't sent yet
+          filtered.push(event);
+          continue;
+        }
+        if ('messageId' in event && typeof event.messageId === 'string' && deletedMessageIds.has(event.messageId)) continue;
+        if ('toolCallId' in event && typeof event.toolCallId === 'string') {
+          if (deletedToolCallIds.has(event.toolCallId)) continue;
+          if (!toolCallIdToMessageId.get(event.toolCallId)) continue;
+        }
+        filtered.push(event);
+      }
+      return filtered;
+    });
+
+    console.log(`[getHistoryEventsBefore] RUN_STARTED msgs: beforeDedupe=${totalMsgsBeforeDedupe} afterDedupe=${totalMsgsAfterDedupe} uniqueIds=${sentMessageIds.size}`);
+
+    const compactedEvents = aggressiveCompactEvents(filteredEvents, { debug: this.debug });
+    const truncatedEvents = this.truncateToolCallResults(compactedEvents);
+
+    const activeTextMessages = new Map();
+    const eventsWithSyntheticEnds = [];
+    for (const event of truncatedEvents) {
+      if (event.type === 'TEXT_MESSAGE_START' || event.type === EventType.TEXT_MESSAGE_START) {
+        if (event.messageId) activeTextMessages.set(event.messageId, { messageId: event.messageId, runId: event.runId, threadId: event.threadId || threadId });
+      }
+      if (event.type === 'TEXT_MESSAGE_END' || event.type === EventType.TEXT_MESSAGE_END) {
+        if (event.messageId) activeTextMessages.delete(event.messageId);
+      }
+      if (event.type === 'RUN_FINISHED' || event.type === EventType.RUN_FINISHED) {
+        const activeForRun = Array.from(activeTextMessages.values()).filter(m => !m.runId || m.runId === event.runId);
+        const syntheticTs = event.timestamp ? event.timestamp - 1 : Date.now();
+        for (const m of activeForRun) {
+          eventsWithSyntheticEnds.push({ type: EventType.TEXT_MESSAGE_END, messageId: m.messageId, runId: m.runId, threadId: m.threadId, timestamp: syntheticTs });
+          activeTextMessages.delete(m.messageId);
+        }
+      }
+      eventsWithSyntheticEnds.push(event);
+    }
+    for (const m of activeTextMessages.values()) {
+      eventsWithSyntheticEnds.push({ type: EventType.TEXT_MESSAGE_END, messageId: m.messageId, runId: m.runId, threadId: m.threadId, timestamp: Date.now() });
+    }
+
+    const oldestRunId = historicRuns.length > 0 ? historicRuns[0].runId : null;
+    const newestRunId = historicRuns.length > 0 ? historicRuns[historicRuns.length - 1].runId : null;
+    const rootCount = historicRuns.filter((r) => !r.parentRunId).length;
+    const capped = historicRuns.length >= (limit === 1 ? 20 : 50);
+    // When excludeRoot: always hasMore if we got runs (client will fetch next batch; when we return 0, client retries with excludeRoot=false for root)
+    const hasMore = excludeRoot ? historicRuns.length > 0 : (rootCount >= limit || capped);
+    const afterRunIdValue = excludeRoot ? null : (capped ? newestRunId : null);
+    const runs = historicRuns.map((r) => ({ runId: r.runId, parentRunId: r.parentRunId }));
+
+    const eventTypeCounts = {};
+    for (const e of eventsWithSyntheticEnds) {
+      const t = e.type || 'UNKNOWN';
+      eventTypeCounts[t] = (eventTypeCounts[t] || 0) + 1;
+    }
+    const payloadJson = JSON.stringify({ events: eventsWithSyntheticEnds, hasMore, oldestRunId, afterRunId: afterRunIdValue });
+    const payloadBytes = Buffer.byteLength(payloadJson, 'utf8');
+    console.log(`[getHistoryEventsBefore] events=${eventsWithSyntheticEnds.length} payloadBytes=${payloadBytes} (${(payloadBytes / 1024).toFixed(1)} KB) hasMore=${hasMore} capped=${capped} afterRunId=${afterRunIdValue ?? 'null'} types=${JSON.stringify(eventTypeCounts)}`);
+
+    return { events: eventsWithSyntheticEnds, hasMore, oldestRunId, afterRunId: afterRunIdValue, runs };
+  }
+
+  /**
+   * Get historic runs NEWER than afterRunId (for filling gap when capped).
+   * Returns runs in chronological order (oldest first).
+   * @param {string} [beforeMessageId] - Optional: cap results to runs older than this message's run (avoids overlap with initial)
+   */
+  async getHistoricRunsAfter(threadId, afterRunId, limit = 20, beforeMessageId = null) {
+    const statusList = this.transformErrors ? "('completed', 'stopped', 'error')" : "('completed', 'stopped')";
+    const afterResult = await this.pool.query(
+      'SELECT created_at FROM agent_runs WHERE run_id = $1 AND thread_id = $2',
+      [afterRunId, threadId]
+    );
+    if (afterResult.rows.length === 0) return [];
+    const afterCreatedAt = afterResult.rows[0].created_at;
+
+    let beforeCreatedAt = null;
+    if (beforeMessageId) {
+      const beforeResult = await this.pool.query(
+        `SELECT ar.created_at FROM agent_runs ar
+         INNER JOIN agent_messages am ON am.run_id = ar.run_id
+         WHERE am.message_id = $1 AND ar.thread_id = $2`,
+        [beforeMessageId, threadId]
+      );
+      if (beforeResult.rows.length > 0) {
+        beforeCreatedAt = beforeResult.rows[0].created_at;
+      } else {
+        const runsWithMsg = await this.pool.query(
+          `SELECT ar.created_at FROM agent_runs ar
+           CROSS JOIN LATERAL jsonb_array_elements(ar.events) AS evt
+           CROSS JOIN LATERAL jsonb_array_elements(
+             CASE WHEN jsonb_typeof(evt->'input'->'messages') = 'array'
+               THEN evt->'input'->'messages' ELSE '[]'::jsonb END
+           ) AS msg
+           WHERE ar.thread_id = $1 AND ar.status IN ${statusList}
+             AND evt->>'type' = 'RUN_STARTED' AND msg->>'id' = $2
+           ORDER BY ar.created_at ASC LIMIT 1`,
+          [threadId, beforeMessageId]
+        );
+        if (runsWithMsg.rows.length > 0) beforeCreatedAt = runsWithMsg.rows[0].created_at;
+      }
+    }
+
+    // Next N runs in chronological order; optionally cap at beforeMessageId to avoid overlap
+    const query = beforeCreatedAt
+      ? `
+        SELECT run_id, parent_run_id, events, created_at, completed_at
+        FROM agent_runs
+        WHERE thread_id = $1
+          AND status IN ${statusList}
+          AND created_at > $2
+          AND created_at < $3
+        ORDER BY created_at ASC
+        LIMIT $4
+      `
+      : `
+        SELECT run_id, parent_run_id, events, created_at, completed_at
+        FROM agent_runs
+        WHERE thread_id = $1
+          AND status IN ${statusList}
+          AND created_at > $2
+        ORDER BY created_at ASC
+        LIMIT $3
+      `;
+    const params = beforeCreatedAt ? [threadId, afterCreatedAt, beforeCreatedAt, limit] : [threadId, afterCreatedAt, limit];
+    const result = await this.pool.query(query, params);
+    return result.rows.map(row => ({
+      runId: row.run_id,
+      parentRunId: row.parent_run_id,
+      events: row.events,
+      createdAt: row.created_at.getTime()
+    }));
+  }
+
+  /**
+   * Get history events AFTER afterRunId (for filling gap when capped).
+   * @param {string} [beforeMessageId] - Optional: cap to runs older than this message's run
+   */
+  async getHistoryEventsAfter(threadId, afterRunId, limit = 50, beforeMessageId = null) {
+    const historicRuns = await this.getHistoricRunsAfter(threadId, afterRunId, limit, beforeMessageId);
+    if (historicRuns.length === 0) {
+      return { events: [], hasMore: false, afterRunId: null };
+    }
+    const completeRuns = this.filterAndCompleteRuns(historicRuns, threadId, 'getHistoryEventsAfter', this.transformErrors);
+    const deletedMessageIds = await this.getDeletedMessageIds(threadId);
+    const toolCallIdToMessageId = this.buildToolCallToMessageIdMap(completeRuns, 'getHistoryEventsAfter');
+    const deletedToolCallIds = this.buildDeletedToolCallIds(
+      completeRuns, toolCallIdToMessageId, deletedMessageIds, 'getHistoryEventsAfter', true
+    );
+    const sentMessageIds = new Set();
+    const filteredEvents = completeRuns.flatMap(run => {
+      const runEvents = run.events || [];
+      const filtered = [];
+      for (const event of runEvents) {
+        if (!event.runId) event.runId = run.runId;
+        if (!event.threadId) event.threadId = threadId;
+        if (event.type === EventType.RUN_STARTED && event.input?.messages) {
+          const kept = event.input.messages.filter(msg => !deletedMessageIds.has(msg.id));
+          const newMsgs = kept.filter(msg => msg.id && !sentMessageIds.has(msg.id));
+          for (const m of newMsgs) if (m.id) sentMessageIds.add(m.id);
+          event.input.messages = newMsgs;
+          filtered.push(event);
+          continue;
+        }
+        if ('messageId' in event && typeof event.messageId === 'string' && deletedMessageIds.has(event.messageId)) continue;
+        if ('toolCallId' in event && typeof event.toolCallId === 'string') {
+          if (deletedToolCallIds.has(event.toolCallId)) continue;
+          if (!toolCallIdToMessageId.get(event.toolCallId)) continue;
+        }
+        filtered.push(event);
+      }
+      return filtered;
+    });
+    const compactedEvents = aggressiveCompactEvents(filteredEvents, { debug: this.debug });
+    const truncatedEvents = this.truncateToolCallResults(compactedEvents);
+    const activeTextMessages = new Map();
+    const eventsWithSyntheticEnds = [];
+    for (const event of truncatedEvents) {
+      if (event.type === 'TEXT_MESSAGE_START' || event.type === EventType.TEXT_MESSAGE_START) {
+        if (event.messageId) activeTextMessages.set(event.messageId, { messageId: event.messageId, runId: event.runId, threadId: event.threadId || threadId });
+      }
+      if (event.type === 'TEXT_MESSAGE_END' || event.type === EventType.TEXT_MESSAGE_END) {
+        if (event.messageId) activeTextMessages.delete(event.messageId);
+      }
+      if (event.type === 'RUN_FINISHED' || event.type === EventType.RUN_FINISHED) {
+        const activeForRun = Array.from(activeTextMessages.values()).filter(m => !m.runId || m.runId === event.runId);
+        const syntheticTs = event.timestamp ? event.timestamp - 1 : Date.now();
+        for (const m of activeForRun) {
+          eventsWithSyntheticEnds.push({ type: EventType.TEXT_MESSAGE_END, messageId: m.messageId, runId: m.runId, threadId: m.threadId, timestamp: syntheticTs });
+          activeTextMessages.delete(m.messageId);
+        }
+      }
+      eventsWithSyntheticEnds.push(event);
+    }
+    for (const m of activeTextMessages.values()) {
+      eventsWithSyntheticEnds.push({ type: EventType.TEXT_MESSAGE_END, messageId: m.messageId, runId: m.runId, threadId: m.threadId, timestamp: Date.now() });
+    }
+    const newestRunId = historicRuns[historicRuns.length - 1].runId;
+    const capped = historicRuns.length >= limit;
+    const hasMore = capped;
+    const runs = historicRuns.map((r) => ({ runId: r.runId, parentRunId: r.parentRunId }));
+    return { events: eventsWithSyntheticEnds, hasMore, afterRunId: capped ? newestRunId : null, runs };
+  }
+
+  /**
    * Check if stop was requested
    * @private
    */
@@ -2096,7 +2509,7 @@ export class PostgresAgentRunner extends AgentRunner {
     );
     return result.rows[0]?.stop_requested || false;
   }
-  
+
   /**
    * Process runs with RUN_ERROR events and ensure all runs have RUN_FINISHED
    * 
