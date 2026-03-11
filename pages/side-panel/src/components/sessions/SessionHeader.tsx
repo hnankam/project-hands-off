@@ -30,14 +30,13 @@ interface SessionHeaderProps {
   onNewSession: () => void;
   onCloseSession: () => void;
   onResetSession: () => void;
-  onSaveMessages: () => void;
-  onLoadMessages: () => void;
   onClearAllMessages: () => void;
   onClearAllSessions: () => void;
   onExportAsMarkdown: () => void;
   onExportAsHTML: () => void;
   onCopySessionId: (e: React.MouseEvent) => void;
   onOpenAbout: () => void;
+  onOpenSettings?: () => void;
   onClose: () => void;
   onGoHome: () => void;
   onGoAdmin?: (tab?: 'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'agents') => void;
@@ -55,14 +54,13 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
   onNewSession,
   onCloseSession,
   onResetSession,
-  onSaveMessages,
-  onLoadMessages,
   onClearAllMessages,
   onClearAllSessions,
   onExportAsMarkdown,
   onExportAsHTML,
   onCopySessionId,
   onOpenAbout,
+  onOpenSettings,
   onClose,
   onGoHome,
   onGoAdmin,
@@ -134,9 +132,6 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
             Reset Chat
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={onSaveMessages} isLight={isLight}>Save Messages</DropdownMenuItem>
-          <DropdownMenuItem onClick={onLoadMessages} isLight={isLight}>Load Messages</DropdownMenuItem>
-          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onCloseSession} shortcut="⌘ C" isLight={isLight}>
             Close Chat
           </DropdownMenuItem>
@@ -205,7 +200,13 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
             </div>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem isLight={isLight}>Chat Settings</DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={onOpenSettings}
+            disabled={!currentSessionId || !onOpenSettings}
+            isLight={isLight}
+          >
+            Chat Settings
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onOpenAbout} isLight={isLight}>About Project Hands-Off</DropdownMenuItem>
           <DropdownMenuSeparator />

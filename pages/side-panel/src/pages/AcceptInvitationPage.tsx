@@ -168,8 +168,9 @@ export default function AcceptInvitationPage({ invitationId, onSuccess }: Accept
       }
 
       if (isMounted.current) {
-      setInvitation(data.invitation);
-      setEmail(data.invitation.email);
+        setInvitation(data.invitation);
+        setEmail(data.invitation.email);
+        setIsSignUp(true); // Default to sign up when invitation is loaded (new user flow)
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
@@ -182,8 +183,8 @@ export default function AcceptInvitationPage({ invitationId, onSuccess }: Accept
       }
     } finally {
       if (isMounted.current) {
-      setInvitationLoading(false);
-    }
+        setInvitationLoading(false);
+      }
     }
   }, [invitationId]);
 

@@ -82,8 +82,6 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const {
     handleNewSession,
     handleCloseSession,
-    handleSaveMessages,
-    handleLoadMessages,
     handleCopySessionId,
     handleExportAsMarkdown,
     handleExportAsHTML,
@@ -102,11 +100,20 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     messageCount,
     copiedSessionId,
     handleRegisterResetFunction,
-    handleRegisterSaveFunction,
-    handleRegisterLoadFunction,
     handleRegisterGetMessagesFunction,
     hasAttemptedInitialSessionRef,
   } = useSessionActions(currentSessionId, sessions, sessionMessageCounts);
+
+  // Ref to open settings modal from header (registered by active ChatSessionContainer)
+  const openSettingsRef = useRef<Record<string, () => void>>({});
+  const handleRegisterOpenSettings = useCallback((sessionId: string, openFn: () => void) => {
+    openSettingsRef.current[sessionId] = openFn;
+  }, []);
+  const handleOpenSettings = useCallback(() => {
+    if (currentSessionId && openSettingsRef.current[currentSessionId]) {
+      openSettingsRef.current[currentSessionId]();
+    }
+  }, [currentSessionId]);
   
   const lastStorageUserIdRef = useRef<string | null>(null);
   const hasSeenSessionsForCurrentUserRef = useRef<boolean>(false);
@@ -277,14 +284,13 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         onNewSession={handleNewSession}
         onCloseSession={handleCloseSession}
         onResetSession={handleResetSession}
-        onSaveMessages={handleSaveMessages}
-        onLoadMessages={handleLoadMessages}
         onClearAllMessages={handleClearAllMessages}
         onClearAllSessions={openClearSessionsConfirm}
         onExportAsMarkdown={handleExportAsMarkdown}
         onExportAsHTML={handleExportAsHTML}
         onCopySessionId={handleCopySessionId}
         onOpenAbout={onOpenAbout}
+        onOpenSettings={handleOpenSettings}
         onClose={onClose}
         onGoHome={onGoHome}
         onGoAdmin={onGoAdmin}
@@ -325,8 +331,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   contextMenuMessage={isActive ? contextMenuMessage : null}
                   onMessagesCountChange={handleMessagesCountChange}
                   onRegisterResetFunction={handleRegisterResetFunction}
-                  onRegisterSaveFunction={handleRegisterSaveFunction}
-                  onRegisterLoadFunction={handleRegisterLoadFunction}
+                  onRegisterOpenSettings={handleRegisterOpenSettings}
                   onRegisterGetMessagesFunction={handleRegisterGetMessagesFunction}
                   onReady={handleSessionReady}
                   onMessagesLoadingChange={handleMessagesLoadingChange}

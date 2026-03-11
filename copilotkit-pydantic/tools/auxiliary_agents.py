@@ -282,11 +282,17 @@ async def get_auxiliary_agent(
             return None
         
         # Create the agent
+        # Image generation agents must use BinaryImage output_type so pydantic-ai accepts
+        # image responses instead of sending "Please return text" validation feedback
+        from pydantic_ai.messages import BinaryImage
+
+        output_type_override = BinaryImage if aux_type == "image_generation" else None
         agent = await get_agent(
             agent_type=aux_agent_type,
             model_name=model_name,
             organization_id=organization_id,
             team_id=team_id,
+            output_type=output_type_override,
         )
         
         # Cache the agent

@@ -345,8 +345,7 @@ interface ChatSessionContainerProps {
   contextMenuMessage?: string | null;
   onMessagesCountChange?: (sessionId: string, count: number) => void;
   onRegisterResetFunction?: (sessionId: string, resetFn: () => void) => void;
-  onRegisterSaveFunction?: (sessionId: string, saveFn: () => void) => void;
-  onRegisterLoadFunction?: (sessionId: string, loadFn: () => void) => void;
+  onRegisterOpenSettings?: (sessionId: string, openFn: () => void) => void;
   onRegisterGetMessagesFunction?: (sessionId: string, fn: () => any[]) => void;
   onReady?: (sessionId: string) => void;
   onMessagesLoadingChange?: (sessionId: string, isLoading: boolean) => void;
@@ -369,8 +368,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     contextMenuMessage = null,
     onMessagesCountChange,
     onRegisterResetFunction,
-    onRegisterSaveFunction,
-    onRegisterLoadFunction,
+    onRegisterOpenSettings,
     onRegisterGetMessagesFunction,
     onReady,
     onMessagesLoadingChange,
@@ -1514,7 +1512,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
     }, [onRegisterGetMessagesFunction, sessionId]);
 
-    // Note: Save/Load functions removed - CopilotKit v1.50 handles persistence automatically
+    // Register open settings function so header "Chat Settings" can open the modal
+    useEffect(() => {
+      if (onRegisterOpenSettings) {
+        const openSettings = () => setIsSettingsOpen(true);
+        onRegisterOpenSettings(sessionId, openSettings);
+      }
+    }, [onRegisterOpenSettings, sessionId]);
 
     // Callback to update message counts (user and assistant separately)
     const handleSetMessageCounts = useCallback(

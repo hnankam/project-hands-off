@@ -11,11 +11,15 @@ export type ApiConfigStorageType = ReturnType<typeof createStorage<ApiConfigStat
   resetToDefaults: () => Promise<void>;
 };
 
+/** Auto-set URLs for Adobe corp deployment. Reset restores to localhost (empty = DEFAULT in constants). */
+const INITIAL_API_URL = 'http://api.handsoff.corp.adobe.com:3001';
+const INITIAL_BACKEND_URL = 'http://api.handsoff.corp.adobe.com:8001';
+
 const storage = createStorage<ApiConfigStateType>(
   'api-config-storage-key',
   {
-    apiUrl: '',
-    backendUrl: '',
+    apiUrl: INITIAL_API_URL,
+    backendUrl: INITIAL_BACKEND_URL,
   },
   {
     storageEnum: StorageEnum.Local,

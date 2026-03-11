@@ -14,8 +14,6 @@ export interface UseSessionActionsReturn {
   // Session actions
   handleNewSession: () => void;
   handleCloseSession: () => void;
-  handleSaveMessages: () => void;
-  handleLoadMessages: () => void;
   handleCopySessionId: (e: React.MouseEvent) => Promise<void>;
   handleExportAsMarkdown: (messages?: any[]) => Promise<void>;
   handleExportAsHTML: (messages?: any[]) => Promise<void>;
@@ -46,8 +44,6 @@ export interface UseSessionActionsReturn {
   
   // Function registration handlers
   handleRegisterResetFunction: (sessionId: string, fn: () => void) => void;
-  handleRegisterSaveFunction: (sessionId: string, fn: () => void) => void;
-  handleRegisterLoadFunction: (sessionId: string, fn: () => void) => void;
   handleRegisterGetMessagesFunction: (sessionId: string, fn: () => any[]) => void;
   
   // Track initial session attempt
@@ -68,8 +64,6 @@ export function useSessionActions(
 
   // Function refs
   const resetFunctionsRef = useRef<Record<string, () => void>>({});
-  const saveFunctionsRef = useRef<Record<string, () => void>>({});
-  const loadFunctionsRef = useRef<Record<string, () => void>>({});
   const getMessagesFunctionsRef = useRef<Record<string, () => any[]>>({});
   const hasAttemptedInitialSessionRef = useRef(false);
 
@@ -81,18 +75,6 @@ export function useSessionActions(
   const handleCloseSession = useCallback(() => {
     if (currentSessionId) {
       sessionStorageDBWrapper.closeSession(currentSessionId);
-    }
-  }, [currentSessionId]);
-
-  const handleSaveMessages = useCallback(() => {
-    if (currentSessionId && saveFunctionsRef.current[currentSessionId]) {
-      saveFunctionsRef.current[currentSessionId]();
-    }
-  }, [currentSessionId]);
-
-  const handleLoadMessages = useCallback(() => {
-    if (currentSessionId && loadFunctionsRef.current[currentSessionId]) {
-      loadFunctionsRef.current[currentSessionId]();
     }
   }, [currentSessionId]);
 
@@ -239,14 +221,6 @@ export function useSessionActions(
     resetFunctionsRef.current[sessionId] = fn;
   }, []);
 
-  const handleRegisterSaveFunction = useCallback((sessionId: string, fn: () => void) => {
-    saveFunctionsRef.current[sessionId] = fn;
-  }, []);
-
-  const handleRegisterLoadFunction = useCallback((sessionId: string, fn: () => void) => {
-    loadFunctionsRef.current[sessionId] = fn;
-  }, []);
-
   const handleRegisterGetMessagesFunction = useCallback((sessionId: string, fn: () => any[]) => {
     getMessagesFunctionsRef.current[sessionId] = fn;
   }, []);
@@ -254,8 +228,6 @@ export function useSessionActions(
   return {
     handleNewSession,
     handleCloseSession,
-    handleSaveMessages,
-    handleLoadMessages,
     handleCopySessionId,
     handleExportAsMarkdown,
     handleExportAsHTML,
@@ -274,8 +246,6 @@ export function useSessionActions(
     messageCount,
     copiedSessionId,
     handleRegisterResetFunction,
-    handleRegisterSaveFunction,
-    handleRegisterLoadFunction,
     handleRegisterGetMessagesFunction,
     hasAttemptedInitialSessionRef,
   };

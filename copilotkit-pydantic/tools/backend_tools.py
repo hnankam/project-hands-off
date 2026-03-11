@@ -1171,7 +1171,7 @@ async def generate_images(
     
     try:
         # Use the auxiliary agent to generate images
-        user_message = f"Generate {num_images} image(s) based on this prompt: {prompt}"
+        user_message = f"Generate {num_images} different image(s) based on this prompt: {prompt}"
         
         logger.info("Running auxiliary agent for image generation with prompt: %s", prompt[:100])
         
@@ -1205,6 +1205,7 @@ async def generate_images(
         uploaded_urls = []
         
         # Check if response has images - images might be a method or property
+        # When output_type=BinaryImage, result.response.images contains the list
         images = None
         if hasattr(result.response, 'images'):
             images_attr = getattr(result.response, 'images')
@@ -1212,7 +1213,10 @@ async def generate_images(
                 images = images_attr()
             else:
                 images = images_attr
-        
+        # Fallback: result.output can be a single BinaryImage when output_type=BinaryImage
+        if not images and hasattr(result, 'output') and isinstance(result.output, BinaryImage):
+            images = [result.output]
+
         if not images:
             logger.warning(
                 "Auxiliary agent response has no images. "

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Tuple, TYPE_CHECKING, Any
+from typing import Dict, Optional, Tuple, TYPE_CHECKING, Any
 
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.builtin_tools import (
@@ -25,7 +25,8 @@ if TYPE_CHECKING:
     from tools.agent_tools import register_agent_tools
 
 # Agent cache for reusing agent instances scoped by organization/team
-_agent_cache: Dict[Tuple[str, str, str, str], Agent] = {}
+# Cache key: (org_token, team_token, agent_type, model_name, output_type_key)
+_agent_cache: Dict[Tuple[str, str, str, str, str], Agent] = {}
 
 
 def format_agui_context(context_items: list[dict | Any]) -> str:
@@ -364,6 +365,7 @@ async def create_agent(
     model_name: str,
     organization_id: str | None,
     team_id: str | None,
+    output_type: Optional[Any] = None,
 ) -> Agent:
     """Create an agent with the specified type, model, and context."""
 
@@ -468,22 +470,25 @@ async def create_agent(
         allowed_mcp_tools=set(allowed_mcp_keys),
     )
     
-    agent = Agent(
-        model,
-        instructions=instructions,
-        deps_type=UnifiedDeps,
-        model_settings=model_settings,
-        history_processors=[
+    agent_kwargs: Dict[str, Any] = {
+        "model": model,
+        "instructions": instructions,
+        "deps_type": UnifiedDeps,
+        "model_settings": model_settings,
+        "history_processors": [
             set_run_context_for_token_counter,
             context_manager,
             keep_recent_messages,
         ],
-        builtin_tools=builtin_tool_instances,
-        tools=backend_tools,  # Backend callable functions
-        toolsets=mcp_toolsets,  # MCP toolsets loaded from static config (TESTING)
-        retries=10,
-        tool_timeout=TOOL_TIMEOUT,
-    )
+        "builtin_tools": builtin_tool_instances,
+        "tools": backend_tools,  # Backend callable functions
+        "toolsets": mcp_toolsets,  # MCP toolsets loaded from static config (TESTING)
+        "retries": 10,
+        "tool_timeout": TOOL_TIMEOUT,
+    }
+    if output_type is not None:
+        agent_kwargs["output_type"] = output_type
+    agent = Agent(**agent_kwargs)
 
     # Add dynamic instructions to inject AGUI context at runtime
     @agent.instructions
@@ -600,19 +605,35 @@ async def create_agent(
     return agent
 
 
+def _output_type_cache_key(output_type: Optional[Any]) -> str:
+    """Cache key for output_type; used to distinguish agents with different output types."""
+    if output_type is None:
+        return ""
+    return getattr(output_type, "__name__", str(type(output_type).__name__))
+
+
 async def get_agent(
     agent_type: str,
     model_name: str,
     organization_id: str | None,
     team_id: str | None,
+    output_type: Optional[Any] = None,
 ) -> Agent:
-    """Get or create an agent with caching for the specified context."""
+    """Get or create an agent with caching for the specified context.
+
+    Args:
+        output_type: Optional override for agent output type (e.g. BinaryImage for image generation).
+            When set, the agent expects that output type instead of default str.
+    """
 
     org_token, team_token = context_tuple(organization_id, team_id)
-    cache_key = (org_token, team_token, agent_type, model_name)
+    output_key = _output_type_cache_key(output_type)
+    cache_key = (org_token, team_token, agent_type, model_name, output_key)
 
     if cache_key not in _agent_cache:
-        _agent_cache[cache_key] = await create_agent(agent_type, model_name, organization_id, team_id)
+        _agent_cache[cache_key] = await create_agent(
+            agent_type, model_name, organization_id, team_id, output_type=output_type
+        )
 
     return _agent_cache[cache_key]
 
