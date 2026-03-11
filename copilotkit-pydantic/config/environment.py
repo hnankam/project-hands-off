@@ -76,6 +76,10 @@ LOGFIRE_CAPTURE_HEADERS = os.getenv("LOGFIRE_CAPTURE_HEADERS", "true").lower() i
 # Default timeout for all tools on an agent. Tools exceeding this are treated as failed and trigger a retry.
 TOOL_TIMEOUT = int(os.getenv("TOOL_TIMEOUT", "3600"))
 
+# Fallback Model: Disable provider SDK retries for immediate fallback
+# When true, OpenAI/Anthropic clients use max_retries=0 so FallbackModel activates on first 4xx/5xx
+FALLBACK_MODEL_DISABLE_SDK_RETRIES = os.getenv("FALLBACK_MODEL_DISABLE_SDK_RETRIES", "false").lower() in {"1", "true", "yes"}
+
 # Redis configuration
 # Enable/disable Redis for distributed caching and state (default: true)
 # Falls back to in-memory if Redis unavailable (NOT suitable for multi-instance deployment)

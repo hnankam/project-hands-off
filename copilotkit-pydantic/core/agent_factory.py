@@ -372,7 +372,7 @@ async def create_agent(
     from pydantic_ai_summarization import create_context_manager_middleware, resolve_max_tokens
     from utils.message_processor import (
         count_tokens_with_model_fallback,
-        keep_recent_messages,
+        sanitize_tool_message_alignment,
         set_run_context_for_token_counter,
     )
 
@@ -397,8 +397,19 @@ async def create_agent(
     model_settings = model_entry['model_settings']
 
     # Resolve genai-prices compatible model name from model instance (provider:model format)
-    genai_model_name = getattr(model, 'model_id', None) or (
-        f"{model.system}:{model.model_name}" if hasattr(model, 'system') else None
+    # For FallbackModel, use the first model in the chain for context window resolution
+    _model_for_context = model
+    if hasattr(model, 'models') and model.models:
+        logger.info(
+            "Using FallbackModel for agent '%s' (model=%s): chain has %d models",
+            agent_type,
+            model_name,
+            len(model.models),
+        )
+        _model_for_context = model.models[0]
+    genai_model_name = getattr(_model_for_context, 'model_id', None) or (
+        f"{getattr(_model_for_context, 'system', '')}:{getattr(_model_for_context, 'model_name', '')}"
+        if hasattr(_model_for_context, 'system') else None
     )
     # 90% of genai-prices max context window for fraction-based keep
     max_context = resolve_max_tokens(genai_model_name) if genai_model_name else None
@@ -407,7 +418,7 @@ async def create_agent(
         context_max_tokens = None  # let middleware resolve from genai-prices
     else:
         # Fallback when genai-prices has no context_window: 1M for Gemini, 200k otherwise
-        model_ref = (genai_model_name or getattr(model, "model_name", "") or "").lower()
+        model_ref = (genai_model_name or getattr(_model_for_context, "model_name", "") or "").lower()
         if "gemini" in model_ref:
             context_max_tokens = 1_000_000
             max_input_tokens = 900_000  # 90% of 1M
@@ -477,8 +488,8 @@ async def create_agent(
         "model_settings": model_settings,
         "history_processors": [
             set_run_context_for_token_counter,
+            sanitize_tool_message_alignment,
             context_manager,
-            keep_recent_messages,
         ],
         "builtin_tools": builtin_tool_instances,
         "tools": backend_tools,  # Backend callable functions

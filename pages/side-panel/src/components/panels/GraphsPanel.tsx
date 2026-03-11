@@ -145,7 +145,7 @@ export const GraphsPanel: React.FC<GraphsPanelProps> = ({
             <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
           </svg>
           <h2 className={cn('text-xs', isLight ? 'text-gray-900' : 'text-[#bcc1c7]')}>
-            Session Graphs
+            Chat Graphs
           </h2>
         </div>
         <button

@@ -7,6 +7,7 @@ import { OrganizationSelector, TeamMultiSelector } from './selectors';
 import { Radio, Checkbox } from './form-controls';
 import { CodeMirrorJsonEditor } from './editors';
 import { AdminConfirmDialog } from './modals';
+import { FallbackChainSelector } from './selectors';
 import { API_CONFIG } from '../../constants';
 
 interface Organization {
@@ -62,6 +63,7 @@ interface ModelFormState {
   teamIds: string[]; // Multi-team support
   modelSettings: string;
   metadata: string;
+  fallbackChain: string[];
   enabled: boolean;
 }
 
@@ -83,6 +85,7 @@ const INITIAL_FORM: ModelFormState = {
   teamIds: [], // Multi-team support
   modelSettings: '{}',
   metadata: '{}',
+  fallbackChain: [],
   enabled: true,
 };
 
@@ -577,6 +580,10 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [testStatus, setTestStatus] = useState<{ state: 'idle' | 'loading' | 'success' | 'error'; message?: string }>({ state: 'idle' });
   const [testStatusClosing, setTestStatusClosing] = useState(false);
+  const [createFormFallbackExpanded, setCreateFormFallbackExpanded] = useState(false);
+  const [editFormFallbackExpanded, setEditFormFallbackExpanded] = useState(false);
+  const [allModelsForFallback, setAllModelsForFallback] = useState<ModelRecord[]>([]);
+  const [allModelsForFallbackLoading, setAllModelsForFallbackLoading] = useState(false);
 
   const initialLoadCompleteRef = useRef(false);
 
@@ -827,6 +834,34 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     };
   }, [selectedOrgId, teamFilterIds, teamMap, refreshModels]);
 
+  // Fetch all org models (no team filter) when fallback accordion is expanded for selection
+  useEffect(() => {
+    if (!selectedOrgId || (!createFormFallbackExpanded && !editFormFallbackExpanded)) {
+      setAllModelsForFallback([]);
+      setAllModelsForFallbackLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setAllModelsForFallbackLoading(true);
+    fetchModels(selectedOrgId, [], controller.signal)
+      .then(items => {
+        if (!cancelled && !controller.signal.aborted) {
+          setAllModelsForFallback(items);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAllModelsForFallback([]);
+      })
+      .finally(() => {
+        if (!cancelled) setAllModelsForFallbackLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [selectedOrgId, createFormFallbackExpanded, editFormFallbackExpanded, fetchModels]);
+
   useEffect(() => {
     if (teamFilterIds.length === 0) return;
     const validIds = teamFilterIds.filter(id => teamMap.has(id));
@@ -865,6 +900,23 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     
     return result;
   }, [models, teamFilterIds, teamMap, searchQuery]);
+
+  /** Filter models by scope (org or team) for fallback chain selection */
+  const filterModelsByScope = useCallback(
+    (modelList: ModelRecord[], scope: ModelScope, teamIds: string[]) => {
+      if (scope === 'organization') {
+        return modelList.filter(m => m.teams.length === 0);
+      }
+      const effectiveTeamIds = teamIds.filter(id => id && teamMap.has(id));
+      if (effectiveTeamIds.length === 0) {
+        return modelList.filter(m => m.teams.length === 0);
+      }
+      return modelList.filter(
+        m => m.teams.length === 0 || m.teams.some(t => effectiveTeamIds.includes(t.id))
+      );
+    },
+    [teamMap],
+  );
 
   const providerOptionsForForm = (scope: ModelScope, teamIds: string[]) => {
     if (scope === 'organization') {
@@ -940,6 +992,12 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     }
 
     try {
+      const baseMetadata = sanitizeJsonText(createForm.metadata, 'Metadata');
+      const mergedMetadata =
+        createForm.fallbackChain.length > 0
+          ? { ...baseMetadata, fallback_chain: createForm.fallbackChain }
+          : baseMetadata;
+
       const payload = {
         organizationId: selectedOrgId,
         teamIds: createForm.scope === 'team' ? createForm.teamIds : [],
@@ -950,7 +1008,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
         description: createForm.description.trim() || null,
         enabled: createForm.enabled,
         modelSettings: sanitizeJsonText(createForm.modelSettings, 'Model settings'),
-        metadata: sanitizeJsonText(createForm.metadata, 'Metadata'),
+        metadata: mergedMetadata,
       };
 
       const response = await fetch(`${baseURL}/api/admin/models`, {
@@ -978,6 +1036,9 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
 
   const startEditModel = (model: ModelRecord) => {
     setEditingModelId(model.id);
+    const modelMetadata = model.metadata || {};
+    const fallbackChain = Array.isArray(modelMetadata.fallback_chain) ? modelMetadata.fallback_chain : [];
+    const { fallback_chain: _, ...otherMetadata } = modelMetadata;
     setEditForm({
       modelKey: model.modelKey,
       modelName: model.modelName,
@@ -987,7 +1048,8 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
       scope: model.teams.length > 0 ? 'team' : 'organization',
       teamIds: model.teams.map(t => t.id),
       modelSettings: stringifyJson(model.modelSettingsOverride),
-      metadata: stringifyJson(model.metadata),
+      metadata: stringifyJson(otherMetadata),
+      fallbackChain,
       enabled: model.enabled,
     });
     setTestStatus({ state: 'idle' });
@@ -998,11 +1060,14 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
   const cancelEditModel = () => {
     setEditingModelId(null);
     setEditForm(null);
+    setEditFormFallbackExpanded(false);
     setTestStatus({ state: 'idle' });
   };
 
   const startCloneModel = (model: ModelRecord) => {
-    // Pre-fill the create form with cloned data
+    const modelMetadata = model.metadata || {};
+    const fallbackChain = Array.isArray(modelMetadata.fallback_chain) ? modelMetadata.fallback_chain : [];
+    const { fallback_chain: __, ...otherMetadata } = modelMetadata;
     setCreateForm({
       modelKey: `${model.modelKey}-copy`,
       modelName: model.modelName,
@@ -1012,7 +1077,8 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
       scope: model.teams.length > 0 ? 'team' : 'organization',
       teamIds: model.teams.map(t => t.id),
       modelSettings: stringifyJson(model.modelSettingsOverride),
-      metadata: stringifyJson(model.metadata),
+      metadata: stringifyJson(otherMetadata),
+      fallbackChain,
       enabled: model.enabled,
     });
     setIsCloning(true);
@@ -1055,6 +1121,12 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     }
 
     try {
+      const baseMetadata = sanitizeJsonText(editForm.metadata, 'Metadata');
+      const mergedMetadata =
+        editForm.fallbackChain.length > 0
+          ? { ...baseMetadata, fallback_chain: editForm.fallbackChain }
+          : baseMetadata;
+
       const payload = {
         organizationId: selectedOrgId,
         teamIds: editForm.scope === 'team' ? editForm.teamIds : [],
@@ -1065,7 +1137,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
         description: editForm.description.trim() || null,
         enabled: editForm.enabled,
         modelSettings: sanitizeJsonText(editForm.modelSettings, 'Model settings'),
-        metadata: sanitizeJsonText(editForm.metadata, 'Metadata'),
+        metadata: mergedMetadata,
       };
 
       const response = await fetch(`${baseURL}/api/admin/models/${modelId}`, {
@@ -1217,6 +1289,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     if (!selectedOrgId) return;
 
     try {
+      const modelMetadata = model.metadata || {};
       const payload = {
         organizationId: selectedOrgId,
         teamIds: model.teams.map(t => t.id),
@@ -1227,7 +1300,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
         description: model.description,
         enabled: !model.enabled,
         modelSettings: model.modelSettingsOverride || {},
-        metadata: model.metadata || {},
+        metadata: modelMetadata,
       };
 
       const response = await fetch(`${baseURL}/api/admin/models/${model.id}`, {
@@ -1626,6 +1699,68 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                 />
               </div>
 
+              {/* Fallback Chain - Accordion */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setCreateFormFallbackExpanded(prev => !prev)}
+                  className={cn(
+                    'flex items-center justify-between w-full text-xs font-medium mb-1 transition-colors',
+                    isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-300 hover:text-gray-100',
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span>Fallback Chain</span>
+                    <span className={cn('text-[10px] font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                      Try these models in sequence if the primary fails
+                    </span>
+                  </div>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{
+                      transition: 'transform 0.2s ease-out',
+                      transform: createFormFallbackExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                    }}
+                  >
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </button>
+                <div
+                  style={{
+                    overflow: createFormFallbackExpanded ? 'visible' : 'hidden',
+                    transition: 'max-height 0.3s ease-out, opacity 0.2s ease-out',
+                    maxHeight: createFormFallbackExpanded ? '500px' : '0',
+                    opacity: createFormFallbackExpanded ? 1 : 0,
+                  }}
+                >
+                  <div className="pt-2">
+                    <FallbackChainSelector
+                      isLight={isLight}
+                      models={filterModelsByScope(
+                        allModelsForFallback.length > 0 ? allModelsForFallback : models,
+                        createForm.scope,
+                        createForm.teamIds,
+                      ).map(m => ({
+                        modelKey: m.modelKey,
+                        displayName: m.displayName || m.modelName || m.modelKey,
+                        enabled: m.enabled,
+                      }))}
+                      selectedModelKeys={createForm.fallbackChain}
+                      onChange={keys => setCreateForm(prev => ({ ...prev, fallbackChain: keys }))}
+                      placeholder="Add fallback models (order: primary → fallbacks)"
+                      loading={allModelsForFallbackLoading}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
@@ -1918,6 +2053,69 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                           />
                         </div>
 
+                        {/* Fallback Chain - Accordion */}
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => setEditFormFallbackExpanded(prev => !prev)}
+                            className={cn(
+                              'flex items-center justify-between w-full text-xs font-medium mb-1 transition-colors',
+                              isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-300 hover:text-gray-100',
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span>Fallback Chain</span>
+                              <span className={cn('text-[10px] font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                Try these models in sequence if the primary fails
+                              </span>
+                            </div>
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              style={{
+                                transition: 'transform 0.2s ease-out',
+                                transform: editFormFallbackExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                              }}
+                            >
+                              <polyline points="9 18 15 12 9 6" />
+                            </svg>
+                          </button>
+                          <div
+                            style={{
+                              overflow: editFormFallbackExpanded ? 'visible' : 'hidden',
+                              transition: 'max-height 0.3s ease-out, opacity 0.2s ease-out',
+                              maxHeight: editFormFallbackExpanded ? '500px' : '0',
+                              opacity: editFormFallbackExpanded ? 1 : 0,
+                            }}
+                          >
+                            <div className="pt-2">
+                              <FallbackChainSelector
+                                isLight={isLight}
+                                models={filterModelsByScope(
+                                  allModelsForFallback.length > 0 ? allModelsForFallback : models,
+                                  editForm.scope,
+                                  editForm.teamIds,
+                                ).map(m => ({
+                                  modelKey: m.modelKey,
+                                  displayName: m.displayName || m.modelName || m.modelKey,
+                                  enabled: m.enabled,
+                                }))}
+                                selectedModelKeys={editForm.fallbackChain}
+                                onChange={keys => setEditForm(prev => (prev ? { ...prev, fallbackChain: keys } : prev))}
+                                excludeModelKey={model.modelKey}
+                                placeholder="Add fallback models (order: primary → fallbacks)"
+                                loading={allModelsForFallbackLoading}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
@@ -2094,6 +2292,18 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                               <span>|</span>
                               {renderProviderBadge(model)}
                               {renderScopeBadge(model)}
+                              {(model.metadata as Record<string, unknown>)?.fallback_chain &&
+                                Array.isArray((model.metadata as Record<string, unknown>).fallback_chain) &&
+                                ((model.metadata as Record<string, unknown>).fallback_chain as string[]).length > 0 && (
+                                  <span
+                                    className={cn(
+                                      'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                      isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
+                                    )}
+                                  >
+                                    Fallback: {((model.metadata as Record<string, unknown>).fallback_chain as string[]).join(' → ')}
+                                  </span>
+                                )}
                             </div>
                           </div>
 

@@ -710,9 +710,28 @@ export class SessionStorageDB {
     if (currentId === sessionId) {
       const openSessions = await this.getOpenSessions();
       if (openSessions.length > 0) {
-        await this.setActiveSession(openSessions[0].id);
+        // Switch to the "previously opened" tab (browser-like: tab to the left, or right if closing first tab)
+        const allSessions = await this.getAllSessions();
+        const closedIndex = allSessions.findIndex(s => s.id === sessionId);
+        const openIds = new Set(openSessions.map(s => s.id));
+        let sessionToActivate: SessionMetadata | null = null;
+        if (closedIndex >= 0) {
+          // Prefer tab to the left (index - 1)
+          if (closedIndex > 0 && openIds.has(allSessions[closedIndex - 1].id)) {
+            sessionToActivate = allSessions[closedIndex - 1];
+          }
+          // Else tab to the right (index + 1) when closing first tab
+          else if (closedIndex < allSessions.length - 1 && openIds.has(allSessions[closedIndex + 1].id)) {
+            sessionToActivate = allSessions[closedIndex + 1];
+          }
+        }
+        // Fallback: most recently used among remaining open sessions
+        if (!sessionToActivate) {
+          sessionToActivate = [...openSessions].sort((a, b) => b.timestamp - a.timestamp)[0];
+        }
+        await this.setActiveSession(sessionToActivate.id);
       } else {
-        // No open sessions - create a new one
+        // No open sessions - create a new one, carrying over agent/model/context from closed session
         if (!this.currentUserId) {
           log('[SessionStorageDB:closeSession] Cannot create new session: No userId set');
           return;
@@ -722,11 +741,24 @@ export class SessionStorageDB {
         const nouns = ['Task', 'Project', 'Query', 'Session', 'Work'];
         const title = `${adjectives[Math.floor(Math.random() * adjectives.length)]} ${nouns[Math.floor(Math.random() * nouns.length)]}`;
         
+        // Get agent/model/context from the session we're closing to carry over to new session
+        const closedSession = await this.getSession(sessionId);
+        const carryOver = closedSession
+          ? {
+              selectedAgent: closedSession.selectedAgent || 'general',
+              selectedModel: closedSession.selectedModel || 'claude-4.5-haiku',
+              ...(closedSession.selectedPageURLs?.length && { selectedPageURLs: closedSession.selectedPageURLs }),
+              ...(closedSession.selectedNoteIds?.length && { selectedNoteIds: closedSession.selectedNoteIds }),
+              ...(closedSession.selectedCredentialIds?.length && { selectedCredentialIds: closedSession.selectedCredentialIds }),
+            }
+          : {};
+        
         const newSession = await this.addSession({
           title,
           userId: this.currentUserId,
           isActive: true,
           isOpen: true,
+          ...carryOver,
         });
         await this.setCurrentSessionId(newSession.id);
       }

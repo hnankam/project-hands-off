@@ -1,13 +1,13 @@
 """Utility package exports with lazy loading to avoid circular imports."""
 
 __all__ = [
-    'keep_recent_messages',
+    'sanitize_tool_message_alignment',
 ]
 
 
 def __getattr__(name):
-    if name == 'keep_recent_messages':
-        from .message_processor import keep_recent_messages
-        return keep_recent_messages
+    if name == 'sanitize_tool_message_alignment':
+        from .message_processor import sanitize_tool_message_alignment
+        return sanitize_tool_message_alignment
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 

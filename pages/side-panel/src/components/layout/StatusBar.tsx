@@ -343,7 +343,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
                 ? 'text-gray-600 hover:bg-gray-100 border-gray-200'
                 : 'text-gray-400 hover:bg-gray-700 border-gray-700'
             }`}
-            title="Session plans"
+            title="Chat plans"
           >
             <svg 
               viewBox="0 0 24 24" 
@@ -378,7 +378,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
                 ? 'text-gray-600 hover:bg-gray-100 border-gray-200'
                 : 'text-gray-400 hover:bg-gray-700 border-gray-700'
             }`}
-            title="Session graphs"
+            title="Chat graphs"
           >
             <svg 
               viewBox="0 0 24 24" 

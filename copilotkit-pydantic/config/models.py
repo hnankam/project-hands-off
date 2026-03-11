@@ -13,10 +13,12 @@ from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from pydantic_ai.models.anthropic import AnthropicModelSettings
 from pydantic_ai.models.bedrock import BedrockModelSettings
 from pydantic_ai.models.openai import OpenAIModelSettings, OpenAIResponsesModel
+from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
+from config.environment import FALLBACK_MODEL_DISABLE_SDK_RETRIES
 from utils.context import context_tuple
 
 
@@ -86,14 +88,17 @@ def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
             model_settings = provider_cfg.get('model_settings', {})
             extra_headers = model_settings.get('extra_headers', {})
 
+            bedrock_kwargs: Dict[str, Any] = {
+                "aws_access_key": aws_access_key_id,
+                "aws_secret_key": aws_secret_access_key,
+                "aws_session_token": aws_session_token,
+                "aws_region": region,
+                "default_headers": extra_headers if extra_headers else None,
+            }
+            if FALLBACK_MODEL_DISABLE_SDK_RETRIES:
+                bedrock_kwargs["max_retries"] = 0
             providers[provider_key] = AnthropicProvider(
-                anthropic_client=AsyncAnthropicBedrock(
-                    aws_access_key=aws_access_key_id,
-                    aws_secret_key=aws_secret_access_key,
-                    aws_session_token=aws_session_token,
-                    aws_region=region,
-                    default_headers=extra_headers if extra_headers else None,
-                )
+                anthropic_client=AsyncAnthropicBedrock(**bedrock_kwargs)
             )
         
         elif provider_type == 'anthropic':
@@ -106,11 +111,14 @@ def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
             model_settings = provider_cfg.get('model_settings', {})
             extra_headers = model_settings.get('extra_headers', {})
             
+            anthropic_kwargs: Dict[str, Any] = {
+                "api_key": api_key,
+                "default_headers": extra_headers if extra_headers else None,
+            }
+            if FALLBACK_MODEL_DISABLE_SDK_RETRIES:
+                anthropic_kwargs["max_retries"] = 0
             providers[provider_key] = AnthropicProvider(
-                anthropic_client=AsyncAnthropic(
-                    api_key=api_key,
-                    default_headers=extra_headers if extra_headers else None,
-                )
+                anthropic_client=AsyncAnthropic(**anthropic_kwargs)
             )
 
         elif provider_type == 'anthropic_foundry':
@@ -120,8 +128,11 @@ def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
                 raise ValueError(f"Provider '{provider_key}': api_key is required in credentials")
             if not base_url:
                 raise ValueError(f"Provider '{provider_key}': base_url is required in credentials")
+            foundry_kwargs: Dict[str, Any] = {"api_key": api_key, "base_url": base_url}
+            if FALLBACK_MODEL_DISABLE_SDK_RETRIES:
+                foundry_kwargs["max_retries"] = 0
             providers[provider_key] = AnthropicProvider(
-                anthropic_client=AsyncAnthropicFoundry(api_key=api_key, base_url=base_url)
+                anthropic_client=AsyncAnthropicFoundry(**foundry_kwargs)
             )
             
         elif provider_type == 'openai':
@@ -129,7 +140,10 @@ def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
             api_key = credentials.get('api_key')
             if not api_key:
                 raise ValueError(f"Provider '{provider_key}': api_key is required in credentials")
-            providers[provider_key] = OpenAIProvider(openai_client=AsyncOpenAI(api_key=api_key))
+            openai_kwargs: Dict[str, Any] = {"api_key": api_key}
+            if FALLBACK_MODEL_DISABLE_SDK_RETRIES:
+                openai_kwargs["max_retries"] = 0
+            providers[provider_key] = OpenAIProvider(openai_client=AsyncOpenAI(**openai_kwargs))
 
         elif provider_type == 'azure_openai':
             # Azure OpenAI
@@ -142,11 +156,14 @@ def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
                 raise ValueError(f"Provider '{provider_key}': api_version is required in credentials")
             if not api_key:
                 raise ValueError(f"Provider '{provider_key}': api_key is required in credentials")
-            providers[provider_key] = OpenAIProvider(openai_client=AsyncAzureOpenAI(
-                azure_endpoint=endpoint,
-                api_version=api_version,
-                api_key=api_key,
-            ))
+            azure_kwargs: Dict[str, Any] = {
+                "azure_endpoint": endpoint,
+                "api_version": api_version,
+                "api_key": api_key,
+            }
+            if FALLBACK_MODEL_DISABLE_SDK_RETRIES:
+                azure_kwargs["max_retries"] = 0
+            providers[provider_key] = OpenAIProvider(openai_client=AsyncAzureOpenAI(**azure_kwargs))
             
         else:
             raise ValueError(f"Unsupported provider type: {provider_type}")
@@ -200,6 +217,65 @@ def _create_model_instance(
         raise ValueError(f"Unsupported provider type for model creation: {provider_type}")
 
 
+def _build_fallback_models(models: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Replace models with fallback_chain metadata with FallbackModel wrapping the chain."""
+    from . import logger
+
+    for key, entry in list(models.items()):
+        metadata = entry.get('metadata') or {}
+        chain = metadata.get('fallback_chain')
+        if not chain or not isinstance(chain, (list, tuple)):
+            continue
+
+        logger.info(
+            "Model '%s' has fallback_chain metadata: %s",
+            key,
+            chain,
+        )
+
+        chain = [str(k) for k in chain]
+        if len(chain) < 1:
+            logger.warning(
+                "Model '%s' has empty fallback_chain; ignoring",
+                key,
+            )
+            continue
+
+        # Primary model (key) is tried first, then fallbacks in order
+        model_instances = [entry['model']]
+        skip_fallback = False
+        for chain_key in chain:
+            if chain_key not in models:
+                logger.warning(
+                    "Model '%s' fallback_chain references unknown model '%s'; skipping fallback",
+                    key,
+                    chain_key,
+                )
+                skip_fallback = True
+                break
+            model_instances.append(models[chain_key]['model'])
+
+        if skip_fallback or len(model_instances) < 2:
+            continue
+
+        fallback_model = FallbackModel(*model_instances)
+        models[key] = {
+            'model': fallback_model,
+            'model_settings': entry['model_settings'],
+            'metadata': metadata,
+        }
+        full_chain = [key] + chain
+        logger.info(
+            "FallbackModel created for '%s': chain=%s, chain_count=%d, type=%s",
+            key,
+            " -> ".join(full_chain),
+            len(model_instances),
+            type(fallback_model).__name__,
+        )
+
+    return models
+
+
 def _build_models(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """Instantiate models and settings from config.
     
@@ -247,12 +323,14 @@ def _build_models(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             provider_type, model_name, provider, merged_settings
         )
 
+        metadata = model_cfg.get('metadata') or {}
         models[key] = {
             'model': model_instance,
             'model_settings': settings,
+            'metadata': metadata,
         }
 
-    return models
+    return _build_fallback_models(models)
 
 
 def get_models() -> Dict[str, Dict[str, Any]]:

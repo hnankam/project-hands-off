@@ -11,5 +11,6 @@ export { AuxiliaryAgentSelector, type AuxiliaryAgentSelectorProps } from './Auxi
 // Multi-selectors
 export { TeamMultiSelector, type TeamMultiSelectorProps } from './TeamMultiSelector';
 export { ModelMultiSelector, type ModelMultiSelectorProps } from './ModelMultiSelector';
+export { FallbackChainSelector, type FallbackChainSelectorProps, type FallbackChainModelOption } from './FallbackChainSelector';
 export { ToolMultiSelector, type ToolMultiSelectorProps } from './ToolMultiSelector';
 

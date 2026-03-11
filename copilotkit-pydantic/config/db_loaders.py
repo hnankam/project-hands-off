@@ -209,6 +209,7 @@ async def _fetch_models(
                                    m.model_name,
                                    m.display_name,
                                    m.model_settings_override,
+                                   m.metadata,
                                    m.organization_id,
                                    COALESCE(
                                        (SELECT array_agg(mt.team_id)
@@ -239,6 +240,7 @@ async def _fetch_models(
                                     'name': row['model_name'],
                                     'display_name': row['display_name'],
                                     'model_settings': row['model_settings_override'],
+                                    'metadata': row.get('metadata') or {},
                                     'enabled': row['enabled'],
                                 }
                                 models_map[row['model_key']] = model_cfg

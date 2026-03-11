@@ -331,21 +331,34 @@ export const sessionStorageDBWrapper = {
 
     debug.log('[sessionStorageDBWrapper] User ID verified:', userId?.slice(0, 8));
 
-    // Find the last selected agent and model from existing sessions
+    // Use the CURRENT session's agent/model/context when creating a new session
+    // (the tab the user is viewing when they click "new"), not the most recently used by timestamp
     const sessions = await sessionStorageDB.getAllSessions();
     let lastSelectedAgent = 'general';
     let lastSelectedModel = 'claude-4.5-haiku';
+    let lastSelectedPageURLs: string[] | undefined;
+    let lastSelectedNoteIds: string[] | undefined;
+    let lastSelectedCredentialIds: string[] | undefined;
 
     if (sessions.length > 0) {
-      const sortedSessions = [...sessions].sort((a, b) => b.timestamp - a.timestamp);
-      const sessionWithModel = sortedSessions.find(s => s.selectedModel);
+      const currentSessionId = await sessionStorageDB.getCurrentSessionId();
+      const sessionToUse = currentSessionId
+        ? await sessionStorageDB.getSession(currentSessionId)
+        : null;
+      const sessionWithModel = sessionToUse?.selectedModel
+        ? sessionToUse
+        : [...sessions].sort((a, b) => b.timestamp - a.timestamp).find(s => s.selectedModel);
       
       if (sessionWithModel) {
         lastSelectedAgent = sessionWithModel.selectedAgent || lastSelectedAgent;
         lastSelectedModel = sessionWithModel.selectedModel || lastSelectedModel;
+        // Carry over context (pages, notes, credentials) from previous session
+        if (sessionWithModel.selectedPageURLs?.length) lastSelectedPageURLs = sessionWithModel.selectedPageURLs;
+        if (sessionWithModel.selectedNoteIds?.length) lastSelectedNoteIds = sessionWithModel.selectedNoteIds;
+        if (sessionWithModel.selectedCredentialIds?.length) lastSelectedCredentialIds = sessionWithModel.selectedCredentialIds;
       }
       
-      debug.log('[sessionStorageDBWrapper] Using last selected:', { lastSelectedAgent, lastSelectedModel });
+      debug.log('[sessionStorageDBWrapper] Using from current session:', { lastSelectedAgent, lastSelectedModel, lastSelectedPageURLs, lastSelectedNoteIds, lastSelectedCredentialIds });
     }
 
     const session = await sessionStorageDB.addSession({
@@ -355,6 +368,9 @@ export const sessionStorageDBWrapper = {
       isOpen: true,
       selectedAgent: lastSelectedAgent,
       selectedModel: lastSelectedModel,
+      ...(lastSelectedPageURLs && { selectedPageURLs: lastSelectedPageURLs }),
+      ...(lastSelectedNoteIds && { selectedNoteIds: lastSelectedNoteIds }),
+      ...(lastSelectedCredentialIds && { selectedCredentialIds: lastSelectedCredentialIds }),
     });
     
     if (apiBaseUrl) {

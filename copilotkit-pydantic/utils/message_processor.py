@@ -106,12 +106,19 @@ async def count_tokens_with_model_fallback(messages: Sequence[ModelMessage]) -> 
     Requires set_run_context_for_token_counter to run first (as a history processor) to set
     the RunContext. Used by create_context_manager_middleware for accurate provider-specific
     token counts (e.g. Anthropic, Google countTokens API).
+
+    For FallbackModel (which does not support count_tokens), uses the first model in the
+    chain for token counting, since that is the primary model tried first.
     """
     ctx = _run_context_var.get()
     if ctx is not None:
+        model_settings, model_request_params = await get_model_config_from_agent(ctx)
+        # FallbackModel does not support count_tokens; use the first model in the chain
+        model_for_counting = ctx.model
+        if hasattr(ctx.model, "models") and ctx.model.models:
+            model_for_counting = ctx.model.models[0]
         try:
-            model_settings, model_request_params = await get_model_config_from_agent(ctx)
-            current_tokens = await ctx.model.count_tokens(
+            current_tokens = await model_for_counting.count_tokens(
                 messages,
                 model_settings=model_settings,
                 model_request_parameters=model_request_params,
@@ -281,11 +288,11 @@ def pydantic_to_agui_messages(pydantic_messages: list[ModelMessage]) -> list:
     return agui_messages
 
 
-async def keep_recent_messages(
+async def sanitize_tool_message_alignment(
     ctx: RunContext[UnifiedDeps], 
     messages: list[ModelMessage]
 ) -> list[ModelMessage]:
-    """Keep only recent messages while preserving AI model message ordering rules.
+    """Sanitize tool call/result alignment in message history.
 
     Most AI models require proper sequencing of:
     - Tool/function calls and their corresponding returns
@@ -311,9 +318,13 @@ async def keep_recent_messages(
     # --- Token management (temporarily commented out) ---
     model_settings, model_request_params = await get_model_config_from_agent(ctx)
     all_messages_token_count = count_tokens_approximately(messages)
+    # FallbackModel does not support count_tokens; use the first model in the chain
+    model_for_counting = ctx.model
+    if hasattr(ctx.model, "models") and ctx.model.models:
+        model_for_counting = ctx.model.models[0]
     current_tokens: int | None = None
     try:
-        current_tokens = await ctx.model.count_tokens(messages, model_settings=model_settings, model_request_parameters=model_request_params)
+        current_tokens = await model_for_counting.count_tokens(messages, model_settings=model_settings, model_request_parameters=model_request_params)
         logger.info(f"Current Tokens: {current_tokens}")
     except Exception as e:
         logger.debug(f"Token counting not supported or failed: {e}")

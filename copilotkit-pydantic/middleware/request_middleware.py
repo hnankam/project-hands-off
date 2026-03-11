@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from config import DEBUG, logger
-from pydantic_ai.exceptions import AgentRunError, ModelHTTPError
+from pydantic_ai.exceptions import AgentRunError, FallbackExceptionGroup, ModelHTTPError
 
 
 def _model_http_error_response(request: Request, exc: ModelHTTPError) -> JSONResponse:
@@ -86,6 +86,24 @@ async def agent_error_middleware(request: Request, call_next):
 
     try:
         return await call_next(request)
+    except FallbackExceptionGroup as exc:
+        logger.error(
+            "[%s] FallbackExceptionGroup: all %d models failed",
+            getattr(request.state, "req_id", "unknown"),
+            len(exc.exceptions),
+            exc_info=exc,
+        )
+        for i, sub_exc in enumerate(exc.exceptions):
+            logger.error("[%s]   Model %d: %s", getattr(request.state, "req_id", "unknown"), i + 1, sub_exc)
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": "fallback_all_failed",
+                "message": f"All {len(exc.exceptions)} models in the fallback chain failed",
+                "details": [str(e) for e in exc.exceptions],
+                "request_id": getattr(request.state, "req_id", None),
+            },
+        )
     except ModelHTTPError as exc:
         logger.error(
             "[%s] ModelHTTPError while processing request: model=%s status=%s",

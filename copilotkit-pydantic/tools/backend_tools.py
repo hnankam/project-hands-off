@@ -54,7 +54,7 @@ from utils.firebase_storage import upload_binary_image_to_storage
 from tools.auxiliary_agents import get_auxiliary_agent, get_custom_auxiliary_agent, get_custom_auxiliary_agents_config
 
 # Import message processor for sub-agent context management
-from utils.message_processor import keep_recent_messages, pydantic_to_agui_messages
+from utils.message_processor import sanitize_tool_message_alignment, pydantic_to_agui_messages
 
 # Multi-agent graph tools moved to graph_tools.py
 
@@ -887,7 +887,7 @@ async def run_aux_agent_streaming(
                 pass
 
     # Inherit parent's message history and append new user message
-    # Use parent_ctx.messages (ModelMessages) with keep_recent_messages to properly limit
+    # Use parent_ctx.messages (ModelMessages) with sanitize_tool_message_alignment to properly limit
     # while preserving tool call/result pairs, then convert to AG-UI format
     # Skip history for certain agent types that don't need context
     #
@@ -897,11 +897,11 @@ async def run_aux_agent_streaming(
     # if model_messages and aux_type not in NO_TOOLS_AUX_TYPES:
     #     logger.info(
     #         f"Sub-agent '{aux_type}': using parent_ctx.messages ({len(model_messages)} ModelMessages), "
-    #         "applying keep_recent_messages to preserve tool call/result pairs"
+    #         "applying sanitize_tool_message_alignment to preserve tool call/result pairs"
     #     )
-    #     processed_model_messages = await keep_recent_messages(parent_ctx, model_messages)
+    #     processed_model_messages = await sanitize_tool_message_alignment(parent_ctx, model_messages)
     #     logger.info(
-    #         f"Sub-agent '{aux_type}': after keep_recent_messages, {len(processed_model_messages)} messages"
+    #         f"Sub-agent '{aux_type}': after sanitize_tool_message_alignment, {len(processed_model_messages)} messages"
     #     )
     #     agui_messages = pydantic_to_agui_messages(processed_model_messages)
     #     logger.info(
