@@ -181,14 +181,36 @@ export const CustomSuggestionView: React.FC<CustomSuggestionViewProps> = ({
       );
     });
 
-  const baseClasses = "flex items-center gap-1.5 sm:gap-2 pl-0 sm:px-0 overflow-x-auto suggestions-scroll";
+  const baseClasses = "flex items-center justify-center gap-1.5 sm:gap-2 pl-0 sm:px-0 overflow-x-auto suggestions-scroll";
 
-    return (
-    <div className={`${baseClasses} ${className || ''}`.trim()} {...restProps}>
+  // Feather gradient colors - match chat background (#ffffff light / #0D1117 dark)
+  const featherBg = isLight ? '#ffffff' : '#0D1117';
+
+  return (
+    <div className={`relative suggestions-scroll-wrapper ${className || ''}`.trim()} {...restProps}>
+      {/* Left feather - fades in from left edge */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-6 z-10 pointer-events-none flex-shrink-0"
+        style={{
+          background: `linear-gradient(to right, ${featherBg} 0%, ${featherBg} 20%, transparent 100%)`,
+        }}
+        aria-hidden
+      />
+      {/* Scrollable chips */}
+      <div className={`${baseClasses} flex-1 min-w-0`}>
         {suggestionElements}
         {children}
+      </div>
+      {/* Right feather - fades out at right edge */}
+      <div
+        className="absolute right-0 top-0 bottom-0 w-6 z-10 pointer-events-none flex-shrink-0"
+        style={{
+          background: `linear-gradient(to right, transparent 0%, ${featherBg} 80%, ${featherBg} 100%)`,
+        }}
+        aria-hidden
+      />
     </div>
-    );
+  );
 };
 
 CustomSuggestionView.displayName = 'CustomSuggestionView';

@@ -247,15 +247,29 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   }, [pageSelectorCtx?.initialSelectedNoteIds, pageSelectorCtx?.initialSelectedCredentialIds]);
   
   // Restore full workspace item data from IDs when session is loaded
-  // This ensures that when a session is opened, selected notes/credentials are available to the agent
+  // This ensures that when a session is opened, selected notes/credentials are available to the agent.
+  // IMPORTANT: Only restore when selectedNoteIds matches initialSelectedNoteIds (session load).
+  // When user deselects, selectedNoteIds becomes [] but initialSelectedNoteIds may still have old
+  // values until save completes - we must NOT restore in that case or we overwrite the deselection.
   useEffect(() => {
     const restoreWorkspaceItems = async () => {
       const baseURL = API_CONFIG.BASE_URL;
-      
-      // Restore notes if we have initial IDs and no notes data yet
-      if (pageSelectorCtx?.initialSelectedNoteIds && 
-          pageSelectorCtx.initialSelectedNoteIds.length > 0 &&
-          selectedNotes.length === 0) {
+      const initialNoteIds = pageSelectorCtx?.initialSelectedNoteIds ?? [];
+      const initialCredIds = pageSelectorCtx?.initialSelectedCredentialIds ?? [];
+
+      const noteIdsMatch =
+        selectedNoteIds.length === initialNoteIds.length &&
+        selectedNoteIds.every((id, i) => id === initialNoteIds[i]);
+      const credIdsMatch =
+        selectedCredentialIds.length === initialCredIds.length &&
+        selectedCredentialIds.every((id, i) => id === initialCredIds[i]);
+
+      // Restore notes only when IDs are in sync (session load) and we're missing full objects
+      if (
+        initialNoteIds.length > 0 &&
+        selectedNotes.length === 0 &&
+        noteIdsMatch
+      ) {
         try {
           const response = await fetch(`${baseURL}/api/workspace/notes/bulk`, {
             method: 'POST',
@@ -263,9 +277,9 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ ids: pageSelectorCtx.initialSelectedNoteIds }),
+            body: JSON.stringify({ ids: initialNoteIds }),
           });
-          
+
           if (response.ok) {
             const data = await response.json();
             if (data.notes && data.notes.length > 0) {
@@ -277,12 +291,13 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
           debug.error('[CustomInputV2] Failed to restore notes:', error);
         }
       }
-      
-      // Restore credentials if we have initial IDs and no credentials data yet
-      // ✅ SECURITY: Use /metadata endpoint to fetch only metadata (no passwords/secrets)
-      if (pageSelectorCtx?.initialSelectedCredentialIds && 
-          pageSelectorCtx.initialSelectedCredentialIds.length > 0 &&
-          selectedCredentials.length === 0) {
+
+      // Restore credentials only when IDs are in sync (session load) and we're missing full objects
+      if (
+        initialCredIds.length > 0 &&
+        selectedCredentials.length === 0 &&
+        credIdsMatch
+      ) {
         try {
           const response = await fetch(`${baseURL}/api/workspace/credentials/metadata`, {
             method: 'POST',
@@ -290,9 +305,9 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ ids: pageSelectorCtx.initialSelectedCredentialIds }),
+            body: JSON.stringify({ ids: initialCredIds }),
           });
-          
+
           if (response.ok) {
             const data = await response.json();
             if (data.credentials && data.credentials.length > 0) {
@@ -305,11 +320,13 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
         }
       }
     };
-    
+
     restoreWorkspaceItems();
   }, [
-    pageSelectorCtx?.initialSelectedNoteIds, 
+    pageSelectorCtx?.initialSelectedNoteIds,
     pageSelectorCtx?.initialSelectedCredentialIds,
+    selectedNoteIds,
+    selectedCredentialIds,
     selectedNotes.length,
     selectedCredentials.length,
     setSelectedNotes,

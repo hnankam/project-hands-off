@@ -55,7 +55,7 @@
 /* Override CopilotKit cpk:px-4 cpk:sm:px-0 etc - keep px-4 (1rem) always, override immediate child padding-bottom */
 .copilot-chat-container div[class*="cpk:px-4"][class*="cpk:sm:px-0"] {
   padding-left: 1rem !important;
-  padding-right: 1rem !important;
+  padding-right: 0.25rem !important;
 }
 
 .copilot-chat-container div[class*="cpk:px-4"][class*="cpk:sm:px-0"] > div {

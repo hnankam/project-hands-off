@@ -3,10 +3,20 @@
    Styles for session tabs in the side panel header
    ============================================================================= */
 
-/* Session tabs container - ensure proper scroll behavior */
+/* Floating close button feather - transparent by default, match tab bg only on hover */
+.session-tabs-scroll [data-session-id] .tab-close-feather {
+  background: transparent !important;
+}
+
+.session-tabs-scroll [data-session-id].group:hover .tab-close-feather {
+  background: linear-gradient(to right, transparent 0%, var(--close-feather-hover-bg) 50%, var(--close-feather-hover-bg) 100%) !important;
+}
+
+/* Session tabs container - ensure proper scroll behavior, padding preserves rounded corners */
 .session-tabs-scroll {
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
+  padding-right: 4px !important;
 }
 
 /* First tab rounded corner - only when Tailwind class is applied (sidepanel view) */
@@ -40,14 +50,12 @@
 
 /* Close button hover - Light mode */
 .session-tabs-scroll [data-session-id] button:hover {
-  background-color: rgba(209, 213, 219, 0.8) !important; /* hover:bg-gray-300/80 */
   color: rgb(55, 65, 81); /* hover:text-gray-700 */
 }
 
 /* Close button hover - Dark mode */
 .dark .session-tabs-scroll [data-session-id] button:hover,
 :root.dark .session-tabs-scroll [data-session-id] button:hover {
-  background-color: rgba(75, 85, 99, 0.8) !important; /* hover:bg-gray-600/80 */
   color: rgb(229, 231, 235); /* hover:text-gray-200 */
 }
 

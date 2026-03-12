@@ -227,18 +227,13 @@ export const useSessionData = (
   }, [sessionId]);
   
   /**
-   * Effect 2: Load session metadata (Agent/Model)
+   * Effect 2: Load session metadata (Agent/Model/context) from DB when tab is active.
+   * We always fetch when isActive, rather than trusting initialMetadata from the session list,
+   * so that workspace context (notes, credentials, pages) persists after tab switch or panel
+   * reopen. The list can be stale because updateSessionWorkspaceItems does not notify the store.
    */
   useEffect(() => {
     if (!isActive) {
-      return;
-    }
-    
-    // OPTIMIZATION: If we already have metadata from props, we can skip the DB fetch
-    // But we still update the "last loaded" ref to prevent future redundant fetches
-    if (initialMetadata && lastLoadedSessionRef.current !== sessionId) {
-      lastLoadedSessionRef.current = sessionId;
-      setIsLoadingMetadata(false);
       return;
     }
     
@@ -253,7 +248,6 @@ export const useSessionData = (
     
     let isCancelled = false;
     
-    // Mark as loading immediately
     loadingSessionIdRef.current = sessionId;
     setIsLoadingMetadata(true);
     isLoadingFromDBRef.current = true;

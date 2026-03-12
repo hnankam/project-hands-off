@@ -907,7 +907,7 @@ export class SessionStorageDB {
       { id: sessionId, selectedPageURLs }
     );
     this.invalidateSessionCache(sessionId);
-    // No notification needed - this is a user-driven action, not a session switch
+    this.notify({ type: 'sessionChanged', sessionId });
   }
 
   /**
@@ -924,7 +924,7 @@ export class SessionStorageDB {
       { id: sessionId, selectedNoteIds, selectedCredentialIds }
     );
     this.invalidateSessionCache(sessionId);
-    // No notification needed - this is a user-driven action, not a session switch
+    this.notify({ type: 'sessionChanged', sessionId });
   }
 
   // ========================================

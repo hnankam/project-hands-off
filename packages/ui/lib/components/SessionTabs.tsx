@@ -194,13 +194,17 @@ export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisi
     return undefined;
   }, [isVisible, currentSessionId, sessions.length]);
 
+  // Feather gradient - match header background (bg-gray-50 / bg-[#151C24])
+  const featherBg = isLight ? '#f9fafb' : '#151C24';
+
   return (
     <div className={cn("flex items-center w-full", className)}>
-      {/* Session Tabs */}
-      <div 
-        ref={scrollContainerRef}
-        className="flex items-center space-x-1 overflow-x-auto flex-1 min-w-0 max-w-full session-tabs-scroll"
-      >
+      {/* Session Tabs with right feather for smooth fade before add button */}
+      <div className="relative flex-1 min-w-0">
+        <div 
+          ref={scrollContainerRef}
+          className="flex items-center space-x-1 overflow-x-auto max-w-full session-tabs-scroll"
+        >
         {sessions.filter(s => s.isOpen).map((session, index) => (
           <div
             key={session.id}
@@ -208,7 +212,7 @@ export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisi
             onClick={() => handleSessionClick(session.id)}
             onDoubleClick={() => handleDoubleClick(session.id, session.title)}
             className={cn(
-              "group flex items-center space-x-1 px-2 py-1 text-xs rounded cursor-pointer transition-colors whitespace-nowrap flex-shrink-0",
+              "group relative flex items-center px-2 py-1 pr-1 text-xs rounded cursor-pointer transition-colors whitespace-nowrap flex-shrink-0",
               index === 0 && shouldShowExtraRoundness && "rounded-tl-xl",
               session.id === currentSessionId
                 ? isLight 
@@ -218,6 +222,14 @@ export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisi
                   ? "text-gray-600 hover:bg-gray-100"
                   : "text-gray-500 hover:bg-gray-700"
             )}
+            style={{
+              '--close-feather-bg': session.id === currentSessionId
+                ? (isLight ? '#e5e7eb' : '#374151')
+                : (isLight ? '#f9fafb' : '#151C24'),
+              '--close-feather-hover-bg': session.id === currentSessionId
+                ? (isLight ? '#e5e7eb' : '#374151')
+                : (isLight ? '#f3f4f6' : '#374151'),
+            } as React.CSSProperties}
           >
             {editingSessionId === session.id ? (
               <input
@@ -254,35 +266,48 @@ export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisi
                     : (isLight ? '#f3f4f6' : '#374151')  // Inactive hover: bg-gray-100 / bg-gray-700
                 } as React.CSSProperties}
               >
-                <span className={`block whitespace-nowrap ${
+                <span className={`block whitespace-nowrap pr-1 ${
                   tabsNeedingFade.has(session.id) ? 'tab-fade-text' : ''
                 }`}>{session.title}</span>
               </div>
             )}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCloseSession(session.id, e);
-              }}
-              onMouseDown={(e) => {
-                // Prevent parent onClick from firing when clicking the close button
-                // This ensures the first click works, not just the second
-                e.stopPropagation();
-              }}
-              className={cn(
-                "opacity-0 group-hover:opacity-100 p-0.5 rounded transition-all flex-shrink-0 flex items-center justify-center",
-                isLight 
-                  ? "text-gray-400 bg-transparent hover:text-gray-700 hover:bg-gray-300/80" 
-                  : "text-gray-500 bg-transparent hover:text-gray-200 hover:bg-gray-600/80"
-              )}
-              style={{ minWidth: '16px', minHeight: '16px' }} // Ensure minimum clickable area
+            {/* Floating close button with feather - overlays tab, minimal footprint, feather only on hover */}
+            <div
+              className="tab-close-feather absolute right-0 top-0 bottom-0 flex items-center justify-end pr-1 pl-8 rounded-r pointer-events-none group-hover:pointer-events-auto"
+              style={{paddingRight: '3px'}}
             >
-              <svg width="8" height="8" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCloseSession(session.id, e);
+                }}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                }}
+                className={cn(
+                  "opacity-0 group-hover:opacity-100 p-0.5 rounded transition-all flex items-center justify-center pointer-events-auto ml-auto shrink-0",
+                  isLight 
+                    ? "text-gray-400 hover:text-gray-700" 
+                    : "text-gray-500 hover:text-gray-200"
+                )}
+                style={{ minWidth: '16px', minHeight: '16px'}}
+              >
+                <svg width="8" height="8" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
         ))}
+        </div>
+        {/* Right feather - fades out at right edge before add button */}
+        <div
+          className="absolute right-0 top-0 bottom-0 w-6 z-10 pointer-events-none flex-shrink-0"
+          style={{
+            background: `linear-gradient(to right, transparent 0%, ${featherBg} 80%, ${featherBg} 100%)`,
+          }}
+          aria-hidden
+        />
       </div>
     </div>
   );
