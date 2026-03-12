@@ -1760,6 +1760,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
     <MentionHandlersContext.Provider value={{ onInsert: handleMentionInsert, onDelete: handleMentionDelete }}>
     <CopilotChatInput
       {...props}
+      showDisclaimer={props.showDisclaimer ?? true}
       textArea={CustomTiptapTextAreaSlot as any}
       onSubmitMessage={handleSubmitMessage}
     >
@@ -1771,6 +1772,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
         cancelTranscribeButton,
         finishTranscribeButton,
         audioRecorder,
+        disclaimer,
       }) => {
         // Pass addMenuButton directly to DropdownMenu - no cloning to avoid ref errors
         // CSS will handle hover styles
@@ -2191,6 +2193,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                 </div>
               </div>
             </div>
+            {disclaimer}
           </>
         );
       }}

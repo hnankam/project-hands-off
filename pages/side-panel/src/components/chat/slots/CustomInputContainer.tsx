@@ -33,25 +33,32 @@ export const CustomInputContainer: React.FC<CustomInputContainerProps> = ({
 }) => {
   return (
     <div
-      className={className}
+      className={`${className || ''} custom-input-container-wrapper`.trim()}
       style={{
+        ...style,
         boxShadow: 'none',
         border: 'none',
-        borderTop: 'none',
-        borderBottom: 'none',
-        borderLeft: 'none',
-        borderRight: 'none',
         position: 'absolute',
         bottom: 0,
         left: 0,
         right: 0,
         zIndex: 20,
         pointerEvents: 'none',
-        ...style,
+        padding: '0 12px 8px',
+        boxSizing: 'border-box',
       }}
       {...props}
     >
-      {children}
+      <div
+        className="custom-input-container-inner"
+        style={{
+          maxWidth: '56rem',
+          margin: '0 auto',
+          pointerEvents: 'auto',
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 };

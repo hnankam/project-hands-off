@@ -499,7 +499,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
       <div
         ref={cardRef as any}
         data-session-id={state.sessionId ?? ''}
-        className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg border-b-0 border text-[11px] transition-all duration-500 ease-in-out ${
+        className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-[11px] transition-all duration-500 ease-in-out ${
           isLight ? 'text-gray-700' : 'text-gray-200'
         }`}
         style={{
@@ -615,7 +615,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
       ref={cardRef as any}
       data-testid="task-progress"
       data-session-id={state.sessionId ?? ''}
-      className={`w-full rounded-lg border-b-0 p-2 text-[11px] border transition-all duration-500 ease-in-out ${isLight ? 'text-gray-800' : 'text-white'}`}
+      className={`w-full rounded-lg border p-2 text-[11px] transition-all duration-500 ease-in-out ${isLight ? 'text-gray-800' : 'text-white'}`}
       style={{
         backgroundColor: cardBackgroundVar,
         borderColor: effectiveBorderColor,

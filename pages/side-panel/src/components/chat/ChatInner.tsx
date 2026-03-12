@@ -69,7 +69,6 @@ import {
   CustomCursor,
   CustomInputContainer,
 } from './slots';
-
 // Custom Hooks
 import { useMessageSanitization, MessageData } from '../../hooks/useMessageSanitization';
 import { useContextMenuPrefill } from '../../hooks/useContextMenuPrefill';
@@ -422,6 +421,28 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
 
   // Ref for scroll preservation when loading older messages
   const chatWrapperRef = useRef<HTMLDivElement>(null);
+
+  // Debug: log scroll container layout when messages change
+  useEffect(() => {
+    const el = chatWrapperRef.current;
+    if (!el) return;
+    const logLayout = () => {
+      const rect = el.getBoundingClientRect();
+      const scrollEl = el.querySelector('[data-load-more-scroll]') as HTMLElement | null;
+      const msgContainer = el.querySelector('.copilotKitMessagesContainer') as HTMLElement | null;
+      debug.log('[ChatInner] layout', {
+        wrapperHeight: rect.height,
+        scrollElHeight: scrollEl?.offsetHeight,
+        msgContainerHeight: msgContainer?.offsetHeight,
+        msgContainerScrollHeight: msgContainer?.scrollHeight,
+        messagesLength: messages?.length ?? 0,
+      });
+    };
+    logLayout();
+    const ro = new ResizeObserver(logLayout);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [messages?.length]);
 
   // Paginated history loading ("load more") - auto-triggers on scroll to top
   const { isLoading: isLoadingMore } = useLoadMoreHistory({
@@ -905,9 +926,13 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ================================================================================
 
   // Stabilize chatView to prevent unnecessary rerenders
+  // Note: feather is a slot on ScrollView, not CopilotChatView - must nest under scrollView
+  // messageView uses slot object - VirtualizedMessageView as component caused messages not to render
   const chatView = useMemo(() => ({
-    scrollToBottomButton: CustomScrollToBottomButton,
-    feather: CustomFeather,
+    scrollView: {
+      scrollToBottomButton: CustomScrollToBottomButton,
+      feather: CustomFeather,
+    },
     disclaimer: CustomDisclaimer,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     suggestionView: CustomSuggestionView as any,
@@ -918,7 +943,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
       userMessage: CustomUserMessageV2,
       cursor: CustomCursor,
     },
-  }), []);
+  } as any), []);
 
 
   // Memoize context value to prevent unnecessary re-renders while ensuring updates propagate
@@ -1018,6 +1043,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
                 agentId="dynamic_agent"
                 threadId={sessionId}
                 chatView={chatView}
+                welcomeScreen={false}
               />
             </div>
           </div>

@@ -84,13 +84,7 @@ export const PlansPanel: React.FC<PlansPanelProps> = ({
     };
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
-  if (!isOpen) {
-    return null;
-  }
-
-  const planEntries = plans ? Object.entries(plans) : [];
-
-  // DEBUG: Log plans received by PlansPanel
+  // DEBUG: Log plans received by PlansPanel (must be before early return - hooks rules)
   React.useEffect(() => {
     const planIds = Object.keys(plans ?? {});
     debug.log('[SessionPlans] PlansPanel plans prop updated:', {
@@ -99,6 +93,12 @@ export const PlansPanel: React.FC<PlansPanelProps> = ({
       planIds,
     });
   }, [plans, sessionId]);
+
+  if (!isOpen) {
+    return null;
+  }
+
+  const planEntries = plans ? Object.entries(plans) : [];
 
   return (
     <>

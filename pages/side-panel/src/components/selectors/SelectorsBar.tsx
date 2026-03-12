@@ -56,7 +56,7 @@ export const SelectorsBar: React.FC<SelectorsBarProps> = ({
   return (
     <div 
       className={cn(
-        'px-2 py-1 flex gap-1 items-center justify-between h-[34px]',
+        'px-3 py-1 flex gap-1 items-center justify-between h-[34px]',
         isLight 
           ? 'bg-gray-50 border-t border-gray-200' 
           : 'bg-[#151C24] border-t border-gray-700'

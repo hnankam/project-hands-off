@@ -54,14 +54,26 @@ export const CustomScrollToBottomButton: React.FC<CustomScrollToBottomButtonProp
   };
 
   return (
-    <button
-      type="button"
-      {...rest}
-      className={className}
-      onClick={handleClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+    <div
       style={{
+        position: 'absolute',
+        bottom: -85,
+        left: 0,
+        right: 0,
+        display: 'flex',
+        justifyContent: 'center',
+        zIndex: 30,
+        pointerEvents: 'none',
+      }}
+    >
+      <button
+        type="button"
+        {...rest}
+        className={className}
+        onClick={handleClick}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -112,6 +124,7 @@ export const CustomScrollToBottomButton: React.FC<CustomScrollToBottomButtonProp
         }
       `}</style> */}
     </button>
+    </div>
   );
 };
 

@@ -83,6 +83,7 @@ export const GraphsPanel: React.FC<GraphsPanelProps> = ({
     };
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
+  // Early return for closed state - all hooks must run before this (React hooks rules)
   if (!isOpen) {
     return null;
   }
