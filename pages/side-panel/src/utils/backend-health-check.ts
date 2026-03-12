@@ -98,6 +98,16 @@ async function checkServiceHealth(
 }
 
 /**
+ * Check connectivity to CopilotKit/Runtime server URL only.
+ * Returns true if healthy, false otherwise. Used for login/status indicators.
+ */
+export async function checkBackendServerConnectivity(): Promise<boolean> {
+  const copilotKitUrl = API_CONFIG.BASE_URL;
+  const result = await checkServiceHealth('CopilotKit Runtime', copilotKitUrl, '/health', 5000);
+  return result.status === 'healthy';
+}
+
+/**
  * Check health of all backend services
  */
 export async function checkBackendHealth(): Promise<BackendHealthStatus> {

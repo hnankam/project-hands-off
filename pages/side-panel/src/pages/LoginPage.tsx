@@ -14,6 +14,8 @@ import { cn } from '@extension/ui';
 import { AUTO_DISMISS_DELAYS } from '../constants/ui';
 import { requestPasswordReset, resetPasswordWithToken, signInWithSocial, signInWithSSO, SocialProvider } from '../lib/auth-client';
 import { LoginSettingsDropdown } from '../components/menus/LoginSettingsDropdown';
+import { useBackendConnectivity } from '../hooks/useBackendConnectivity';
+import { formatAuthError } from '../utils/auth-errors';
 
 // ============================================================================
 // CONSTANTS
@@ -28,6 +30,7 @@ interface LoginPageProps {
 export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
   const { signIn, signUp, refreshAuth } = useAuth();
   const { isLight } = useStorage(themeStorage);
+  const { isConnected } = useBackendConnectivity();
   const [isSignUp, setIsSignUp] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [isEnterToken, setIsEnterToken] = useState(false);
@@ -75,11 +78,11 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
     try {
       const result = isSignUp ? await signUp(name, email, password) : await signIn(email, password);
       if (result.error) {
-        setError(result.error);
+        setError(formatAuthError(result.error));
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMessage);
+      setError(formatAuthError(errorMessage));
     } finally {
       setIsLoading(false);
     }
@@ -99,7 +102,7 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
 
       const result = await requestPasswordReset(email);
       if (result.error) {
-        setError(result.error);
+        setError(formatAuthError(result.error));
       } else {
         setSuccessMessage('Password reset email sent! Check your inbox for instructions.');
         // Don't automatically switch back - let user see the success message
@@ -162,7 +165,7 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
         if (result.error.includes('not found') || result.error.includes('not available')) {
           setError('SSO is not configured for your domain. Please use email/password or social login.');
         } else {
-          setError(result.error);
+          setError(formatAuthError(result.error));
         }
       } else if (result.success) {
         // Refresh auth state after successful SSO
@@ -170,7 +173,7 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMessage);
+      setError(formatAuthError(errorMessage));
     } finally {
       setIsLoading(false);
     }
@@ -201,7 +204,7 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
     try {
       const result = await resetPasswordWithToken(resetToken.trim(), password);
       if (result.error) {
-        setError(result.error);
+        setError(formatAuthError(result.error));
       } else {
         setSuccessMessage('Password reset successfully! You can now sign in with your new password.');
         setPassword('');
@@ -214,7 +217,7 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMessage);
+      setError(formatAuthError(errorMessage));
     } finally {
       setIsLoading(false);
     }
@@ -244,8 +247,22 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
                   className={cn(
                     'inline-flex items-center gap-2 rounded-lg px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide',
                     isLight ? 'bg-blue-500/10 text-blue-600' : 'bg-white/10 text-blue-200',
-                  )}>
-                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  )}
+                  title={
+                    isConnected === true
+                      ? 'Backend server connected'
+                      : isConnected === false
+                        ? 'Backend server disconnected'
+                        : 'Checking backend connectivity...'
+                  }>
+                  <span
+                    className={cn(
+                      'h-1.5 w-1.5 rounded-full flex-shrink-0',
+                      isConnected === true && 'animate-pulse bg-green-500',
+                      isConnected === false && 'bg-red-500',
+                      isConnected === null && 'bg-gray-400',
+                    )}
+                  />
                   Hands-Off
                 </span>
               </div>

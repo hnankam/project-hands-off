@@ -12,6 +12,8 @@ import { themeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';
 import { AUTO_DISMISS_DELAYS } from '../constants/ui';
 import { resetPasswordWithToken } from '../lib/auth-client';
+import { useBackendConnectivity } from '../hooks/useBackendConnectivity';
+import { formatAuthError } from '../utils/auth-errors';
 
 interface ResetPasswordPageProps {
   token: string;
@@ -21,6 +23,7 @@ interface ResetPasswordPageProps {
 
 export default function ResetPasswordPage({ token, onSuccess, onCancel }: ResetPasswordPageProps) {
   const { isLight } = useStorage(themeStorage);
+  const { isConnected } = useBackendConnectivity();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -65,7 +68,7 @@ export default function ResetPasswordPage({ token, onSuccess, onCancel }: ResetP
       const result = await resetPasswordWithToken(token, password);
       
       if (result.error) {
-        setError(result.error);
+        setError(formatAuthError(result.error));
       } else {
         setSuccessMessage('Password reset successfully! You can now sign in with your new password.');
         // Redirect to login after a short delay
@@ -75,7 +78,7 @@ export default function ResetPasswordPage({ token, onSuccess, onCancel }: ResetP
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMessage);
+      setError(formatAuthError(errorMessage));
     } finally {
       setIsLoading(false);
     }
@@ -101,8 +104,22 @@ export default function ResetPasswordPage({ token, onSuccess, onCancel }: ResetP
                   className={cn(
                     'inline-flex items-center gap-2 rounded-lg px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide',
                     isLight ? 'bg-blue-500/10 text-blue-600' : 'bg-white/10 text-blue-200',
-                  )}>
-                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  )}
+                  title={
+                    isConnected === true
+                      ? 'Backend server connected'
+                      : isConnected === false
+                        ? 'Backend server disconnected'
+                        : 'Checking backend connectivity...'
+                  }>
+                  <span
+                    className={cn(
+                      'h-1.5 w-1.5 rounded-full flex-shrink-0',
+                      isConnected === true && 'animate-pulse bg-green-500',
+                      isConnected === false && 'bg-red-500',
+                      isConnected === null && 'bg-gray-400',
+                    )}
+                  />
                   Hands-Off
                 </span>
               </div>

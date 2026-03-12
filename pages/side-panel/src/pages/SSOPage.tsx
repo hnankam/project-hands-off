@@ -12,6 +12,7 @@ import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';
 import { signInWithSSODirect } from '../lib/auth-client';
+import { formatAuthError } from '../utils/auth-errors';
 
 interface SSOPageProps {
   email: string;
@@ -44,17 +45,19 @@ export default function SSOPage({ email, onSuccess, onError }: SSOPageProps) {
         
         if (result.error) {
           setStatus('error');
-          setErrorMessage(result.error);
-          onError?.(result.error);
+          const friendlyError = formatAuthError(result.error);
+          setErrorMessage(friendlyError);
+          onError?.(friendlyError);
         } else {
           // SSO redirect will happen automatically
           onSuccess?.();
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Authentication failed';
+        const friendlyError = formatAuthError(message);
         setStatus('error');
-        setErrorMessage(message);
-        onError?.(message);
+        setErrorMessage(friendlyError);
+        onError?.(friendlyError);
       }
     };
 

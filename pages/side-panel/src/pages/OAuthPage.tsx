@@ -12,6 +12,8 @@ import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';
 import { signInWithSocialDirect, type SocialProvider } from '../lib/auth-client';
+import { useBackendConnectivity } from '../hooks/useBackendConnectivity';
+import { formatAuthError } from '../utils/auth-errors';
 
 interface OAuthPageProps {
   provider: SocialProvider;
@@ -55,6 +57,7 @@ const PROVIDER_INFO: Record<SocialProvider, { name: string; icon: React.ReactNod
 
 export default function OAuthPage({ provider, onSuccess, onError }: OAuthPageProps) {
   const { isLight } = useStorage(themeStorage);
+  const { isConnected } = useBackendConnectivity();
   const [status, setStatus] = useState<'loading' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState<string>('');
 
@@ -70,17 +73,19 @@ export default function OAuthPage({ provider, onSuccess, onError }: OAuthPagePro
         
         if (result.error) {
           setStatus('error');
-          setErrorMessage(result.error);
-          onError?.(result.error);
+          const friendlyError = formatAuthError(result.error);
+          setErrorMessage(friendlyError);
+          onError?.(friendlyError);
         } else {
           // OAuth redirect will happen automatically
           onSuccess?.();
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Authentication failed';
+        const friendlyError = formatAuthError(message);
         setStatus('error');
-        setErrorMessage(message);
-        onError?.(message);
+        setErrorMessage(friendlyError);
+        onError?.(friendlyError);
       }
     };
 
@@ -117,8 +122,22 @@ export default function OAuthPage({ provider, onSuccess, onError }: OAuthPagePro
               'inline-flex items-center gap-2 rounded-lg px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide',
               isLight ? 'bg-blue-500/10 text-blue-600' : 'bg-white/10 text-blue-200'
             )}
+            title={
+              isConnected === true
+                ? 'Backend server connected'
+                : isConnected === false
+                  ? 'Backend server disconnected'
+                  : 'Checking backend connectivity...'
+            }
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            <span
+              className={cn(
+                'h-1.5 w-1.5 rounded-full flex-shrink-0',
+                isConnected === true && 'animate-pulse bg-green-500',
+                isConnected === false && 'bg-red-500',
+                isConnected === null && 'bg-gray-400',
+              )}
+            />
             Hands-Off
           </span>
         </div>

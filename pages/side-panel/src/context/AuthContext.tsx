@@ -9,6 +9,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import { unstable_batchedUpdates } from 'react-dom';
 import { authClient, Session, User, Organization, Member } from '../lib/auth-client';
 import { API_CONFIG } from '../constants';
+import { formatAuthError } from '../utils/auth-errors';
 import { sessionStorageDBWrapper, debug } from '@extension/shared';
 import { preferencesStorage } from '@extension/storage';
 
@@ -360,14 +361,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (result.error) {
-        return { error: result.error.message || 'Sign in failed' };
+        return { error: formatAuthError(result.error.message) || 'Sign in failed' };
       }
 
       await loadSession();
       return {};
     } catch (error: any) {
       debug.error('Sign in error:', error);
-      return { error: error.message || 'An error occurred during sign in' };
+      return { error: formatAuthError((error as Error).message) || 'An error occurred during sign in' };
     }
   };
 
@@ -383,14 +384,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (result.error) {
-        return { error: result.error.message || 'Sign up failed' };
+        return { error: formatAuthError(result.error.message) || 'Sign up failed' };
       }
 
       await loadSession();
       return {};
     } catch (error: any) {
       debug.error('Sign up error:', error);
-      return { error: error.message || 'An error occurred during sign up' };
+      return { error: formatAuthError((error as Error).message) || 'An error occurred during sign up' };
     }
   };
 
