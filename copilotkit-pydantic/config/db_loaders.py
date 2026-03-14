@@ -33,6 +33,7 @@ class ContextBundle:
     models: List[Dict[str, Any]]
     agents: List[Dict[str, Any]]
     tools: Dict[str, Dict[str, Any]]
+    skills: Dict[str, Dict[str, Any]]
     mcp_servers: Dict[str, Dict[str, Any]]
     version: Optional[datetime]
 
@@ -311,12 +312,15 @@ async def _fetch_agents(
                                    a.updated_at,
                                    a.created_at,
                                    array_remove(array_agg(DISTINCT m.model_key), NULL) AS model_keys,
-                                   array_remove(array_agg(DISTINCT t.tool_key), NULL) AS tool_keys
+                                   array_remove(array_agg(DISTINCT t.tool_key), NULL) AS tool_keys,
+                                   array_remove(array_agg(DISTINCT s.skill_key), NULL) AS skill_keys
                               FROM agents a
                               LEFT JOIN agent_model_mappings amm ON amm.agent_id = a.id
                               LEFT JOIN models m ON m.id = amm.model_id
                               LEFT JOIN agent_tool_mappings atm ON atm.agent_id = a.id
                               LEFT JOIN tools t ON t.id = atm.tool_id
+                              LEFT JOIN agent_skill_mappings asm ON asm.agent_id = a.id
+                              LEFT JOIN skills s ON s.id = asm.skill_id AND s.deleted_at IS NULL
                              WHERE {org_condition}
                                {team_condition}
                                AND a.deleted_at IS NULL
@@ -341,6 +345,9 @@ async def _fetch_agents(
                             if existing_rank is None or rank < existing_rank:
                                 model_keys = row['model_keys'] or []
                                 allowed_models = [key for key in model_keys if key] if model_keys else []
+                                skill_keys = row.get('skill_keys') or []
+                                allowed_skills = [key for key in skill_keys if key] if skill_keys else None
+                                agent_metadata = row.get('metadata') or {}
                                 agents_map[row['agent_type']] = {
                                     'id': row['id'],
                                     'type': row['agent_type'],
@@ -348,11 +355,12 @@ async def _fetch_agents(
                                     'description': row['description'] or '',
                                     'prompt': row['prompt_template'],
                                     'enabled': row['enabled'],
-                                    'metadata': row.get('metadata') or {},
+                                    'metadata': agent_metadata,
                                     'allowed_models': allowed_models if allowed_models else None,
                                     'allowed_tools': (
                                         [key for key in (row.get('tool_keys') or []) if key] if row.get('tool_keys') else None
                                     ),
+                                    'allowed_skills': allowed_skills,
                                 }
                                 agent_ranks[row['agent_type']] = rank
                             max_version = _max_timestamp(max_version, row.get('updated_at') or row.get('created_at'))
@@ -590,6 +598,102 @@ async def _fetch_tools(
     raise RuntimeError("Unreachable code")
 
 
+async def _fetch_skills(
+    organization_id: Optional[str], team_id: Optional[str], max_retries: int = 3
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, int], Optional[datetime]]:
+    """Fetch skills with retry logic and connection throttling."""
+
+    async with _db_semaphore:
+        for attempt in range(max_retries):
+            try:
+                skills_map = {}
+                skill_ranks = {}
+                max_version = None
+
+                async with get_db_connection() as conn:
+                    async with conn.cursor() as cur:
+                        params = {}
+                        if organization_id:
+                            params['organization_id'] = organization_id
+                        if team_id:
+                            params['team_id'] = team_id
+
+                        org_condition, team_condition = _get_scope_conditions(
+                            's', 'skill_teams', 'skill_id', organization_id, team_id
+                        )
+
+                        await cur.execute(
+                            f"""
+                            SELECT s.id,
+                                   s.skill_key,
+                                   s.name,
+                                   s.description,
+                                   s.source_type,
+                                   s.content,
+                                   s.metadata,
+                                   s.git_config,
+                                   s.organization_id,
+                                   COALESCE(
+                                       (SELECT array_agg(st.team_id)
+                                        FROM skill_teams st
+                                        WHERE st.skill_id = s.id),
+                                       ARRAY[]::text[]
+                                   ) as team_ids,
+                                   s.enabled,
+                                   s.updated_at,
+                                   s.created_at
+                              FROM skills s
+                             WHERE {org_condition}
+                               {team_condition}
+                               AND s.deleted_at IS NULL
+                             ORDER BY s.enabled DESC, s.skill_key
+                            """,
+                            params,
+                        )
+                        rows = await cur.fetchall()
+                        for row in rows:
+                            rank = _scope_rank(row['organization_id'], row['team_ids'], organization_id, team_id)
+                            existing_rank = skill_ranks.get(row['skill_key'])
+                            if existing_rank is None or rank < existing_rank:
+                                skills_map[row['skill_key']] = {
+                                    'id': row['id'],
+                                    'skill_key': row['skill_key'],
+                                    'name': row['name'],
+                                    'description': row['description'],
+                                    'source_type': row['source_type'],
+                                    'content': row.get('content'),
+                                    'metadata': row.get('metadata') or {},
+                                    'git_config': row.get('git_config'),
+                                    'organization_id': row.get('organization_id'),
+                                    'team_ids': row.get('team_ids') or [],
+                                    'enabled': row.get('enabled', True),
+                                    'updated_at': row.get('updated_at'),
+                                    'created_at': row.get('created_at'),
+                                }
+                                skill_ranks[row['skill_key']] = rank
+                            max_version = _max_timestamp(max_version, row.get('updated_at') or row.get('created_at'))
+
+                return skills_map, skill_ranks, max_version
+
+            except psycopg.OperationalError as exc:
+                if attempt < max_retries - 1:
+                    wait_time = (0.5 * (2 ** attempt)) + (random.random() * 0.5)
+                    logger.debug(
+                        f"_fetch_skills: Retry {attempt + 1}/{max_retries} after {wait_time:.1f}s "
+                        f"(org={organization_id[:8] if organization_id else 'global'})"
+                    )
+                    await asyncio.sleep(wait_time)
+                    continue
+
+                logger.error(
+                    f"_fetch_skills: Failed after {max_retries} attempts "
+                    f"(org={organization_id[:8] if organization_id else 'global'}): {exc}"
+                )
+                raise
+
+    raise RuntimeError("Unreachable code")
+
+
 async def fetch_context_bundle(
     organization_id: Optional[str],
     team_id: Optional[str],
@@ -613,17 +717,19 @@ async def fetch_context_bundle(
             _fetch_agents(organization_id, team_id),
             _fetch_mcp_servers(organization_id, team_id),
             _fetch_tools(organization_id, team_id),
+            _fetch_skills(organization_id, team_id),
         )
-        
+
         (providers, _, v1) = results[0]
         (models_map, _, v2) = results[1]
         (agents_map, _, v3) = results[2]
         (servers_map, v4) = results[3]
         (tools_map, _, v5) = results[4]
-        
+        (skills_map, _, v6) = results[5]
+
         # Compute global max version
         max_version = None
-        for v in [v1, v2, v3, v4, v5]:
+        for v in [v1, v2, v3, v4, v5, v6]:
             max_version = _max_timestamp(max_version, v)
 
         # Post-process: Add MCP server info to tools
@@ -648,6 +754,7 @@ async def fetch_context_bundle(
             models=list(models_map.values()),
             agents=list(agents_map.values()),
             tools=tools_map,
+            skills=skills_map,
             mcp_servers=servers_map,
             version=max_version,
         )

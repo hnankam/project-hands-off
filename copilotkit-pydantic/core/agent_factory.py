@@ -16,6 +16,7 @@ from pydantic_ai.builtin_tools import (
 from config.models import get_models_for_context
 from config.prompts import get_agent_prompts_for_context, get_agent_info_for_context
 from config.tools import get_tools_for_context, get_mcp_servers_for_context
+from config.skills import get_skills_for_context
 from config import logger
 from config.environment import TOOL_TIMEOUT
 from core.models import AgentState, UnifiedDeps, StepStatus
@@ -360,6 +361,104 @@ def _categorize_tools(
     return builtin_tool_instances, allowed_backend_keys, allowed_mcp_keys, frontend_tool_keys
 
 
+def _build_skills_toolset(
+    organization_id: str | None,
+    team_id: str | None,
+    agent_info: dict,
+) -> Optional[Any]:
+    """Build SkillsToolset from stored skills, filtered by agent's allowed_skills."""
+    try:
+        from pydantic_ai_skills import SkillsToolset
+        from pydantic_ai_skills.types import Skill, SkillResource
+        from pydantic_ai_skills.registries.git import GitCloneOptions, GitSkillsRegistry
+    except ImportError as e:
+        logger.warning("pydantic-ai-skills import failed; skipping skills toolset: %s", e)
+        return None
+
+    skill_definitions = {}
+    try:
+        skill_definitions = get_skills_for_context(organization_id, team_id)
+    except RuntimeError as e:
+        logger.warning(
+            "[Skills] get_skills_for_context failed for org=%s team=%s: %s",
+            organization_id[:8] if organization_id else "global",
+            team_id[:8] if team_id else "global",
+            e,
+        )
+        return None
+
+    allowed_skill_keys = agent_info.get('allowed_skills')
+    if not allowed_skill_keys:
+        return None
+    skill_definitions = {
+        k: v for k, v in skill_definitions.items()
+        if k in allowed_skill_keys and v.get('enabled', True)
+    }
+
+    if not skill_definitions:
+        return None
+
+    programmatic_skills: list = []
+    registries: list = []
+
+    for skill_key, skill_cfg in skill_definitions.items():
+        source_type = skill_cfg.get('source_type', 'manual')
+        if source_type == 'git':
+            git_config = skill_cfg.get('git_config') or {}
+            raw_clone = git_config.get('clone_options')
+            clone_options = None
+            if raw_clone and isinstance(raw_clone, dict):
+                sparse = raw_clone.get('sparse_paths')
+                if isinstance(sparse, str):
+                    sparse = [s.strip() for s in sparse.split(',') if s.strip()]
+                elif not isinstance(sparse, list):
+                    sparse = []
+                clone_options = GitCloneOptions(
+                    depth=raw_clone.get('depth'),
+                    branch=raw_clone.get('branch'),
+                    single_branch=raw_clone.get('single_branch', False),
+                    sparse_paths=sparse,
+                    env=raw_clone.get('env') or {},
+                    multi_options=raw_clone.get('multi_options') or [],
+                    git_options=raw_clone.get('git_options') or {},
+                )
+            try:
+                registry = GitSkillsRegistry(
+                    repo_url=git_config.get('repo_url', ''),
+                    path=git_config.get('path') or '',
+                    target_dir=git_config.get('target_dir'),
+                    token=git_config.get('token'),
+                    ssh_key_file=git_config.get('ssh_key_file'),
+                    clone_options=clone_options,
+                )
+                registries.append(registry)
+            except Exception as exc:
+                logger.warning("Failed to create GitSkillsRegistry for skill '%s': %s", skill_key, exc)
+        else:
+            metadata = skill_cfg.get('metadata') or {}
+            resources = []
+            for r in metadata.get('resources') or []:
+                if isinstance(r, dict) and r.get('name') is not None:
+                    resources.append(SkillResource(name=r['name'], content=r.get('content', '')))
+            skill = Skill(
+                name=skill_key,
+                description=skill_cfg.get('description', ''),
+                content=skill_cfg.get('content') or '',
+                resources=resources if resources else None,
+            )
+            programmatic_skills.append(skill)
+
+    if not programmatic_skills and not registries:
+        return None
+
+    kwargs: dict = {}
+    if programmatic_skills:
+        kwargs['skills'] = programmatic_skills
+    if registries:
+        kwargs['registries'] = registries
+    return SkillsToolset(**kwargs)
+
+
 async def create_agent(
     agent_type: str,
     model_name: str,
@@ -469,7 +568,7 @@ async def create_agent(
     
     # Import here to avoid circular import
     from tools.agent_tools import get_agent_tools
-    
+
     # logger.debug("Getting backend and MCP tools for agent '%s'", agent_type)
     backend_tools, mcp_toolsets = await get_agent_tools(
         agent_type=agent_type,
@@ -480,7 +579,22 @@ async def create_agent(
         allowed_backend_tools=set(allowed_backend_keys),
         allowed_mcp_tools=set(allowed_mcp_keys),
     )
-    
+
+    # Build skills toolset if skills are configured
+    skills_toolset = _build_skills_toolset(organization_id, team_id, agent_info)
+    all_toolsets = list(mcp_toolsets) if mcp_toolsets else []
+    if skills_toolset is not None:
+        all_toolsets.append(skills_toolset)
+        logger.info(
+            "[Skills] Added SkillsToolset to agent (agent_type=%s, skills=%s)",
+            agent_type,
+            list(skill_definitions.keys()) if (skill_definitions := {}) else [],
+        )
+    # Note: skill_definitions is not in scope here - it's in _build_skills_toolset. Fix the log.
+    if skills_toolset is not None:
+        all_toolsets.append(skills_toolset)
+        logger.info("[Skills] Added SkillsToolset to agent (agent_type=%s)", agent_type)
+
     agent_kwargs: Dict[str, Any] = {
         "model": model,
         "instructions": instructions,
@@ -493,7 +607,7 @@ async def create_agent(
         ],
         "builtin_tools": builtin_tool_instances,
         "tools": backend_tools,  # Backend callable functions
-        "toolsets": mcp_toolsets,  # MCP toolsets loaded from static config (TESTING)
+        "toolsets": all_toolsets,  # MCP toolsets + SkillsToolset
         "retries": 10,
         "tool_timeout": TOOL_TIMEOUT,
     }
@@ -541,7 +655,15 @@ async def create_agent(
             return format_agui_context(context_items)
         
         return ""
-    
+
+    # Add skills instructions when SkillsToolset is present
+    if skills_toolset is not None:
+
+        @agent.instructions
+        async def add_skills_instructions(ctx: RunContext[Any]) -> str | None:
+            """Add skills instructions to the agent's context."""
+            return await skills_toolset.get_instructions(ctx)
+
     # Add multi-instance context instructions
     @agent.instructions
     def inject_multi_instance_context(ctx: RunContext[UnifiedDeps]) -> str:

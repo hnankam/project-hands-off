@@ -50,6 +50,7 @@ export { default as providersRouter } from './providers.js';
 export { default as modelsRouter } from './models.js';
 export { default as agentsRouter } from './agents.js';
 export { default as toolsRouter } from './tools.js';
+export { default as skillsRouter } from './skills.js';
 
 // ============================================================================
 // Monitoring Routes

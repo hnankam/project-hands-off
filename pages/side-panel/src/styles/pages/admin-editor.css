@@ -227,3 +227,39 @@
   background: rgba(75, 85, 99, 0.5);
 }
 
+/* Scrollbar for skills Instructions and Resources rendered preview */
+/* Override copilot-chat-container overflow:hidden so content can scroll */
+.skills-rendered-scrollbar {
+  overflow: auto !important;
+}
+
+.skills-rendered-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.skills-rendered-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.skills-rendered-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.4);
+  border-radius: 3px;
+}
+
+.skills-rendered-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.6);
+}
+
+.skills-rendered-scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.dark .skills-rendered-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.4);
+}
+
+.dark .skills-rendered-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.6);
+}
+

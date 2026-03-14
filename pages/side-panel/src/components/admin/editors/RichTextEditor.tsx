@@ -116,7 +116,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         placeholder,
       }),
       Markdown.configure({
-        html: true, // Allow HTML for backwards compatibility
+        html: false, // Markdown only - no HTML in serialization
         tightLists: true,
         tightListClass: 'tight',
         bulletListMarker: '-',

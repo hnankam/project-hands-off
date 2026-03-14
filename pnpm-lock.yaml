@@ -707,9 +707,15 @@ importers:
       mermaid:
         specifier: ^10.9.1
         version: 10.9.5
+      react-markdown:
+        specifier: ^9.0.1
+        version: 9.1.0(@types/react@19.2.7)(react@19.2.1)
       rehype-raw:
         specifier: ^7.0.0
         version: 7.0.0
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1
       streamdown:
         specifier: ^1.6.10
         version: 1.6.10(@types/mdast@4.0.4)(micromark-util-types@2.0.2)(micromark@4.0.2)(react@19.2.1)

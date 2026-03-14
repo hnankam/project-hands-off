@@ -309,27 +309,22 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
           isOpen ? 'pointer-events-auto model-selector-dropdown' : 'opacity-0 pointer-events-none'
         )}>
         {models
-          .filter(model => model.enabled !== false)
+          .filter(model => {
+            if (model.enabled === false) return false;
+            if (allowedModels !== null && !allowedModels.includes(model.id)) return false;
+            return true;
+          })
           .map(model => {
-          // Check if model is allowed for the selected agent
-          const isAllowedForAgent = allowedModels === null || allowedModels.includes(model.id);
-          const isDisabled = !isAllowedForAgent;
-          
           return (
             <button
               key={model.id}
               onClick={() => {
-                if (!isDisabled) {
-                  onModelChange(model.id);
-                  setIsOpen(false);
-                }
+                onModelChange(model.id);
+                setIsOpen(false);
               }}
-              disabled={isDisabled}
               className={cn(
                 'flex w-full flex-col items-start px-2.5 py-1.5 text-xs transition-colors',
-                isDisabled
-                  ? 'opacity-50 cursor-not-allowed'
-                  : selectedModel === model.id
+                selectedModel === model.id
                   ? isLight
                     ? 'bg-blue-50 text-blue-700'
                     : 'bg-blue-900/30 text-blue-300'
@@ -339,18 +334,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
               )}>
               <div className="flex w-full items-center justify-between">
                 <span className={cn(selectedModel === model.id && 'font-medium')}>{model.label}</span>
-                {selectedModel === model.id && !isDisabled && (
+                {selectedModel === model.id && (
                   <svg width="12" height="12" fill="currentColor" viewBox="0 0 20 20">
                     <path
                       fillRule="evenodd"
                       d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
                       clipRule="evenodd"
                     />
-                  </svg>
-                )}
-                {!isAllowedForAgent && (
-                  <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                   </svg>
                 )}
               </div>

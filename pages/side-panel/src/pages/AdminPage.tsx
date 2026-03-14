@@ -16,6 +16,7 @@ import { UsersTab } from '../components/admin/UsersTab';
 import { ProvidersTab } from '../components/admin/ProvidersTab';
 import ModelsTab from '@src/components/admin/ModelsTab';
 import ToolsTab from '@src/components/admin/ToolsTab';
+import SkillsTab from '@src/components/admin/SkillsTab';
 import AgentsTab from '@src/components/admin/AgentsTab';
 import { DeploymentsTab } from '../components/admin/DeploymentsTab';
 import { UsageTab } from '../components/admin/UsageTab';
@@ -61,7 +62,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
   const [activeTab, setActiveTab] = useState<AdminTabKey>(() => {
     try {
       const stored = localStorage.getItem('adminPageActiveTab');
-      const validTabs: AdminTabKey[] = ['organizations', 'teams', 'users', 'usage', 'providers', 'models', 'tools', 'agents', 'deployments'];
+      const validTabs: AdminTabKey[] = ['organizations', 'teams', 'users', 'usage', 'providers', 'models', 'tools', 'skills', 'agents', 'deployments'];
       if (stored && validTabs.includes(stored as AdminTabKey)) {
         return stored as AdminTabKey;
       }
@@ -134,6 +135,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
     { key: 'providers' as AdminTabKey, hidden: !isOwnerOrAdmin, disabled: !canAccessTabs },
     { key: 'models' as AdminTabKey, hidden: !isOwnerOrAdmin, disabled: !canAccessTabs },
     { key: 'tools' as AdminTabKey, hidden: !isOwnerOrAdmin, disabled: !canAccessTabs },
+    { key: 'skills' as AdminTabKey, hidden: !isOwnerOrAdmin, disabled: !canAccessTabs },
     { key: 'agents' as AdminTabKey, hidden: !isOwnerOrAdmin, disabled: !canAccessTabs },
     { key: 'deployments' as AdminTabKey, hidden: !isOwnerOrAdmin, disabled: !canAccessTabs },
   ];
@@ -290,6 +292,22 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
           isOwnerOrAdmin ? (
             <div className="animate-fadeIn">
               <ToolsTab
+                isLight={isLight}
+                organizations={organizations}
+                preselectedOrgId={selectedOrgForTeams}
+                onError={setError}
+                onSuccess={setSuccess}
+              />
+            </div>
+          ) : (
+            <AccessDenied isLight={isLight} />
+          )
+        )}
+
+        {activeTab === 'skills' && (
+          isOwnerOrAdmin ? (
+            <div className="animate-fadeIn">
+              <SkillsTab
                 isLight={isLight}
                 organizations={organizations}
                 preselectedOrgId={selectedOrgForTeams}

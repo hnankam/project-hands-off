@@ -150,6 +150,7 @@ export type AdminTabKey =
   | 'providers'
   | 'models'
   | 'tools'
+  | 'skills'
   | 'agents'
   | 'deployments';
 

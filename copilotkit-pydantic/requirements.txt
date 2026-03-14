@@ -3,6 +3,7 @@ fastapi
 uvicorn[standard]
 python-dotenv
 pydantic-ai>=1.65.0
+pydantic-ai-skills[git]>=0.5.0
 pydantic-ai-slim[ag-ui,bedrock,google,mcp]>=1.65.0
 summarization-pydantic-ai[hybrid,tiktoken]
 psycopg[binary]>=3.1

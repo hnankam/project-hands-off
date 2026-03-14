@@ -109,6 +109,7 @@ import {
   agentsRouter,
   usageRouter,
   toolsRouter,
+  skillsRouter,
   workspaceRouter,
   oauthRouter,
 } from './routes/index.js';
@@ -1210,6 +1211,7 @@ const app = express();
     app.use('/api/admin/models', modelsRouter);
     app.use('/api/admin/agents', agentsRouter);
     app.use('/api/admin/tools', toolsRouter);
+    app.use('/api/admin/skills', skillsRouter);
     app.use('/api/admin/usage', usageRouter);
 
     // ========================================================================

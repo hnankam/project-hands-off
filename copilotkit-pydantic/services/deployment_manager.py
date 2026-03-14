@@ -13,6 +13,7 @@ from config.db_loaders import fetch_context_bundle
 from config.models import store_models_for_context
 from config.prompts import store_prompts_for_context
 from config.tools import store_tools_for_context
+from config.skills import store_skills_for_context
 from core.agent_factory import clear_agent_cache, get_agent
 from tools.auxiliary_agents import clear_auxiliary_agent_cache
 from utils.context import ContextKey, context_tuple, make_context_key
@@ -132,6 +133,11 @@ async def _refresh_context(
                     'mcp_servers': bundle.mcp_servers,
                 },
             )
+            store_skills_for_context(
+                organization_id,
+                team_id,
+                {'skills': bundle.skills},
+            )
 
             # Reset agent caches for this context to ensure new settings take effect
             clear_agent_cache(organization_id, team_id)
@@ -160,6 +166,7 @@ async def _refresh_context(
                     'enabled': agent.get('enabled', True),
                     'allowed_models': agent.get('allowed_models') or None,
                     'allowed_tools': agent.get('allowed_tools') or None,
+                    'allowed_skills': agent.get('allowed_skills') or None,
                 }
                 for agent in bundle.agents
             }

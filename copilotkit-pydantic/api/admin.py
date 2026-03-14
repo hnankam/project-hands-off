@@ -225,4 +225,6 @@ async def load_mcp_server_tools(server_id: str, request: LoadToolsRequest):
 def register_admin_routes(app):
     """Register admin routes with the FastAPI app."""
     app.include_router(router)
+    from api.skills_admin import router as skills_admin_router
+    app.include_router(skills_admin_router)
 

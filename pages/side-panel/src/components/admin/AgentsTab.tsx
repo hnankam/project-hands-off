@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
-import { OrganizationSelector, TeamSelector, TeamMultiSelector, ModelMultiSelector, ToolMultiSelector, AuxiliaryAgentSelector } from './selectors';
+import { OrganizationSelector, TeamSelector, TeamMultiSelector, ModelMultiSelector, ToolMultiSelector, SkillMultiSelector, AuxiliaryAgentSelector } from './selectors';
 import { Radio, Checkbox } from './form-controls';
 import { RichTextEditor, CodeMirrorJsonEditor } from './editors';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
@@ -50,6 +50,14 @@ interface ToolSummary {
   } | null;
 }
 
+interface SkillSummary {
+  id: string;
+  skillKey: string;
+  name: string;
+  teams: Array<{ id: string; name: string }>;
+  enabled: boolean;
+}
+
 interface AgentRecord {
   id: string;
   agentType: string;
@@ -64,6 +72,7 @@ interface AgentRecord {
   updatedAt: string;
   modelIds: string[];
   toolIds: string[];
+  skillIds: string[];
 }
 
 type AgentScope = 'organization' | 'team';
@@ -91,6 +100,7 @@ interface AgentFormState {
   modelIds: string[];
   toolMode: 'all' | 'custom';
   toolIds: string[];
+  skillIds: string[];
 }
 
 interface AgentsTabProps {
@@ -115,6 +125,7 @@ const INITIAL_FORM: AgentFormState = {
   modelIds: [],
   toolMode: 'all',
   toolIds: [],
+  skillIds: [],
 };
 
 const MAX_FETCH_RETRIES = 3;
@@ -460,6 +471,8 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   const [modelsLoading, setModelsLoading] = useState(false);
   const [toolsList, setToolsList] = useState<ToolSummary[]>([]);
   const [toolsLoading, setToolsLoading] = useState(false);
+  const [skillsList, setSkillsList] = useState<SkillSummary[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
   const teamFilterIdsRef = useRef(teamFilterIds);
   useEffect(() => {
     teamFilterIdsRef.current = teamFilterIds;
@@ -478,6 +491,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [expandedInstructions, setExpandedInstructions] = useState<Set<string>>(new Set());
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
+  const [expandedSkills, setExpandedSkills] = useState<Set<string>>(new Set());
   const [expandedAuxAgents, setExpandedAuxAgents] = useState<Set<string>>(new Set());
   const [expandedAgentDetails, setExpandedAgentDetails] = useState<Set<string>>(new Set());
   const [createFormAuxExpanded, setCreateFormAuxExpanded] = useState(false);
@@ -540,6 +554,29 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       });
     },
     [toolsList],
+  );
+
+  const resolveSkillsForScope = useCallback(
+    (scope: AgentScope, teamIds: string[]) => {
+      const effectiveTeamIds = teamIds.filter(id => id && id.trim() !== '');
+
+      return skillsList.filter(skill => {
+        if (!skill.enabled) return false;
+
+        const skillTeamIds = skill.teams.map(t => t.id);
+
+        if (scope === 'organization') {
+          return skillTeamIds.length === 0;
+        }
+
+        if (effectiveTeamIds.length === 0) {
+          return skillTeamIds.length === 0;
+        }
+
+        return skillTeamIds.length === 0 || skillTeamIds.some(stId => effectiveTeamIds.includes(stId));
+      });
+    },
+    [skillsList],
   );
 
   useEffect(() => {
@@ -608,7 +645,23 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       }
       return { ...prev, toolIds: filtered };
     });
-  }, [toolsList, resolveToolsForScope, createForm.scope, createForm.teamIds, editForm?.scope, editForm?.teamIds]);
+
+    setCreateForm(prev => {
+      if (prev.skillIds.length === 0) return prev;
+      const allowedIds = new Set(resolveSkillsForScope(prev.scope, prev.teamIds).map(skill => skill.id));
+      const filtered = prev.skillIds.filter(id => allowedIds.has(id));
+      if (filtered.length === prev.skillIds.length) return prev;
+      return { ...prev, skillIds: filtered };
+    });
+
+    setEditForm(prev => {
+      if (!prev || prev.skillIds.length === 0) return prev;
+      const allowedIds = new Set(resolveSkillsForScope(prev.scope, prev.teamIds).map(skill => skill.id));
+      const filtered = prev.skillIds.filter(id => allowedIds.has(id));
+      if (filtered.length === prev.skillIds.length) return prev;
+      return { ...prev, skillIds: filtered };
+    });
+  }, [toolsList, skillsList, resolveToolsForScope, resolveSkillsForScope, createForm.scope, createForm.teamIds, editForm?.scope, editForm?.teamIds]);
 
   const availableCreateModels = useMemo(
     () => resolveModelsForScope(createForm.scope, createForm.teamIds),
@@ -628,6 +681,16 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   const availableEditTools = useMemo(
     () => (editForm ? resolveToolsForScope(editForm.scope, editForm.teamIds) : []),
     [resolveToolsForScope, editForm?.scope, editForm?.teamIds],
+  );
+
+  const availableCreateSkills = useMemo(
+    () => resolveSkillsForScope(createForm.scope, createForm.teamIds),
+    [resolveSkillsForScope, createForm.scope, createForm.teamIds],
+  );
+
+  const availableEditSkills = useMemo(
+    () => (editForm ? resolveSkillsForScope(editForm.scope, editForm.teamIds) : []),
+    [resolveSkillsForScope, editForm?.scope, editForm?.teamIds],
   );
 
   const createModelsDisabled = !modelsLoading && availableCreateModels.length === 0;
@@ -656,7 +719,21 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     ? editForm && editForm.scope === 'team' && editForm.teamIds.length === 0
       ? 'Select teams to choose team-scoped tools'
       : 'No tools available for this scope'
-    : 'Select tools';
+    : 'All tools';
+
+  const createSkillsDisabled = !skillsLoading && availableCreateSkills.length === 0;
+  const createSkillsPlaceholder = createSkillsDisabled
+    ? createForm.scope === 'team' && createForm.teamIds.length === 0
+      ? 'Select teams to choose team-scoped skills'
+      : 'No skills available for this scope'
+    : 'Select skills...';
+
+  const editSkillsDisabled = !skillsLoading && availableEditSkills.length === 0;
+  const editSkillsPlaceholder = editSkillsDisabled
+    ? editForm && editForm.scope === 'team' && editForm.teamIds.length === 0
+      ? 'Select teams to choose team-scoped skills'
+      : 'No skills available for this scope'
+    : 'Select skills...';
 
   const loadTeams = useCallback(async (orgId: string): Promise<Team[]> => {
     setTeamsLoading(true);
@@ -717,6 +794,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         ...agent,
         modelIds: Array.isArray(agent?.modelIds) ? agent.modelIds : [],
         toolIds: Array.isArray(agent?.toolIds) ? agent.toolIds : [],
+        skillIds: Array.isArray(agent?.skillIds) ? agent.skillIds : [],
       }));
       return agentList;
     },
@@ -809,6 +887,33 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     [baseURL],
   );
 
+  const fetchSkills = useCallback(
+    async (orgId: string, signal?: AbortSignal): Promise<SkillSummary[]> => {
+      const params = new URLSearchParams({ organizationId: orgId });
+
+      const response = await fetch(`${baseURL}/api/admin/skills?${params.toString()}`, {
+        credentials: 'include',
+        signal,
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        throw new Error(errorPayload?.error || `Failed to fetch skills (${response.status})`);
+      }
+
+      const data = await response.json();
+      const skillsData: SkillSummary[] = (data.skills || []).map((skill: any) => ({
+        id: skill.id,
+        skillKey: skill.skillKey,
+        name: skill.name || skill.skillKey,
+        teams: skill.teams || [],
+        enabled: Boolean(skill.enabled),
+      }));
+      return skillsData;
+    },
+    [baseURL],
+  );
+
   const refreshModels = useCallback(
     async (orgId: string) => {
       setModelsLoading(true);
@@ -861,6 +966,32 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     [fetchTools],
   );
 
+  const refreshSkills = useCallback(
+    async (orgId: string) => {
+      setSkillsLoading(true);
+      const controller = new AbortController();
+
+      try {
+        const fetched = await fetchSkills(orgId, controller.signal);
+        if (!controller.signal.aborted) {
+          setSkillsList(fetched);
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError' && !controller.signal.aborted) {
+          console.error('[AgentsTab] Failed to fetch skills:', err);
+          setSkillsList([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setSkillsLoading(false);
+        }
+      }
+
+      return controller;
+    },
+    [fetchSkills],
+  );
+
   useEffect(() => {
     if (!selectedOrgId) {
       setAgents([]);
@@ -869,6 +1000,8 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       setModelsLoading(false);
       setToolsList([]);
       setToolsLoading(false);
+      setSkillsList([]);
+      setSkillsLoading(false);
       initialLoadCompleteRef.current = false;
       return;
     }
@@ -887,9 +1020,10 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
 
         const modelsController = await refreshModels(selectedOrgId);
         const toolsController = await refreshTools(selectedOrgId);
+        const skillsController = await refreshSkills(selectedOrgId);
         const activeTeamId = teamFilterIdsRef.current[0] || null;
         const agentsController = await refreshAgents(selectedOrgId, activeTeamId, { suppressLoading: true });
-        controllers.push(modelsController, toolsController, agentsController);
+        controllers.push(modelsController, toolsController, skillsController, agentsController);
 
         if (!aborted) {
           initialLoadCompleteRef.current = true;
@@ -912,7 +1046,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       aborted = true;
       controllers.forEach(ctrl => ctrl.abort());
     };
-  }, [selectedOrgId, loadTeams, refreshAgents, refreshModels, refreshTools]);
+  }, [selectedOrgId, loadTeams, refreshAgents, refreshModels, refreshTools, refreshSkills]);
 
   useEffect(() => {
     if (!selectedOrgId || !initialLoadCompleteRef.current) {
@@ -975,6 +1109,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       return;
     }
 
+
     try {
       // Merge auxiliary agents into metadata
       const baseMetadata = sanitizeJsonText(createForm.metadata, 'Metadata');
@@ -1009,6 +1144,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       if (createForm.toolMode === 'custom') {
         (payload as any).toolIds = createForm.toolIds;
       }
+      (payload as any).skillIds = createForm.skillIds;
 
       const response = await fetch(`${baseURL}/api/admin/agents`, {
         method: 'POST',
@@ -1056,6 +1192,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       modelIds: Array.isArray(agent.modelIds) ? agent.modelIds : [],
       toolMode: agent.toolIds && agent.toolIds.length > 0 ? 'custom' : 'all',
       toolIds: Array.isArray(agent.toolIds) ? agent.toolIds : [],
+      skillIds: Array.isArray(agent.skillIds) ? agent.skillIds : [],
     });
   };
 
@@ -1086,6 +1223,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       modelIds: Array.isArray(agent.modelIds) ? agent.modelIds : [],
       toolMode: agent.toolIds && agent.toolIds.length > 0 ? 'custom' : 'all',
       toolIds: Array.isArray(agent.toolIds) ? agent.toolIds : [],
+      skillIds: Array.isArray(agent.skillIds) ? agent.skillIds : [],
     });
     setIsCloning(true);
     setShowCreateForm(true);
@@ -1126,6 +1264,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       return;
     }
 
+
     try {
       // Merge auxiliary agents into metadata
       const baseMetadata = sanitizeJsonText(editForm.metadata, 'Metadata');
@@ -1162,6 +1301,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       } else {
         (payload as any).toolIds = [];
       }
+      (payload as any).skillIds = editForm.skillIds;
 
       const response = await fetch(`${baseURL}/api/admin/agents/${agentId}`, {
         method: 'PUT',
@@ -1263,6 +1403,18 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     });
   };
 
+  const toggleSkills = (agentId: string) => {
+    setExpandedSkills(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(agentId)) {
+        newSet.delete(agentId);
+      } else {
+        newSet.add(agentId);
+      }
+      return newSet;
+    });
+  };
+
   const toggleTools = (agentId: string) => {
     setExpandedTools(prev => {
       const newSet = new Set(prev);
@@ -1344,6 +1496,14 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     }
     return mapping;
   }, [toolsList]);
+
+  const skillLookup = useMemo(() => {
+    const mapping: Record<string, SkillSummary> = {};
+    for (const skill of skillsList) {
+      mapping[skill.id] = skill;
+    }
+    return mapping;
+  }, [skillsList]);
 
   const filteredAgents = useMemo(() => {
     let result = agents.filter(agent => {
@@ -2161,6 +2321,33 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                 )}
               </div>
 
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                    Skill Availability
+                  </label>
+                  <span className={cn('text-[11px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    {createForm.skillIds.length === 0 ? 'No skills' : createForm.skillIds.length === availableCreateSkills.length ? 'All skills' : `${createForm.skillIds.length} selected`}
+                  </span>
+                </div>
+                <SkillMultiSelector
+                  isLight={isLight}
+                  skills={availableCreateSkills.map(s => ({ id: s.id, skillKey: s.skillKey, name: s.name, enabled: s.enabled }))}
+                  selectedSkillIds={createForm.skillIds}
+                  onChange={ids => setCreateForm(prev => ({ ...prev, skillIds: ids }))}
+                  loading={skillsLoading}
+                  disabled={createSkillsDisabled}
+                  placeholder={createSkillsPlaceholder}
+                />
+                {createSkillsDisabled && (
+                  <p className={cn('text-[11px]', isLight ? 'text-red-500' : 'text-red-400')}>
+                    {createForm.scope === 'team' && createForm.teamIds.length === 0
+                      ? 'Select teams to see team-scoped skills.'
+                      : 'No skills available for this scope.'}
+                  </p>
+                )}
+              </div>
+
               <div className="flex flex-col gap-2">
                 <Checkbox
                   checked={createForm.enabled}
@@ -2772,6 +2959,33 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                           )}
                         </div>
 
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                              Skill Availability
+                            </label>
+                            <span className={cn('text-[11px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              {editForm.skillIds.length === 0 ? 'No skills' : editForm.skillIds.length === availableEditSkills.length ? 'All skills' : `${editForm.skillIds.length} selected`}
+                            </span>
+                          </div>
+                          <SkillMultiSelector
+                            isLight={isLight}
+                            skills={availableEditSkills.map(s => ({ id: s.id, skillKey: s.skillKey, name: s.name, enabled: s.enabled }))}
+                            selectedSkillIds={editForm.skillIds}
+                            onChange={ids => setEditForm(prev => (prev ? { ...prev, skillIds: ids } : prev))}
+                            loading={skillsLoading}
+                            disabled={editSkillsDisabled}
+                            placeholder={editSkillsPlaceholder}
+                          />
+                          {editSkillsDisabled && (
+                            <p className={cn('text-[11px]', isLight ? 'text-red-500' : 'text-red-400')}>
+                              {editForm.scope === 'team' && editForm.teamIds.length === 0
+                                ? 'Select teams to see team-scoped skills.'
+                                : 'No skills available for this scope.'}
+                            </p>
+                          )}
+                        </div>
+
                         <div className="flex flex-col gap-2">
                           <Checkbox
                             checked={editForm.enabled}
@@ -2832,6 +3046,26 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                                 })
                               ) : (
                                 <span>All models</span>
+                              )}
+                              <span>|</span>
+                              {(agent.skillIds && agent.skillIds.length > 0) ? (
+                                agent.skillIds.map(skillId => {
+                                  const skill = skillLookup[skillId];
+                                  const displayName = skill?.name || skill?.skillKey || skillId;
+                                  return (
+                                    <span
+                                      key={`${agent.id}-skill-${skillId}`}
+                                      className={cn(
+                                        'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                        isLight ? 'bg-blue-50 text-blue-700' : 'bg-blue-900/30 text-blue-400'
+                                      )}
+                                    >
+                                      {displayName}
+                                    </span>
+                                  );
+                                })
+                              ) : (
+                                <span>No skills</span>
                               )}
                             </div>
                           </div>
@@ -3060,6 +3294,70 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                               })() : (
                                 <div className={cn('px-3 py-2', isLight ? 'text-gray-500' : 'text-gray-400')}>
                                   All tools are available for this agent
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => toggleSkills(agent.id)}
+                            className={cn(
+                              'flex items-center justify-between w-full text-xs font-medium mb-1 transition-colors',
+                              isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-300 hover:text-gray-100'
+                            )}>
+                            <span>
+                              Skills
+                              {agent.skillIds && agent.skillIds.length > 0 ? ` (${agent.skillIds.length})` : ' (None)'}
+                            </span>
+                            <svg
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              style={{
+                                transition: 'transform 0.2s ease-in-out',
+                                transform: expandedSkills.has(agent.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                              }}>
+                              <polyline points="9 18 15 12 9 6" />
+                            </svg>
+                          </button>
+                          {expandedSkills.has(agent.id) && (
+                            <div className={cn('text-xs p-2 rounded max-h-64 overflow-auto agents-tab-scrollbar', isLight ? 'bg-gray-50' : 'bg-gray-900/40')}>
+                              {(agent.skillIds && agent.skillIds.length > 0) ? (
+                                <div className="space-y-1">
+                                  {agent.skillIds.map(skillId => {
+                                    const skill = skillLookup[skillId];
+                                    const displayName = skill?.name || skill?.skillKey || skillId;
+                                    return (
+                                      <div
+                                        key={`${agent.id}-skill-${skillId}`}
+                                        className={cn(
+                                          'flex items-center gap-2 w-full px-3 py-1.5 text-xs',
+                                          isLight
+                                            ? 'text-gray-700 hover:bg-gray-100'
+                                            : 'text-gray-200 hover:bg-gray-700/50'
+                                        )}
+                                      >
+                                        <div className="w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 bg-blue-600 border-blue-600">
+                                          <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        </div>
+                                        <span className="font-medium">{displayName}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div className={cn('px-3 py-2', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                  No skills assigned to this agent
                                 </div>
                               )}
                             </div>

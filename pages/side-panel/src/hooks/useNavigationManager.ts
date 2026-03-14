@@ -16,7 +16,7 @@ import { debug } from '@extension/shared';
 // ============================================================================
 
 export type PageType = 'home' | 'sessions' | 'admin';
-export type AdminTab = 'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'agents' | 'usage';
+export type AdminTab = 'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'tools' | 'skills' | 'agents' | 'usage';
 
 export type OAuthProvider = 'google' | 'microsoft' | 'github';
 

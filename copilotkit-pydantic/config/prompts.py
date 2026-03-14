@@ -82,6 +82,7 @@ def _build_agent_prompts(config: Dict[str, Any]) -> tuple[Dict[str, str], List[s
             'metadata': agent_cfg.get('metadata') or {},
             'allowed_models': agent_cfg.get('allowed_models') or None,
             'allowed_tools': agent_cfg.get('allowed_tools') or None,
+            'allowed_skills': agent_cfg.get('allowed_skills') or None,
         }
         
         # Build ID-to-type lookup for auxiliary agent resolution

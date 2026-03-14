@@ -198,6 +198,70 @@ const extractToolIds = body => {
 };
 
 /**
+ * Extract and normalize skill IDs from request body
+ * @param {Object} body - Request body
+ * @returns {{provided: boolean, skillIds: string[]}}
+ */
+const extractSkillIds = body => {
+  if (!body || !Object.prototype.hasOwnProperty.call(body, 'skillIds')) {
+    return { provided: false, skillIds: [] };
+  }
+
+  const rawValue = body.skillIds;
+  if (rawValue == null) {
+    return { provided: true, skillIds: [] };
+  }
+
+  if (!Array.isArray(rawValue)) {
+    throw new ValidationError('skillIds must be an array of UUID strings');
+  }
+
+  const normalized = [];
+  for (const value of rawValue) {
+    if (typeof value !== 'string') {
+      throw new ValidationError('skillIds must be an array of UUID strings');
+    }
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    if (!UUID_REGEX.test(trimmed)) {
+      throw new ValidationError(`Invalid skillId: ${value}`);
+    }
+    if (!normalized.includes(trimmed)) {
+      normalized.push(trimmed);
+    }
+  }
+
+  return { provided: true, skillIds: normalized };
+};
+
+/**
+ * Validate skill IDs belong to organization
+ * @param {Object} pool - Database connection pool
+ * @param {string} organizationId - Organization ID
+ * @param {string[]} skillIds - Skill IDs to validate
+ * @returns {Promise<string[]>} Validated skill IDs
+ */
+const validateSkillIds = async (pool, organizationId, skillIds) => {
+  if (!skillIds || skillIds.length === 0) {
+    return [];
+  }
+
+  const { rows } = await pool.query(
+    `SELECT id::text FROM skills
+     WHERE id = ANY($1::uuid[])
+       AND organization_id = $2
+       AND deleted_at IS NULL`,
+    [skillIds, organizationId],
+  );
+
+  if (rows.length !== skillIds.length) {
+    throw new ValidationError('One or more selected skills were not found for this organization');
+  }
+
+  return skillIds;
+};
+
+/**
  * Validate tool IDs and check team scope constraints
  * Supports both organization-specific and global tools with enabled status
  * @param {Object} pool - Database connection pool
@@ -328,6 +392,27 @@ const replaceAgentToolMappings = async (pool, agentId, toolIds) => {
   );
 };
 
+/**
+ * Replace agent-skill mappings (delete all + insert new)
+ * @param {Object} pool - Database connection pool
+ * @param {string} agentId - Agent ID
+ * @param {string[]} skillIds - Skill IDs to associate
+ */
+const replaceAgentSkillMappings = async (pool, agentId, skillIds) => {
+  await pool.query('DELETE FROM agent_skill_mappings WHERE agent_id = $1', [agentId]);
+
+  if (!skillIds || skillIds.length === 0) {
+    return;
+  }
+
+  await pool.query(
+    `INSERT INTO agent_skill_mappings (agent_id, skill_id)
+      SELECT $1, id
+     FROM UNNEST($2::uuid[]) AS id`,
+    [agentId, skillIds],
+  );
+};
+
 // ============================================================================
 // Data Transformation
 // ============================================================================
@@ -351,6 +436,7 @@ const toCamelAgent = row => ({
   updatedAt: row.updated_at,
   modelIds: Array.isArray(row.model_ids) ? row.model_ids.filter(Boolean) : [],
   toolIds: Array.isArray(row.tool_ids) ? row.tool_ids.filter(Boolean) : [],
+  skillIds: Array.isArray(row.skill_ids) ? row.skill_ids.filter(Boolean) : [],
 });
 
 // ============================================================================
@@ -394,7 +480,13 @@ async function fetchAgentById(pool, id, organizationId) {
           FROM agent_tool_mappings atm
           WHERE atm.agent_id = a.id),
          '{}'::text[]
-       ) AS tool_ids
+       ) AS tool_ids,
+       COALESCE(
+         (SELECT array_agg(asm.skill_id::text)
+          FROM agent_skill_mappings asm
+          WHERE asm.agent_id = a.id),
+         '{}'::text[]
+       ) AS skill_ids
      FROM agents a
      WHERE a.id = $1 AND a.organization_id = $2 AND a.deleted_at IS NULL`,
     [id, organizationId],
@@ -482,7 +574,13 @@ router.get('/', async (req, res, next) => {
             FROM agent_tool_mappings atm
             WHERE atm.agent_id = a.id),
            '{}'::text[]
-         ) AS tool_ids
+         ) AS tool_ids,
+         COALESCE(
+           (SELECT array_agg(asm.skill_id::text)
+            FROM agent_skill_mappings asm
+            WHERE asm.agent_id = a.id),
+           '{}'::text[]
+         ) AS skill_ids
        FROM agents a
        WHERE a.organization_id = $1
          AND a.deleted_at IS NULL
@@ -544,6 +642,16 @@ router.post('/', async (req, res, next) => {
     let extractedToolIds;
     try {
       extractedToolIds = extractToolIds(req.body);
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        return res.status(err.status).json({ error: err.message });
+      }
+      throw err;
+    }
+
+    let extractedSkillIds;
+    try {
+      extractedSkillIds = extractSkillIds(req.body);
     } catch (err) {
       if (err instanceof ValidationError) {
         return res.status(err.status).json({ error: err.message });
@@ -615,6 +723,16 @@ router.post('/', async (req, res, next) => {
       throw err;
     }
 
+    let sanitizedSkillIds = [];
+    try {
+      sanitizedSkillIds = await validateSkillIds(pool, organizationId, extractedSkillIds.skillIds);
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        return res.status(err.status).json({ error: err.message });
+      }
+      throw err;
+    }
+
     const metadataJSON = sanitizeJSON(metadata, {});
 
     const insertResult = await pool.query(
@@ -649,6 +767,9 @@ router.post('/', async (req, res, next) => {
     await replaceAgentModelMappings(pool, agentId, sanitizedModelIds);
     if (extractedToolIds.provided) {
       await replaceAgentToolMappings(pool, agentId, sanitizedToolIds);
+    }
+    if (extractedSkillIds.provided) {
+      await replaceAgentSkillMappings(pool, agentId, sanitizedSkillIds);
     }
 
     invalidateConfigCaches();
@@ -722,6 +843,16 @@ router.put('/:agentId', async (req, res, next) => {
       throw err;
     }
 
+    let extractedSkillIds;
+    try {
+      extractedSkillIds = extractSkillIds(body);
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        return res.status(err.status).json({ error: err.message });
+      }
+      throw err;
+    }
+
     if (!organizationId) {
       return res.status(400).json({ error: 'organizationId is required' });
     }
@@ -763,6 +894,7 @@ router.put('/:agentId', async (req, res, next) => {
 
     const modelIdsToApply = extractedModelIds.provided ? extractedModelIds.modelIds : (existingAgent.modelIds || []);
     const toolIdsToApply = extractedToolIds.provided ? extractedToolIds.toolIds : (existingAgent.toolIds || []);
+    const skillIdsToApply = extractedSkillIds.provided ? extractedSkillIds.skillIds : (existingAgent.skillIds || []);
 
     let sanitizedModelIds = [];
     try {
@@ -777,6 +909,16 @@ router.put('/:agentId', async (req, res, next) => {
     let sanitizedToolIds = [];
     try {
       sanitizedToolIds = await validateToolIds(pool, organizationId, teamIds, toolIdsToApply);
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        return res.status(err.status).json({ error: err.message });
+      }
+      throw err;
+    }
+
+    let sanitizedSkillIds = [];
+    try {
+      sanitizedSkillIds = await validateSkillIds(pool, organizationId, skillIdsToApply);
     } catch (err) {
       if (err instanceof ValidationError) {
         return res.status(err.status).json({ error: err.message });
@@ -816,6 +958,7 @@ router.put('/:agentId', async (req, res, next) => {
 
     await replaceAgentModelMappings(pool, agentId, sanitizedModelIds);
     await replaceAgentToolMappings(pool, agentId, sanitizedToolIds);
+    await replaceAgentSkillMappings(pool, agentId, sanitizedSkillIds);
 
     invalidateConfigCaches();
 
