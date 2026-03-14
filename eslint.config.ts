@@ -97,9 +97,30 @@ export default config(
   },
   // Overrides Rules
   {
+    files: ['eslint.config.ts'],
+    rules: {
+      'import-x/no-deprecated': 'off',
+    },
+  },
+  {
     files: ['**/packages/shared/**/*.ts'],
     rules: {
       'no-restricted-imports': 'off',
+    },
+  },
+  // Node.js runtime (copilot-runtime-server .js files)
+  {
+    files: ['copilot-runtime-server/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        ...node,
+        ...es2020,
+      },
+    },
+    rules: {
+      'import-x/no-named-as-default-member': 'warn',
     },
   },
 );

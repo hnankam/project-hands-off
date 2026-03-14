@@ -7,24 +7,20 @@
  * @module routes/skills
  */
 
-import express from 'express';
+import { Router } from 'express';
 import { getPool } from '../config/database.js';
 import { invalidateCache as invalidateDbCache } from '../config/db-loaders.js';
 import { invalidateCache as invalidateLoaderCache } from '../config/loader.js';
 import { syncTeamAssociations } from '../lib/team-helpers.js';
-import {
-  sanitizeJSON,
-  ensureAuthenticated,
-  ensureOrgAdmin,
-} from '../utils/route-helpers.js';
+import { sanitizeJSON, ensureAuthenticated, ensureOrgAdmin } from '../utils/route-helpers.js';
 
-const router = express.Router();
+const router = Router();
 
 // ============================================================================
 // Data Transformation
 // ============================================================================
 
-const toCamelSkill = (row) => ({
+const toCamelSkill = row => ({
   id: row.id,
   skillKey: row.skill_key,
   name: row.name,
@@ -104,8 +100,7 @@ router.get('/', async (req, res, next) => {
       params,
     );
 
-    const skills = rows.map(toCamelSkill);
-    res.json({ skills, count: skills.length });
+    res.json({ skills: rows.map(toCamelSkill), count: rows.length });
   } catch (err) {
     next(err);
   }
@@ -157,10 +152,10 @@ router.post('/', async (req, res, next) => {
     if (!roles) return;
 
     if (teamIds.length > 0) {
-      const { rows } = await pool.query(
-        'SELECT id FROM team WHERE id = ANY($1::text[]) AND "organizationId" = $2',
-        [teamIds, organizationId],
-      );
+      const { rows } = await pool.query('SELECT id FROM team WHERE id = ANY($1::text[]) AND "organizationId" = $2', [
+        teamIds,
+        organizationId,
+      ]);
       if (rows.length !== teamIds.length) {
         return res.status(404).json({ error: 'One or more teams not found in organization' });
       }
@@ -187,7 +182,7 @@ router.post('/', async (req, res, next) => {
         name.trim(),
         description.trim(),
         sourceType,
-        sourceType === 'manual' ? (content || '') : null,
+        sourceType === 'manual' ? content || '' : null,
         metadataJSON,
         gitConfigJSON,
         organizationId,
@@ -243,7 +238,12 @@ router.post('/test-git', async (req, res, next) => {
     if (!roles) return;
 
     const pythonBackendUrl = process.env.PYDANTIC_SERVICE_URL || 'http://localhost:8001';
-    console.log('[skills] test-git: proxying to', `${pythonBackendUrl}/api/admin/skills/test-git`, 'repo_url=', gitConfig?.repo_url);
+    console.log(
+      '[skills] test-git: proxying to',
+      `${pythonBackendUrl}/api/admin/skills/test-git`,
+      'repo_url=',
+      gitConfig?.repo_url,
+    );
 
     try {
       const response = await fetch(`${pythonBackendUrl}/api/admin/skills/test-git`, {
@@ -253,7 +253,12 @@ router.post('/test-git', async (req, res, next) => {
       });
 
       const result = await response.json();
-      console.log('[skills] test-git: Python response status=%d', response.status, 'result=', JSON.stringify(result).slice(0, 200));
+      console.log(
+        '[skills] test-git: Python response status=%d',
+        response.status,
+        'result=',
+        JSON.stringify(result).slice(0, 200),
+      );
 
       if (!response.ok) {
         return res.status(response.status).json({
@@ -288,18 +293,8 @@ router.put('/:skillId', async (req, res, next) => {
     if (!session) return;
 
     const { skillId } = req.params;
-    const {
-      organizationId,
-      skillKey,
-      name,
-      description,
-      sourceType,
-      content,
-      metadata,
-      gitConfig,
-      teamIds,
-      enabled,
-    } = req.body || {};
+    const { organizationId, skillKey, name, description, sourceType, content, metadata, gitConfig, teamIds, enabled } =
+      req.body || {};
 
     if (!organizationId) {
       return res.status(400).json({ error: 'organizationId is required' });

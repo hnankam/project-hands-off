@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, Tuple
 
-from config import logger
 from utils.context import context_tuple
 
 _skills_by_context: Dict[Tuple[str, str], Dict[str, Dict[str, Any]]] = {}
@@ -39,11 +38,6 @@ def get_skills_for_context(organization_id: str | None, team_id: str | None) -> 
     key = context_tuple(organization_id, team_id)
     skills = _skills_by_context.get(key)
     if skills is None:
-        logger.warning(
-            "[Skills] No skills in cache for org=%s team=%s",
-            organization_id[:8] if organization_id else "global",
-            team_id[:8] if team_id else "global",
-        )
         raise RuntimeError(
             f"Skill configuration not loaded for org={organization_id} team={team_id}. "
             "Warm the context via the deployment manager first."

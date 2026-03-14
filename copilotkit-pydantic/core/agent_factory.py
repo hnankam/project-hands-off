@@ -371,20 +371,14 @@ def _build_skills_toolset(
         from pydantic_ai_skills import SkillsToolset
         from pydantic_ai_skills.types import Skill, SkillResource
         from pydantic_ai_skills.registries.git import GitCloneOptions, GitSkillsRegistry
-    except ImportError as e:
-        logger.warning("pydantic-ai-skills import failed; skipping skills toolset: %s", e)
+    except ImportError:
+        logger.debug("pydantic-ai-skills not installed; skipping skills toolset")
         return None
 
     skill_definitions = {}
     try:
         skill_definitions = get_skills_for_context(organization_id, team_id)
-    except RuntimeError as e:
-        logger.warning(
-            "[Skills] get_skills_for_context failed for org=%s team=%s: %s",
-            organization_id[:8] if organization_id else "global",
-            team_id[:8] if team_id else "global",
-            e,
-        )
+    except RuntimeError:
         return None
 
     allowed_skill_keys = agent_info.get('allowed_skills')
@@ -585,15 +579,6 @@ async def create_agent(
     all_toolsets = list(mcp_toolsets) if mcp_toolsets else []
     if skills_toolset is not None:
         all_toolsets.append(skills_toolset)
-        logger.info(
-            "[Skills] Added SkillsToolset to agent (agent_type=%s, skills=%s)",
-            agent_type,
-            list(skill_definitions.keys()) if (skill_definitions := {}) else [],
-        )
-    # Note: skill_definitions is not in scope here - it's in _build_skills_toolset. Fix the log.
-    if skills_toolset is not None:
-        all_toolsets.append(skills_toolset)
-        logger.info("[Skills] Added SkillsToolset to agent (agent_type=%s)", agent_type)
 
     agent_kwargs: Dict[str, Any] = {
         "model": model,
