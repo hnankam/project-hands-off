@@ -338,9 +338,9 @@ const AuxAgentMessageCard: React.FC<{
     }
   }, [isWorking]);
   
-  // Initialize from cache if available
+  // Initialize from cache if available, otherwise closed by default (matches ActionStatus)
   const [isExpanded, setIsExpanded] = useState(() => {
-    return auxAgentExpandedStateCache.get(cacheKey) ?? true;
+    return auxAgentExpandedStateCache.get(cacheKey) ?? false;
   });
   
   // Initialize userClosed from cache

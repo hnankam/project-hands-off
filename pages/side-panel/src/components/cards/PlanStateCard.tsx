@@ -95,6 +95,14 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
+  // Step actions dropdown
+  const [openStepMenuIndex, setOpenStepMenuIndex] = useState<number | null>(null);
+  const stepMenuRef = React.useRef<HTMLDivElement>(null);
+
+  // Header actions dropdown (expanded view)
+  const [openHeaderMenu, setOpenHeaderMenu] = useState(false);
+  const headerMenuRef = React.useRef<HTMLDivElement>(null);
+
   // Chat hook for triggering runs
   const { sendMessage, isLoading: isChatLoading } = useCopilotChat();
 
@@ -205,6 +213,44 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
       addInputRef.current.select?.();
     }
   }, [isAdding]);
+
+  // Close step menu on click outside or Escape
+  React.useEffect(() => {
+    if (openStepMenuIndex === null) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (stepMenuRef.current && !stepMenuRef.current.contains(e.target as Node)) {
+        setOpenStepMenuIndex(null);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenStepMenuIndex(null);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openStepMenuIndex]);
+
+  // Close header menu on click outside or Escape
+  React.useEffect(() => {
+    if (!openHeaderMenu) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(e.target as Node)) {
+        setOpenHeaderMenu(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenHeaderMenu(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openHeaderMenu]);
 
   // Handlers for inline editing
   const handleStartEdit = (stepIndex: number, currentDescription: string) => {
@@ -405,10 +451,6 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
   const canRunPlan = hasPendingActive && !isChatLoading;
   const progressFillColor = isLight ? '#9ca3af' : '#6b7280';
   const progressTrackColor = isLight ? 'rgba(75, 85, 99, 0.18)' : 'rgba(148, 163, 184, 0.25)';
-  // Match CustomUserMessage gradient for controls fade
-  const controlFadeGradient = isLight
-    ? 'linear-gradient(to right, rgba(249, 250, 251, 0) 0%, rgba(249, 250, 251, 0.8) 20%, rgba(249, 250, 251, 0.95) 40%, rgb(249, 250, 251) 60%)'
-    : 'linear-gradient(to right, rgba(21, 28, 36, 0) 0%, rgba(21, 28, 36, 0.8) 20%, rgba(21, 28, 36, 0.95) 40%, rgb(21, 28, 36) 60%)';
 
   // Auto-expand handler for add button
   const handleAddAndExpand = () => {
@@ -647,53 +689,83 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
               {completedCount}/{activeSteps.length}
             </span>
             {setState && (
-              <button
-                onClick={handleStartAdd}
-                className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
-                  isLight 
-                    ? 'text-gray-500 hover:bg-gray-100' 
-                    : 'text-gray-400 hover:bg-gray-700'
-                }`}
-                aria-label="Add step"
-                title="Add step"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              </button>
-            )}
-            {canRunPlan && (
-              <button
-                onClick={handleRunPlan}
-                className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
-                  isLight 
-                    ? 'text-gray-500 hover:bg-blue-100 hover:text-blue-600' 
-                    : 'text-gray-400 hover:bg-blue-900/30 hover:text-blue-400'
-                }`}
-                aria-label="Run/continue plan"
-                title="Run/continue plan"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l14 9-14 9V3z" />
-                </svg>
-              </button>
-            )}
-            {setState && (
-              <button
-                type="button"
-                onClick={handleOpenDeletePlan}
-                className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
-                  isLight 
-                    ? 'text-gray-500 hover:bg-red-100 hover:text-red-600' 
-                    : 'text-gray-400 hover:bg-red-900/30 hover:text-red-400'
-                }`}
-                aria-label="Delete plan"
-                title="Delete plan"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
+              <div className="relative flex-shrink-0" ref={headerMenuRef}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenHeaderMenu(!openHeaderMenu);
+                  }}
+                  className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
+                    isLight ? 'text-gray-500 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-700'
+                  }`}
+                  aria-label="Plan actions"
+                  title="Plan actions"
+                >
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                  </svg>
+                </button>
+                {openHeaderMenu && (
+                  <div
+                    className={`absolute right-0 top-full mt-0.5 py-1 rounded-md shadow-lg border z-50 min-w-[140px] ${
+                      isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
+                    }`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartAdd();
+                        setOpenHeaderMenu(false);
+                      }}
+                      className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                        isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-200 hover:bg-gray-700'
+                      }`}
+                    >
+                      <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Add step
+                    </button>
+                    {canRunPlan && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRunPlan();
+                          setOpenHeaderMenu(false);
+                        }}
+                        className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                          isLight ? 'text-blue-600 hover:bg-blue-50' : 'text-blue-400 hover:bg-blue-900/20'
+                        }`}
+                      >
+                        <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l14 9-14 9V3z" />
+                        </svg>
+                        Run plan
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenDeletePlan(e);
+                        setOpenHeaderMenu(false);
+                      }}
+                      className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                        isLight ? 'text-red-600 hover:bg-red-50' : 'text-red-400 hover:bg-red-900/20'
+                      }`}
+                    >
+                      <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Delete plan
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -819,125 +891,133 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
 
               {/* Per-step hover region handled above; tooltip rendered via portal below */}
 
-              {/* Action Buttons - non-deleted steps (overlay with fade) */}
+              {/* Step actions dropdown - non-deleted steps */}
               {!isDeleted && editingStepIndex !== index && setState && (
                 <div
-                  className="absolute inset-y-0 right-1 flex items-center pl-16 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
-                  style={{ background: controlFadeGradient }}
+                  className="relative flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity ml-auto"
+                  ref={openStepMenuIndex === index ? stepMenuRef : undefined}
                 >
-                  <div className="flex items-center gap-0.5 ml-auto pointer-events-auto">
-                  {/* Move up */}
                   <button
-                    disabled={index === 0}
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleMoveStepUp(index);
+                      setOpenStepMenuIndex(openStepMenuIndex === index ? null : index);
                     }}
-                    className={`p-0.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                      isLight 
-                        ? 'text-gray-500 hover:bg-gray-200 hover:text-gray-700' 
-                        : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                    className={`p-0.5 rounded transition-colors ${
+                      isLight
+                        ? 'text-gray-500 hover:bg-gray-200'
+                        : 'text-gray-400 hover:bg-gray-700'
                     }`}
-                    aria-label="Move step up"
-                    title="Move up"
+                    aria-label="Step actions"
+                    title="Step actions"
                   >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
                     </svg>
                   </button>
-
-                  {/* Move down */}
-                  <button
-                    disabled={index === steps.length - 1}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleMoveStepDown(index);
-                    }}
-                    className={`p-0.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                      isLight 
-                        ? 'text-gray-500 hover:bg-gray-200 hover:text-gray-700' 
-                        : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
-                    }`}
-                    aria-label="Move step down"
-                    title="Move down"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  {/* Rerun button - only for completed or failed steps */}
-                  {(isCompleted || isFailed) && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const newSteps = [...steps];
-                        newSteps[index] = {
-                          ...newSteps[index],
-                          status: 'pending' as const
-                        };
-                        updatePlanSteps(newSteps);
-                      }}
-                      className={`p-0.5 rounded transition-colors ${
-                        isLight 
-                          ? 'text-gray-500 hover:bg-gray-200 hover:text-blue-600' 
-                          : 'text-gray-400 hover:bg-gray-700 hover:text-blue-400'
+                  {openStepMenuIndex === index && (
+                    <div
+                      className={`absolute right-0 top-full mt-0.5 py-1 rounded-md shadow-lg border z-50 min-w-[120px] ${
+                        isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
                       }`}
-                      aria-label="Rerun step"
-                      title="Rerun step"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                    </button>
+                      {index > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMoveStepUp(index);
+                            setOpenStepMenuIndex(null);
+                          }}
+                          className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                            isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-200 hover:bg-gray-700'
+                          }`}
+                        >
+                          <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                          </svg>
+                          Move up
+                        </button>
+                      )}
+                      {index < steps.length - 1 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMoveStepDown(index);
+                            setOpenStepMenuIndex(null);
+                          }}
+                          className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                            isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-200 hover:bg-gray-700'
+                          }`}
+                        >
+                          <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                          Move down
+                        </button>
+                      )}
+                      {(isCompleted || isFailed) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newSteps = [...steps];
+                            newSteps[index] = { ...newSteps[index], status: 'pending' as const };
+                            updatePlanSteps(newSteps);
+                            setOpenStepMenuIndex(null);
+                          }}
+                          className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                            isLight ? 'text-blue-600 hover:bg-blue-50' : 'text-blue-400 hover:bg-blue-900/20'
+                          }`}
+                        >
+                          <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          Rerun
+                        </button>
+                      )}
+                      {!isCompleted && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartEdit(index, step.description);
+                            setOpenStepMenuIndex(null);
+                          }}
+                          className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                            isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-200 hover:bg-gray-700'
+                          }`}
+                        >
+                          <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                          Edit
+                        </button>
+                      )}
+                      {!isCompleted && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newSteps = [...steps];
+                            newSteps[index] = { ...newSteps[index], status: 'deleted' as const };
+                            updatePlanSteps(newSteps);
+                            setOpenStepMenuIndex(null);
+                          }}
+                          className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                            isLight ? 'text-red-600 hover:bg-red-50' : 'text-red-400 hover:bg-red-900/20'
+                          }`}
+                        >
+                          <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   )}
-                  
-                  {/* Edit button */}
-                  {!isCompleted && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleStartEdit(index, step.description);
-                    }}
-                    className={`p-0.5 rounded transition-colors ${
-                      isLight 
-                        ? 'text-gray-500 hover:bg-gray-200 hover:text-blue-600' 
-                        : 'text-gray-400 hover:bg-gray-700 hover:text-blue-400'
-                    }`}
-                    aria-label="Edit step"
-                    title="Edit step"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </button>
-                  )}
-                  
-                  {/* Delete button */}
-                  {!isCompleted && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const newSteps = [...steps];
-                      newSteps[index] = {
-                        ...newSteps[index],
-                        status: 'deleted' as const
-                      };
-                      updatePlanSteps(newSteps);
-                    }}
-                    className={`p-0.5 rounded transition-colors ${
-                      isLight 
-                        ? 'text-gray-500 hover:bg-red-100 hover:text-red-600' 
-                        : 'text-gray-400 hover:bg-red-900/30 hover:text-red-400'
-                    }`}
-                    aria-label="Delete step"
-                    title="Delete step"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                  )}
-                  </div>
                 </div>
               )}
 

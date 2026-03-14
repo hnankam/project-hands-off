@@ -71,7 +71,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
         'flex flex-shrink-0 items-center justify-between border-b px-2 py-[0.4em]',
         isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
       )}>
-      <div className="mr-2 flex min-w-0 flex-1 items-center overflow-hidden">
+      <div className="flex min-w-0 flex-1 items-center overflow-hidden">
         <SessionTabs isLight={isLight} viewMode={viewMode} isVisible={isVisible} apiBaseUrl={apiBaseUrl} className="flex-1" />
       </div>
 

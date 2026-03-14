@@ -80,6 +80,8 @@ import { useWorkspaceContext } from '../../hooks/useWorkspaceContext';
 
 // Context
 import { ChatSessionIdProvider } from '../../context/ChatSessionIdContext';
+import { ScrollContainerRefProvider } from '../../context/ScrollContainerRefContext';
+import { ScrollToBottomProvider } from '../../context/ScrollToBottomContext';
 import { useAgentStateManagement } from '../../hooks/useAgentStateManagement';
 import { useAuth } from '../../context/AuthContext';
 import { useLoadMoreHistory } from '../../hooks/useLoadMoreHistory';
@@ -421,6 +423,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
 
   // Ref for scroll preservation when loading older messages
   const chatWrapperRef = useRef<HTMLDivElement>(null);
+  // Ref for the scroll container - used by load-more-history and scroll-to-bottom
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Debug: log scroll container layout when messages change
   useEffect(() => {
@@ -1005,6 +1009,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
               'copilot-chat-wrapper relative min-h-0 flex-1 flex flex-col overflow-hidden',
               !isAgentAndModelSelected && 'chat-input-disabled',
             )}>
+            <ScrollContainerRefProvider scrollContainerRef={scrollContainerRef}>
+            <ScrollToBottomProvider>
             {isLoadingMore && (
               <div
                 className={cn(
@@ -1038,7 +1044,11 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
                 <span>Loading older messages…</span>
               </div>
             )}
-            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden" data-load-more-scroll>
+            <div
+              ref={scrollContainerRef}
+              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+              data-load-more-scroll
+            >
               <CopilotChat
                 agentId="dynamic_agent"
                 threadId={sessionId}
@@ -1046,6 +1056,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
                 welcomeScreen={false}
               />
             </div>
+            </ScrollToBottomProvider>
+            </ScrollContainerRefProvider>
           </div>
         </div>
       </PageSelectorProvider>

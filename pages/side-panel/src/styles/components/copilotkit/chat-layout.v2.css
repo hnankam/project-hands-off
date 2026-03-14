@@ -268,12 +268,13 @@
 /* Messages container padding and sizing - 12px keeps content separation, scrollbar at edge */
 .copilotKitMessagesContainer,
 .copilotKitMessagesContainer.copilotKitMessages {
-  padding-left: 0.75rem !important;
-  padding-right: 0.75rem !important;
+  /* padding-left: 0.75rem !important;
+  padding-right: 0.75rem !important; */
   padding-top: 0 !important;
   width: 100% !important;
   margin: 0 !important;
-  padding-bottom: 120px !important; /* Space so last message isn't hidden behind chat input */
+  /* padding-bottom: 120px !important; */
+   /* Space so last message isn't hidden behind chat input */
   box-sizing: border-box !important;
   align-self: stretch !important;
   height: 100% !important;

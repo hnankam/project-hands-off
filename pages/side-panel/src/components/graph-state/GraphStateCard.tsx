@@ -81,6 +81,18 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
   // Delete graph modal state
   const [deleteGraphOpen, setDeleteGraphOpen] = useState(false);
   
+  // Header actions dropdown (portal to avoid overflow clipping)
+  const [openHeaderMenu, setOpenHeaderMenu] = useState(false);
+  const [headerMenuRect, setHeaderMenuRect] = useState<DOMRect | null>(null);
+  const headerMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const headerDropdownRef = useRef<HTMLDivElement>(null);
+  
+  // Step actions dropdown (portal to avoid overflow clipping)
+  const [openStepMenuIndex, setOpenStepMenuIndex] = useState<number | null>(null);
+  const [stepMenuRect, setStepMenuRect] = useState<DOMRect | null>(null);
+  const stepMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const stepDropdownRef = useRef<HTMLDivElement>(null);
+  
   // Editing state
   const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
   const [editNodeValue, setEditNodeValue] = useState('');
@@ -492,6 +504,58 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
     return () => document.removeEventListener('keydown', onKey);
   }, [deleteGraphOpen]);
 
+  // Close header menu on click outside or Escape
+  useEffect(() => {
+    if (!openHeaderMenu) return;
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const inButton = headerMenuButtonRef.current?.contains(target);
+      const inDropdown = headerDropdownRef.current?.contains(target);
+      if (!inButton && !inDropdown) {
+        setOpenHeaderMenu(false);
+        setHeaderMenuRect(null);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpenHeaderMenu(false);
+        setHeaderMenuRect(null);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openHeaderMenu]);
+
+  // Close step menu on click outside or Escape
+  useEffect(() => {
+    if (openStepMenuIndex === null) return;
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const inButton = stepMenuButtonRef.current?.contains(target);
+      const inDropdown = stepDropdownRef.current?.contains(target);
+      if (!inButton && !inDropdown) {
+        setOpenStepMenuIndex(null);
+        setStepMenuRect(null);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpenStepMenuIndex(null);
+        setStepMenuRect(null);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openStepMenuIndex]);
+
   // Check if graph can be run (has pending steps and not currently running)
   const canRunGraph = (pendingSteps > 0 || computedStatus === 'pending' || computedStatus === 'error') && !isChatLoading && computedStatus !== 'running';
 
@@ -612,25 +676,68 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {statusBadge}
-          {/* Controls */}
-          <div className="flex items-center gap-1">
+          {/* Controls - dropdown menu (portal to avoid overflow clipping) */}
+          <div className="relative">
+            <button
+              ref={headerMenuButtonRef}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                if (openHeaderMenu) {
+                  setOpenHeaderMenu(false);
+                  setHeaderMenuRect(null);
+                } else {
+                  setHeaderMenuRect(rect);
+                  setOpenHeaderMenu(true);
+                }
+              }}
+              className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
+                isLight ? 'text-gray-500 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-700'
+              }`}
+              aria-label="Graph actions"
+              title="Graph actions"
+            >
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Header actions dropdown - portal to avoid overflow clipping */}
+      {openHeaderMenu && headerMenuRect &&
+        createPortal(
+          <div
+            ref={headerDropdownRef}
+            className={`py-1 rounded-md shadow-lg border min-w-[160px] ${
+              isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
+            }`}
+            style={{
+              position: 'fixed',
+              top: headerMenuRect.bottom + 4,
+              right: window.innerWidth - headerMenuRect.right,
+              zIndex: 100000,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 handleAddStep();
+                setOpenHeaderMenu(false);
+                setHeaderMenuRect(null);
               }}
-              className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
-                isLight 
-                  ? 'text-gray-500 hover:bg-gray-100' 
-                  : 'text-gray-400 hover:bg-gray-700'
+              className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-200 hover:bg-gray-700'
               }`}
-              aria-label="Add execution step"
-              title="Add execution step"
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
+              Add execution step
             </button>
             {canRunGraph && (
               <button
@@ -638,38 +745,40 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
                 onClick={(e) => {
                   e.stopPropagation();
                   handleRunGraph();
+                  setOpenHeaderMenu(false);
+                  setHeaderMenuRect(null);
                 }}
-                className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
-                  isLight 
-                    ? 'text-gray-500 hover:bg-gray-100' 
-                    : 'text-gray-400 hover:bg-gray-700'
+                className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                  isLight ? 'text-blue-600 hover:bg-blue-50' : 'text-blue-400 hover:bg-blue-900/20'
                 }`}
-                aria-label="Run graph"
-                title="Run graph"
               >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l14 9-14 9V3z" />
                 </svg>
+                Run graph
               </button>
             )}
             <button
               type="button"
-              onClick={handleOpenDeleteGraph}
-              className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
-                isLight 
-                  ? 'text-gray-500 hover:bg-gray-100' 
-                  : 'text-gray-400 hover:bg-gray-700'
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenDeleteGraph(e);
+                setOpenHeaderMenu(false);
+                setHeaderMenuRect(null);
+              }}
+              className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                isLight ? 'text-red-600 hover:bg-red-50' : 'text-red-400 hover:bg-red-900/20'
               }`}
-              aria-label="Delete graph"
-              title="Delete graph"
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
+              Delete graph
             </button>
-          </div>
-        </div>
-      </div>
+          </div>,
+          document.body
+        )
+      }
 
       {/* Progress bar */}
       {isExpanded && (
@@ -719,100 +828,34 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
                 const draggableEnabled = !!setState && editingStepIndex !== index;
                 const isDragSource = draggingIndex === index;
                 const isDragOver = dragOverIndex === index && draggingIndex !== index;
-                const controlFadeGradient = isLight
-                  ? 'linear-gradient(to right, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.8) 20%, rgba(255, 255, 255, 0.95) 40%, rgb(255, 255, 255) 60%)'
-                  : 'linear-gradient(to right, rgba(21, 28, 36, 0) 0%, rgba(21, 28, 36, 0.8) 20%, rgba(21, 28, 36, 0.95) 40%, rgb(21, 28, 36) 60%)';
-                
-                // Build controls for this step
+                // Build controls for this step - "..." button; dropdown rendered via portal to avoid overflow clipping
                 const stepControls = !isDeleted && editingStepIndex !== index && setState ? (
-                  <>
-                    {/* Move up */}
+                  <div className="relative">
                     <button
-                      disabled={index === 0}
+                      ref={openStepMenuIndex === index ? stepMenuButtonRef : undefined}
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleMoveStepUp(index);
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        if (openStepMenuIndex === index) {
+                          setOpenStepMenuIndex(null);
+                          setStepMenuRect(null);
+                        } else {
+                          setStepMenuRect(rect);
+                          setOpenStepMenuIndex(index);
+                        }
                       }}
-                      className={`p-0.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                        isLight 
-                          ? 'text-gray-500 hover:bg-gray-200 hover:text-gray-700' 
-                          : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                      className={`p-0.5 rounded transition-colors ${
+                        isLight ? 'text-gray-500 hover:bg-gray-200' : 'text-gray-400 hover:bg-gray-700'
                       }`}
-                      aria-label="Move step up"
-                      title="Move up"
+                      aria-label="Step actions"
+                      title="Step actions"
                     >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
                       </svg>
                     </button>
-                    
-                    {/* Move down */}
-                    <button
-                      disabled={index === steps.length - 1}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleMoveStepDown(index);
-                      }}
-                      className={`p-0.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                        isLight 
-                          ? 'text-gray-500 hover:bg-gray-200 hover:text-gray-700' 
-                          : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
-                      }`}
-                      aria-label="Move step down"
-                      title="Move down"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                    
-                    {/* Edit button */}
-                    {!isCompleted && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStartEdit(index, step.node, step.prompt || '');
-                        }}
-                        className={`p-0.5 rounded transition-colors ${
-                          isLight 
-                            ? 'text-gray-500 hover:bg-gray-200 hover:text-blue-600' 
-                            : 'text-gray-400 hover:bg-gray-700 hover:text-blue-400'
-                        }`}
-                        aria-label="Edit step"
-                        title="Edit step"
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                    )}
-                    
-                    {/* Delete button */}
-                    {!isCompleted && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const newSteps = [...steps];
-                          newSteps[index] = {
-                            ...newSteps[index],
-                            status: 'cancelled' as const
-                          };
-                          updateGraphSteps(newSteps);
-                        }}
-                        className={`p-0.5 rounded transition-colors ${
-                          isLight 
-                            ? 'text-gray-500 hover:bg-red-100 hover:text-red-600' 
-                            : 'text-gray-400 hover:bg-red-900/30 hover:text-red-400'
-                        }`}
-                        aria-label="Delete step"
-                        title="Delete step"
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    )}
-                  </>
+                  </div>
                 ) : null;
                 
                 return (
@@ -1041,6 +1084,105 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
               </div>
             )}
           </div>
+
+          {/* Step actions dropdown - portal to avoid overflow clipping */}
+          {openStepMenuIndex !== null && stepMenuRect && steps[openStepMenuIndex] && setState &&
+            createPortal(
+              <div
+                ref={stepDropdownRef}
+                className={`py-1 rounded-md shadow-lg border min-w-[120px] ${
+                  isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
+                }`}
+                style={{
+                  position: 'fixed',
+                  top: stepMenuRect.bottom + 4,
+                  right: window.innerWidth - stepMenuRect.right,
+                  zIndex: 100000,
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {openStepMenuIndex > 0 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleMoveStepUp(openStepMenuIndex);
+                      setOpenStepMenuIndex(null);
+                      setStepMenuRect(null);
+                    }}
+                    className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                      isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-200 hover:bg-gray-700'
+                    }`}
+                  >
+                    <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    </svg>
+                    Move up
+                  </button>
+                )}
+                {openStepMenuIndex < steps.length - 1 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleMoveStepDown(openStepMenuIndex);
+                      setOpenStepMenuIndex(null);
+                      setStepMenuRect(null);
+                    }}
+                    className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                      isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-200 hover:bg-gray-700'
+                    }`}
+                  >
+                    <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                    Move down
+                  </button>
+                )}
+                {steps[openStepMenuIndex].status !== 'completed' && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleStartEdit(openStepMenuIndex, steps[openStepMenuIndex].node, steps[openStepMenuIndex].prompt || '');
+                      setOpenStepMenuIndex(null);
+                      setStepMenuRect(null);
+                    }}
+                    className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                      isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-200 hover:bg-gray-700'
+                    }`}
+                  >
+                    <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Edit
+                  </button>
+                )}
+                {steps[openStepMenuIndex].status !== 'completed' && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const newSteps = [...steps];
+                      newSteps[openStepMenuIndex] = { ...newSteps[openStepMenuIndex], status: 'cancelled' as const };
+                      updateGraphSteps(newSteps);
+                      setOpenStepMenuIndex(null);
+                      setStepMenuRect(null);
+                    }}
+                    className={`w-full px-2 py-1 text-left text-[11px] flex items-center gap-1.5 ${
+                      isLight ? 'text-red-600 hover:bg-red-50' : 'text-red-400 hover:bg-red-900/20'
+                    }`}
+                  >
+                    <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Delete
+                  </button>
+                )}
+              </div>,
+              document.body
+            )
+          }
 
           {/* Error messages section */}
           {state.errors && state.errors.length > 0 && (

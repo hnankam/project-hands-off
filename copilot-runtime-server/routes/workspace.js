@@ -187,6 +187,114 @@ router.post('/folders', requireAuth, async (req, res) => {
 });
 
 /**
+ * Bulk delete folders
+ * DELETE /api/workspace/folders/bulk
+ * Body: { folderPaths: string[], deleteFiles: boolean }
+ * NOTE: Must be defined BEFORE /folders/:folderPath(*) so "bulk" is not captured as a folder path
+ */
+router.delete('/folders/bulk', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { folderPaths, deleteFiles = false } = req.body;
+    
+    if (!Array.isArray(folderPaths) || folderPaths.length === 0) {
+      return res.status(400).json({ error: 'folderPaths must be a non-empty array' });
+    }
+    
+    const pool = getPool();
+    let totalFilesDeleted = 0;
+    let totalFilesMoved = 0;
+    
+    for (const folderPath of folderPaths) {
+      // Get files in this folder and subfolders
+      const { rows: filesInFolder } = await pool.query(
+        `SELECT id, storage_url, file_name FROM workspace_files 
+         WHERE user_id = $1 AND (folder = $2 OR folder LIKE $3)`,
+        [userId, folderPath, `${folderPath}/%`]
+      );
+      
+      if (filesInFolder.length === 0) continue;
+      
+      // Separate placeholder files from real files (trim whitespace)
+      const placeholderFiles = filesInFolder.filter(f => 
+        f.file_name && f.file_name.trim() === '.folder'
+      );
+      const realFiles = filesInFolder.filter(f => 
+        !f.file_name || f.file_name.trim() !== '.folder'
+      );
+      
+      // Delete folder and all subfolder placeholders
+      await pool.query(
+        `DELETE FROM workspace_files 
+         WHERE user_id = $1 AND (folder = $2 OR folder LIKE $3) AND file_name = '.folder'`,
+        [userId, folderPath, `${folderPath}/%`]
+      );
+      
+      // Also delete by IDs if we found any placeholders
+      if (placeholderFiles.length > 0) {
+        const placeholderIds = placeholderFiles.map(f => f.id);
+        await pool.query(
+          'DELETE FROM workspace_files WHERE id = ANY($1) AND user_id = $2',
+          [placeholderIds, userId]
+        );
+      }
+      
+      // Skip if no real files
+      if (realFiles.length === 0) continue;
+      
+      if (deleteFiles) {
+        // Delete all real files
+        const fileIds = realFiles.map(f => f.id);
+        await pool.query(
+          'DELETE FROM workspace_files WHERE id = ANY($1) AND user_id = $2',
+          [fileIds, userId]
+        );
+        totalFilesDeleted += realFiles.length;
+        
+        // Delete from Firebase Storage (best effort)
+        const FIREBASE_STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET;
+        if (FIREBASE_STORAGE_BUCKET) {
+          for (const file of realFiles) {
+            try {
+              const storageUrl = file.storage_url;
+              const pathMatch = storageUrl.match(/\/o\/([^?]+)/);
+              if (pathMatch) {
+                const encodedPath = pathMatch[1];
+                const deleteUrl = `https://firebasestorage.googleapis.com/v0/b/${FIREBASE_STORAGE_BUCKET}/o/${encodedPath}`;
+                await fetch(deleteUrl, { method: 'DELETE' });
+              }
+            } catch (storageError) {
+              console.warn(`[Workspace] Error deleting file from Firebase:`, storageError);
+            }
+          }
+        }
+      } else {
+        // Move real files to root
+        const fileIds = realFiles.map(f => f.id);
+        await pool.query(
+          `UPDATE workspace_files 
+           SET folder = NULL, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ANY($1) AND user_id = $2`,
+          [fileIds, userId]
+        );
+        totalFilesMoved += realFiles.length;
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      message: `Deleted ${folderPaths.length} folder(s)`,
+      foldersDeleted: folderPaths.length,
+      filesDeleted: totalFilesDeleted,
+      filesMoved: totalFilesMoved
+    });
+  } catch (error) {
+    console.error('[Workspace] Error bulk deleting folders:', error);
+    res.status(500).json({ error: 'Failed to bulk delete folders' });
+  }
+});
+
+/**
  * Delete a folder and optionally its contents
  * DELETE /api/workspace/folders/:folderPath
  * Query: deleteFiles=true/false (default: false - moves files to root)
@@ -194,7 +302,12 @@ router.post('/folders', requireAuth, async (req, res) => {
 router.delete('/folders/:folderPath(*)', requireAuth, async (req, res) => {
   try {
     const userId = req.auth.user.id;
-    const folderPath = req.params.folderPath;
+    let folderPath = req.params.folderPath;
+    try {
+      folderPath = decodeURIComponent(folderPath);
+    } catch {
+      // Path may not be encoded, use as-is
+    }
     const deleteFiles = req.query.deleteFiles === 'true';
     
     if (!folderPath) {
@@ -228,11 +341,11 @@ router.delete('/folders/:folderPath(*)', requireAuth, async (req, res) => {
       !f.file_name || f.file_name.trim() !== '.folder'
     );
     
-    // Always delete placeholder files - delete directly by folder and file_name to be extra sure
+    // Delete folder and all subfolder placeholders
     await pool.query(
       `DELETE FROM workspace_files 
-       WHERE user_id = $1 AND folder = $2 AND file_name = '.folder'`,
-      [userId, folderPath]
+       WHERE user_id = $1 AND (folder = $2 OR folder LIKE $3) AND file_name = '.folder'`,
+      [userId, folderPath, `${folderPath}/%`]
     );
     
     // Also delete by IDs if we found any placeholders
@@ -307,113 +420,6 @@ router.delete('/folders/:folderPath(*)', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('[Workspace] Error deleting folder:', error);
     res.status(500).json({ error: 'Failed to delete folder' });
-  }
-});
-
-/**
- * Bulk delete folders
- * DELETE /api/workspace/folders/bulk
- * Body: { folderPaths: string[], deleteFiles: boolean }
- */
-router.delete('/folders/bulk', requireAuth, async (req, res) => {
-  try {
-    const userId = req.auth.user.id;
-    const { folderPaths, deleteFiles = false } = req.body;
-    
-    if (!Array.isArray(folderPaths) || folderPaths.length === 0) {
-      return res.status(400).json({ error: 'folderPaths must be a non-empty array' });
-    }
-    
-    const pool = getPool();
-    let totalFilesDeleted = 0;
-    let totalFilesMoved = 0;
-    
-    for (const folderPath of folderPaths) {
-      // Get files in this folder and subfolders
-      const { rows: filesInFolder } = await pool.query(
-        `SELECT id, storage_url, file_name FROM workspace_files 
-         WHERE user_id = $1 AND (folder = $2 OR folder LIKE $3)`,
-        [userId, folderPath, `${folderPath}/%`]
-      );
-      
-      if (filesInFolder.length === 0) continue;
-      
-      // Separate placeholder files from real files (trim whitespace)
-      const placeholderFiles = filesInFolder.filter(f => 
-        f.file_name && f.file_name.trim() === '.folder'
-      );
-      const realFiles = filesInFolder.filter(f => 
-        !f.file_name || f.file_name.trim() !== '.folder'
-      );
-      
-      // Always delete placeholder files - delete directly by folder and file_name
-      await pool.query(
-        `DELETE FROM workspace_files 
-         WHERE user_id = $1 AND folder = $2 AND file_name = '.folder'`,
-        [userId, folderPath]
-      );
-      
-      // Also delete by IDs if we found any placeholders
-      if (placeholderFiles.length > 0) {
-        const placeholderIds = placeholderFiles.map(f => f.id);
-        await pool.query(
-          'DELETE FROM workspace_files WHERE id = ANY($1) AND user_id = $2',
-          [placeholderIds, userId]
-        );
-      }
-      
-      // Skip if no real files
-      if (realFiles.length === 0) continue;
-      
-      if (deleteFiles) {
-        // Delete all real files
-        const fileIds = realFiles.map(f => f.id);
-        await pool.query(
-          'DELETE FROM workspace_files WHERE id = ANY($1) AND user_id = $2',
-          [fileIds, userId]
-        );
-        totalFilesDeleted += realFiles.length;
-        
-        // Delete from Firebase Storage (best effort)
-        const FIREBASE_STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET;
-        if (FIREBASE_STORAGE_BUCKET) {
-          for (const file of realFiles) {
-            try {
-              const storageUrl = file.storage_url;
-              const pathMatch = storageUrl.match(/\/o\/([^?]+)/);
-              if (pathMatch) {
-                const encodedPath = pathMatch[1];
-                const deleteUrl = `https://firebasestorage.googleapis.com/v0/b/${FIREBASE_STORAGE_BUCKET}/o/${encodedPath}`;
-                await fetch(deleteUrl, { method: 'DELETE' });
-              }
-            } catch (storageError) {
-              console.warn(`[Workspace] Error deleting file from Firebase:`, storageError);
-            }
-          }
-        }
-      } else {
-        // Move real files to root
-        const fileIds = realFiles.map(f => f.id);
-        await pool.query(
-          `UPDATE workspace_files 
-           SET folder = NULL, updated_at = CURRENT_TIMESTAMP
-           WHERE id = ANY($1) AND user_id = $2`,
-          [fileIds, userId]
-        );
-        totalFilesMoved += realFiles.length;
-      }
-    }
-    
-    res.json({ 
-      success: true,
-      message: `Deleted ${folderPaths.length} folder(s)`,
-      foldersDeleted: folderPaths.length,
-      filesDeleted: totalFilesDeleted,
-      filesMoved: totalFilesMoved
-    });
-  } catch (error) {
-    console.error('[Workspace] Error bulk deleting folders:', error);
-    res.status(500).json({ error: 'Failed to bulk delete folders' });
   }
 });
 

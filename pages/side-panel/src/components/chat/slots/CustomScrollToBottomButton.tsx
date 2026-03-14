@@ -10,6 +10,7 @@ import * as React from 'react';
 import { useState } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
+import { useScrollToBottom } from '../../../context/ScrollToBottomContext';
 
 /**
  * Theme colors matching CustomCodeBlock and other components
@@ -37,18 +38,29 @@ export type CustomScrollToBottomButtonProps = React.ButtonHTMLAttributes<HTMLBut
  */
 export const CustomScrollToBottomButton: React.FC<CustomScrollToBottomButtonProps> = (props) => {
   const { className, style, children: _children, onClick, ...rest } = props;
-  
+
   // Note: We intentionally ignore children passed by CopilotKit to use our custom icon design
   void _children;
-  
+
   const themeState = useStorage(themeStorage);
   const isLight = themeState.isLight;
   const colors = isLight ? THEME_COLORS.light : THEME_COLORS.dark;
+  const scrollToBottom = useScrollToBottom();
 
   const [isHovered, setIsHovered] = useState(false);
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (onClick) {
+    const ts = Date.now();
+    const hasRestOnClick = 'onClick' in rest;
+    console.log('[ScrollToBottom] button clicked', {
+      ts,
+      hasScrollToBottom: !!scrollToBottom,
+      hasRestOnClick,
+      restKeys: Object.keys(rest),
+    });
+    if (scrollToBottom) {
+      scrollToBottom(true);
+    } else if (onClick) {
       onClick(e);
     }
   };

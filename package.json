@@ -1,6 +1,6 @@
 {
   "name": "chrome-extension-boilerplate-react-vite",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "chrome extension boilerplate",
   "license": "MIT",
   "private": true,
@@ -44,9 +44,9 @@
     "postinstall": "pnpm copy-env && pnpm download-onnx-wasm"
   },
   "dependencies": {
-    "@better-auth/sso": "^1.4.5",
-    "@copilotkit/react-core": "^1.51.2",
-    "@copilotkit/react-ui": "^1.51.2",
+    "@better-auth/sso": "^1.4.6",
+    "@copilotkit/react-core": "^1.53.0",
+    "@copilotkit/react-ui": "^1.53.0",
     "@huggingface/transformers": "^3.7.5",
     "@surrealdb/wasm": "^1.4.1",
     "@themaximalist/vectordb.js": "^0.1.2",
@@ -61,6 +61,7 @@
     "fastembed": "^2.0.0",
     "firebase": "^11.0.2",
     "lowlight": "^3.3.0",
+    "micromark": "^4.0.0",
     "onnxruntime-web": "^1.23.0",
     "pnpm": "^10.23.0",
     "react": "^19.1.0",
