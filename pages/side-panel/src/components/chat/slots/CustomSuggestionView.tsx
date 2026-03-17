@@ -72,6 +72,7 @@ export const CustomSuggestionPill: React.FC<CustomSuggestionPillProps> = ({
         border: `1px solid ${colors.border}`,
         flexShrink: 0,
         whiteSpace: 'nowrap',
+        fontFamily: "Menlo, Monaco, Consolas, 'Courier New', monospace",
         ...style,
       }}
       onMouseEnter={(e) => {

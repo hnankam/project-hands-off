@@ -28,6 +28,7 @@
   outline: none !important;
   line-height: 1.6 !important;
   color: #374151 !important; /* gray-700 - matches message text and buttons */
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
 }
 
 .dark .tiptap-editor {
@@ -42,6 +43,7 @@
   max-height: 120px;
   overflow-y: auto;
   color: inherit !important;
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
 }
 
 .ProseMirror p {

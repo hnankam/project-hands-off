@@ -12,6 +12,33 @@
    ============================================================================= */
 
 /* ==========================================================
+   MENLO FONT: Messages, Input, ProseMirror
+   Explicit rules to override CopilotKit/AG-UI defaults
+   ========================================================== */
+.copilot-chat-container,
+.copilot-chat-container .copilotKitUserMessage,
+.copilot-chat-container .copilotKitAssistantMessage,
+.copilot-chat-container .copilotKitMessagesContainer,
+.copilot-chat-container .copilotKitMessagesFooter,
+.copilot-chat-container .custom-input-v2-container,
+.copilot-chat-container .custom-input-v2-container *,
+.copilot-chat-container .ProseMirror,
+.copilot-chat-container .ProseMirror *,
+.copilot-chat-container .tiptap-editor,
+.copilot-chat-container input,
+.copilot-chat-container textarea,
+.copilot-chat-container p,
+.copilot-chat-container span,
+.copilot-chat-container [class*="prose"],
+.copilot-chat-container [data-streamdown],
+.copilot-chat-container button[class*="suggestion"],
+.copilot-chat-container button[class*="Suggestion"],
+.copilot-chat-container .copilotKitMessagesFooter,
+.copilot-chat-container .copilotKitMessagesFooter * {
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
+}
+
+/* ==========================================================
    USER MESSAGE STYLING
    ========================================================== */
 

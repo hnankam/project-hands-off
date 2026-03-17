@@ -368,7 +368,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const currentSessionTitle = sessions.find(s => s.id === currentSessionId)?.title || 'this chat';
 
   return (
-    <>
+    <div className="sessions-page flex flex-col flex-1 min-h-0">
       {/* Chats Page Header */}
       <SessionHeader
         isLight={isLight}
@@ -618,6 +618,6 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         mainTextColor={mainTextColor}
       />
 
-    </>
+    </div>
   );
 };

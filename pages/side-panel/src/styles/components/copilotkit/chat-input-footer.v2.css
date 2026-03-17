@@ -11,6 +11,20 @@
    ============================================================================= */
 
 /* ==========================================================
+   MENLO FONT: Input and Suggestions
+   ========================================================== */
+.copilot-chat-container .custom-input-v2-container,
+.copilot-chat-container .custom-input-v2-container *,
+.copilot-chat-container .ProseMirror,
+.copilot-chat-container .tiptap-editor,
+.copilot-chat-container .copilotKitMessagesFooter,
+.copilot-chat-container .copilotKitMessagesFooter *,
+.copilot-chat-container [data-copilotkit]:has(> .custom-input-v2-container),
+.copilot-chat-container [data-copilotkit]:has(> .custom-input-v2-container) * {
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
+}
+
+/* ==========================================================
    FADE TEXT EFFECTS
    ========================================================== */
 
@@ -113,6 +127,11 @@ footer.copilotKitMessagesFooter {
 }
 
 /* Suggestions single-line scrollable layout */
+.copilotKitMessagesFooter > div[class="suggestions"],
+.copilotKitMessagesFooter > div[class="suggestions"] * {
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
+}
+
 .copilotKitMessagesFooter > div[class="suggestions"] {
   display: flex !important;
   flex-wrap: nowrap !important;
@@ -186,7 +205,10 @@ footer.copilotKitMessagesFooter {
    SUGGESTION BUTTONS
    ========================================================== */
 
-footer div[class*="suggestions"] button {
+footer div[class*="suggestions"] button,
+.copilotKitMessagesFooter button,
+.copilotKitMessagesFooter [class*="suggestion"] button {
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
   padding: 3px 9px !important;
   margin: 0 !important;
   white-space: nowrap !important;

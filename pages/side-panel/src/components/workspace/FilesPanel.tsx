@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { CodeBlock } from '../chat/slots/CustomCodeBlock';
+import { exportWorkspaceAsZip } from '../../utils/workspaceExport';
 
 interface WorkspaceFile {
   id: string;
@@ -46,6 +47,7 @@ interface FolderMoreOptionsButtonProps {
   isOpen: boolean;
   onToggle: () => void;
   onDelete: () => void;
+  onExport?: () => void;
   disabled?: boolean;
 }
 
@@ -172,6 +174,7 @@ const FolderMoreOptionsButton: React.FC<FolderMoreOptionsButtonProps> = ({
   isOpen,
   onToggle,
   onDelete,
+  onExport,
   disabled = false,
 }) => {
   const moreButtonRef = useRef<HTMLButtonElement>(null);
@@ -271,6 +274,42 @@ const FolderMoreOptionsButton: React.FC<FolderMoreOptionsButtonProps> = ({
             className="folderMoreOptionsDropdownMenu"
             style={dropdownStyles}
           >
+            {/* Export Option */}
+            {onExport && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onExport();
+                  onToggle();
+                }}
+                style={{
+                  ...menuItemBaseStyles,
+                  color: menuItemTextColor,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = menuItemHoverBg;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  width="14"
+                  height="14"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Export as ZIP
+              </button>
+            )}
             {/* Delete Option */}
             <button
               type="button"
@@ -604,6 +643,9 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
   // More options menu state
   const [openMoreMenuFileId, setOpenMoreMenuFileId] = useState<string | null>(null);
   const [openMoreMenuFolderPath, setOpenMoreMenuFolderPath] = useState<string | null>(null);
+  const [openRootMoreMenu, setOpenRootMoreMenu] = useState(false);
+  const rootMoreButtonRef = useRef<HTMLButtonElement>(null);
+  const rootMoreDropdownRef = useRef<HTMLDivElement | null>(null);
 
   // Move file state
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
@@ -614,6 +656,9 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
   // Bulk move state
   const [bulkMoveDialogOpen, setBulkMoveDialogOpen] = useState(false);
   const [bulkMoveDestFolder, setBulkMoveDestFolder] = useState<string | null>(null);
+
+  // Export state
+  const [exporting, setExporting] = useState(false);
 
   const loadFiles = useCallback(async () => {
     try {
@@ -1155,20 +1200,52 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
-      const isMoreMenuClick = target.closest('.fileMoreOptionsDropdownMenu') || target.closest('.folderMoreOptionsDropdownMenu');
+      const isMoreMenuClick = target.closest('.fileMoreOptionsDropdownMenu') || target.closest('.folderMoreOptionsDropdownMenu') || target.closest('.rootMoreOptionsDropdownMenu') || target.closest('[data-root-more-button]');
       
       if (!isMoreMenuClick) {
         setOpenMoreMenuFileId(null);
         setOpenMoreMenuFolderPath(null);
+        setOpenRootMoreMenu(false);
       }
     };
 
-    if (openMoreMenuFileId || openMoreMenuFolderPath) {
+    if (openMoreMenuFileId || openMoreMenuFolderPath || openRootMoreMenu) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
     return undefined;
-  }, [openMoreMenuFileId, openMoreMenuFolderPath]);
+  }, [openMoreMenuFileId, openMoreMenuFolderPath, openRootMoreMenu]);
+
+  // Position root more dropdown (ensure it stays in view)
+  useEffect(() => {
+    if (openRootMoreMenu && rootMoreButtonRef.current && rootMoreDropdownRef.current) {
+      const buttonRect = rootMoreButtonRef.current.getBoundingClientRect();
+      const dropdown = rootMoreDropdownRef.current;
+      const dropdownHeight = 48; // approximate height for single item
+      const dropdownWidth = 160; // min-w-[160px]
+      const spaceBelow = window.innerHeight - buttonRect.bottom;
+      const spaceAbove = buttonRect.top;
+      const spaceRight = window.innerWidth - buttonRect.left;
+
+      // Horizontal: align right if dropdown would overflow
+      if (spaceRight < dropdownWidth) {
+        dropdown.style.left = '';
+        dropdown.style.right = `${window.innerWidth - buttonRect.right}px`;
+      } else {
+        dropdown.style.right = '';
+        dropdown.style.left = `${buttonRect.left}px`;
+      }
+
+      // Vertical: position above if not enough space below
+      if (spaceBelow < dropdownHeight && spaceAbove > spaceBelow) {
+        dropdown.style.top = '';
+        dropdown.style.bottom = `${window.innerHeight - buttonRect.top + 4}px`;
+      } else {
+        dropdown.style.bottom = '';
+        dropdown.style.top = `${buttonRect.bottom + 4}px`;
+      }
+    }
+  }, [openRootMoreMenu]);
 
   const formatSize = (bytes: number) => {
     const k = 1024;
@@ -1378,6 +1455,26 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     } catch (error) {
       console.error('[Workspace] Error downloading file:', error);
       alert('Failed to download file. Please try again.');
+    }
+  };
+
+  const handleExportAsZip = async (folderPath: string | null) => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const baseURL = API_CONFIG.BASE_URL;
+      await exportWorkspaceAsZip(files, baseURL, {
+        folderPath,
+        zipName: folderPath ? `${folderPath.replace(/[/\\]/g, '-')}.zip` : 'workspace-export.zip',
+        onProgress: (current, total) => {
+          console.log(`[Workspace] Exporting ${current}/${total} files...`);
+        },
+      });
+    } catch (error) {
+      console.error('[Workspace] Error exporting:', error);
+      alert(error instanceof Error ? error.message : 'Failed to export. Please try again.');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -1625,7 +1722,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
         )}
 
         {/* Header with breadcrumbs */}
-        <div className={cn('flex items-center justify-between border-b px-4 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
+        <div className={cn('flex items-center justify-between border-b px-4 py-2 pr-0', isLight ? 'border-gray-200' : 'border-gray-700')}>
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <button
               onClick={() => navigateToFolder(null)}
@@ -1751,6 +1848,82 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
               </svg>
               {uploading ? 'UPLOADING...' : 'UPLOAD'}
             </button>
+            {!currentFolder && (
+              <>
+                <button
+                  ref={rootMoreButtonRef}
+                  type="button"
+                  data-root-more-button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenRootMoreMenu(prev => !prev);
+                    setOpenMoreMenuFileId(null);
+                    setOpenMoreMenuFolderPath(null);
+                  }}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded border-0 px-2 py-1 pl-0 text-[10px] font-medium transition-colors',
+                    isLight
+                      ? 'text-gray-600 hover:bg-gray-100'
+                      : 'text-gray-300 hover:bg-gray-800',
+                  )}
+                  title="Root options">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="12" cy="5" r="1" />
+                    <circle cx="12" cy="19" r="1" />
+                  </svg>
+                </button>
+                {openRootMoreMenu &&
+                  createPortal(
+                    <div
+                      ref={rootMoreDropdownRef}
+                      className="rootMoreOptionsDropdownMenu fixed rounded-md border shadow-lg z-[10000] min-w-[160px] overflow-hidden"
+                      style={{
+                        backgroundColor: isLight ? '#ffffff' : '#151C24',
+                        borderColor: isLight ? '#e5e7eb' : '#374151',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleExportAsZip(null);
+                          setOpenRootMoreMenu(false);
+                        }}
+                        disabled={exporting}
+                        className={cn(
+                          'w-full px-3 py-2 text-xs text-left flex items-center gap-2 transition-colors',
+                          isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-200 hover:bg-gray-700',
+                          exporting && 'opacity-50 cursor-not-allowed'
+                        )}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        {exporting ? 'Exporting...' : 'Export as ZIP'}
+                      </button>
+                    </div>,
+                    document.body
+                  )}
+              </>
+            )}
+            {currentFolder && (
+              <button
+                onClick={() => handleExportAsZip(currentFolder)}
+                disabled={exporting}
+                className={cn(
+                  'flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-medium transition-colors',
+                  exporting
+                    ? 'cursor-not-allowed opacity-50'
+                    : isLight
+                      ? 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      : 'border-gray-700 text-gray-300 hover:bg-gray-800',
+                )}
+                title={`Export "${currentFolder}" as ZIP`}>
+                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                {exporting ? 'EXPORTING...' : 'EXPORT'}
+              </button>
+            )}
               </>
             )}
           </div>
@@ -1936,6 +2109,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                               setOpenMoreMenuFolderPath(prev => prev === folder.path ? null : folder.path);
                               setOpenMoreMenuFileId(null); // Close file menu if open
                             }}
+                            onExport={() => handleExportAsZip(folder.path)}
                             onDelete={() => {
                               openFolderDeleteDialog(folder);
                               setOpenMoreMenuFolderPath(null);

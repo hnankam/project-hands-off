@@ -23,6 +23,7 @@
   overflow: hidden;
   font-size: 14px;
   line-height: 1.4;
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
   /* max-width: 56rem !important; */
   transition: opacity 0.2s ease-in-out;
   background-color: #ffffff;

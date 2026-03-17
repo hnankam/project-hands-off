@@ -702,6 +702,9 @@ importers:
       dompurify:
         specifier: ^3.2.2
         version: 3.3.0
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.2
       firebase:
         specifier: ^11.1.0
         version: 11.10.0

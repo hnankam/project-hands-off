@@ -65,7 +65,15 @@
 /* ==========================================================
    SUGGESTIONS SCROLLBAR (HORIZONTAL)
    Hidden scrollbar like session tabs
+   Menlo font for suggestion pills
    ========================================================== */
+.suggestions-scroll-wrapper,
+.suggestions-scroll,
+.suggestions-scroll-wrapper *,
+.suggestions-scroll * {
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
+}
+
 .suggestions-scroll-wrapper {
   margin-left: 0 !important;
   margin-right: 0 !important;

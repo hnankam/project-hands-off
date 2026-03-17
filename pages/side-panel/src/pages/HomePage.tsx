@@ -832,7 +832,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   }, [isLight]);
 
   return (
-    <>
+    <div className="home-page flex flex-col flex-1 min-h-0">
       {/* Home Page Header */}
       <div
         className={cn(
@@ -1800,7 +1800,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
         isLoading={deleting}
       />
 
-    </>
+    </div>
   );
 };
 
