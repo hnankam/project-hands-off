@@ -115,6 +115,9 @@ export class SessionStorageDB {
       // Selected workspace items
       selectedNoteIds: Array.isArray(row.selectedNoteIds) ? row.selectedNoteIds : undefined,
       selectedCredentialIds: Array.isArray(row.selectedCredentialIds) ? row.selectedCredentialIds : undefined,
+      // Config panel state
+      configPanelOpen: row.configPanelOpen === true,
+      configPanelTab: ['context', 'plans', 'graphs', 'sub-agents'].includes(row.configPanelTab) ? row.configPanelTab : 'context',
     };
   }
 
@@ -908,6 +911,22 @@ export class SessionStorageDB {
     );
     this.invalidateSessionCache(sessionId);
     this.notify({ type: 'sessionChanged', sessionId });
+  }
+
+  /**
+   * Update session config panel state (open/closed and active tab)
+   */
+  async updateSessionConfigPanel(
+    sessionId: string,
+    configPanelOpen: boolean,
+    configPanelTab: 'context' | 'plans' | 'graphs' | 'sub-agents'
+  ): Promise<void> {
+    const worker = this.getWorker();
+    await worker.query(
+      'UPDATE session_metadata SET configPanelOpen = $configPanelOpen, configPanelTab = $configPanelTab, timestamp = $timestamp WHERE sessionId = $id OR id = $id;',
+      { id: sessionId, configPanelOpen, configPanelTab, timestamp: Date.now() }
+    );
+    this.invalidateSessionCache(sessionId);
   }
 
   /**

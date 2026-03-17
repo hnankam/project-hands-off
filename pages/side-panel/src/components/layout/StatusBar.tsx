@@ -1,8 +1,27 @@
 import type { FC, CSSProperties } from 'react';
 import * as React from 'react';
 import { memo, useMemo } from 'react';
+import { cn, Button, DropdownMenu, DropdownMenuItem, DropdownMenuSeparator, DropdownAccordion } from '@extension/ui';
 import { UsageDisplay } from '../menus/UsageDisplay';
 import type { CumulativeUsage, UsageData } from '../../hooks/useUsageStream';
+
+/** Props for the more options dropdown (session actions) */
+export interface MoreOptionsMenuProps {
+  isLight: boolean;
+  currentSessionId: string | null;
+  sessionMessageCount: number;
+  copiedSessionId: boolean;
+  onResetSession: () => void;
+  onCloseSession: () => void;
+  onClearAllMessages: () => void;
+  onClearAllSessions: () => void;
+  onExportAsMarkdown: () => void;
+  onExportAsHTML: () => void;
+  onCopySessionId: (e: React.MouseEvent) => void;
+  onOpenSettings?: () => void;
+  onOpenAbout: () => void;
+  onClose: () => void;
+}
 
 /** URL protocols that cannot have content scripts injected */
 const RESTRICTED_URL_PREFIXES = [
@@ -53,11 +72,11 @@ export interface StatusBarProps {
   onUsageClick?: () => void;
   // Current page URL for detecting restricted pages
   currentPageUrl?: string | null;
-  // Plans and Graphs panels
-  onPlansClick?: (e?: React.MouseEvent) => void;
-  onGraphsClick?: (e?: React.MouseEvent) => void;
-  hasPlans?: boolean; // Show plans button only if there's at least 1 plan
-  hasGraphs?: boolean; // Show graphs button only if there's at least 1 graph
+  // Config panel (plans, graphs, and other containers)
+  onConfigClick?: (e?: React.MouseEvent) => void;
+  configPanelOpen?: boolean;
+  // More options dropdown (session actions - Reset, Close, Export, etc.)
+  moreOptionsMenu?: MoreOptionsMenuProps;
 }
 
 export const StatusBar: FC<StatusBarProps> = memo(({
@@ -78,10 +97,9 @@ export const StatusBar: FC<StatusBarProps> = memo(({
   usageData,
   onUsageClick,
   currentPageUrl,
-  onPlansClick,
-  onGraphsClick,
-  hasPlans = false,
-  hasGraphs = false,
+  onConfigClick,
+  configPanelOpen = false,
+  moreOptionsMenu,
 }) => {
   // Get the current page URL from available sources
   const currentUrl = useMemo(() => {
@@ -328,77 +346,150 @@ export const StatusBar: FC<StatusBarProps> = memo(({
             </span>
           )}
         </button>
-        
-        {/* Plans Button */}
-        {onPlansClick && hasPlans && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onPlansClick(e);
-            }}
-            className={`h-[26px] w-[26px] flex items-center justify-center rounded-md transition-colors border ${
-              isLight
-                ? 'text-gray-600 hover:bg-gray-100 border-gray-200'
-                : 'text-gray-400 hover:bg-gray-700 border-gray-700'
-            }`}
-            title="Chat plans"
+
+        {/* More Options Dropdown - between refresh and config */}
+        {moreOptionsMenu && (
+          <DropdownMenu
+            align="right"
+            isLight={moreOptionsMenu.isLight}
+            trigger={
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  'h-[26px] w-[26px] p-0',
+                  moreOptionsMenu.isLight ? 'text-gray-600 hover:bg-gray-200' : 'text-gray-400 hover:bg-gray-700',
+                )}
+                title="More options"
+              >
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                </svg>
+              </Button>
+            }
           >
-            <svg 
-              viewBox="0 0 24 24" 
-              fill="none" 
-              stroke="currentColor" 
-              strokeWidth="2" 
-              strokeLinecap="round" 
-              strokeLinejoin="round"
-              style={{
-                width: '12px',
-                height: '12px',
-                minWidth: '12px',
-                minHeight: '12px',
-              }}
+            <DropdownMenuItem
+              onClick={moreOptionsMenu.onResetSession}
+              disabled={!moreOptionsMenu.currentSessionId || moreOptionsMenu.sessionMessageCount === 0}
+              isLight={moreOptionsMenu.isLight}
             >
-              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-          </button>
+              Reset Chat
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={moreOptionsMenu.onCloseSession} shortcut="⌘ C" isLight={moreOptionsMenu.isLight}>
+              Close Chat
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={moreOptionsMenu.onClearAllMessages} isLight={moreOptionsMenu.isLight}>Clear All Chat Messages</DropdownMenuItem>
+            <DropdownMenuItem onClick={moreOptionsMenu.onClearAllSessions} isLight={moreOptionsMenu.isLight}>Clear All Chats</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownAccordion label="Export Chat" isLight={moreOptionsMenu.isLight}>
+              <DropdownMenuItem
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); moreOptionsMenu.onExportAsMarkdown(); }}
+                isLight={moreOptionsMenu.isLight}
+              >
+                Export as Markdown
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); moreOptionsMenu.onExportAsHTML(); }}
+                isLight={moreOptionsMenu.isLight}
+              >
+                Export as HTML
+              </DropdownMenuItem>
+            </DropdownAccordion>
+            <DropdownMenuItem
+              onClick={moreOptionsMenu.onCopySessionId}
+              isLight={moreOptionsMenu.isLight}
+              className={cn(
+                'transition-all duration-200',
+                moreOptionsMenu.copiedSessionId && (moreOptionsMenu.isLight ? 'bg-green-50' : 'bg-green-900/20')
+              )}
+            >
+              <div className="flex items-center gap-2 w-full">
+                {moreOptionsMenu.copiedSessionId ? (
+                  <svg
+                    className={cn('h-3 w-3 flex-shrink-0 transition-all duration-200', moreOptionsMenu.isLight ? 'text-green-600' : 'text-green-400')}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ animation: 'scale-in 0.2s ease-out' }}
+                  >
+                    <path d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg
+                    className={cn('h-3 w-3 flex-shrink-0 opacity-60', moreOptionsMenu.isLight ? 'text-gray-500' : 'text-gray-400')}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                  </svg>
+                )}
+                <span className={cn(
+                  'flex-1 transition-colors duration-200',
+                  moreOptionsMenu.copiedSessionId && (moreOptionsMenu.isLight ? 'text-green-700' : 'text-green-400')
+                )}>
+                  {moreOptionsMenu.copiedSessionId ? 'Session ID Copied!' : 'Copy Session ID'}
+                </span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={moreOptionsMenu.onOpenSettings}
+              disabled={!moreOptionsMenu.currentSessionId || !moreOptionsMenu.onOpenSettings}
+              isLight={moreOptionsMenu.isLight}
+            >
+              Chat Settings
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={moreOptionsMenu.onOpenAbout} isLight={moreOptionsMenu.isLight}>About Project Hands-Off</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={moreOptionsMenu.onClose} isLight={moreOptionsMenu.isLight}>Close Panel</DropdownMenuItem>
+          </DropdownMenu>
         )}
-        
-        {/* Graphs Button */}
-        {onGraphsClick && hasGraphs && (
+
+        {/* Config Button - always visible, opens plans/graphs/containers panel */}
+        {onConfigClick && (
           <button
             type="button"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              onGraphsClick(e);
+              onConfigClick(e);
             }}
-            className={`h-[26px] w-[26px] flex items-center justify-center rounded-md transition-colors border ${
-              isLight
-                ? 'text-gray-600 hover:bg-gray-100 border-gray-200'
-                : 'text-gray-400 hover:bg-gray-700 border-gray-700'
-            }`}
-            title="Chat graphs"
+            className={cn(
+              'flex h-7 w-7 items-center justify-center rounded transition-colors',
+              configPanelOpen
+                ? isLight
+                  ? 'bg-gray-200 text-gray-700'
+                  : 'bg-gray-700 text-gray-200'
+                : isLight
+                  ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                  : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
+            )}
+            title={configPanelOpen ? 'Hide plans & graphs' : 'Plans, graphs & more'}
           >
-            <svg 
-              viewBox="0 0 24 24" 
-              fill="none" 
-              stroke="currentColor" 
-              strokeWidth="2" 
-              strokeLinecap="round" 
-              strokeLinejoin="round"
-              style={{
-                width: '12px',
-                height: '12px',
-                minWidth: '12px',
-                minHeight: '12px',
-              }}
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              className="w-3.5 h-3.5"
             >
-              <circle cx="18" cy="5" r="3" />
-              <circle cx="6" cy="12" r="3" />
-              <circle cx="18" cy="19" r="3" />
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+              <g transform="translate(-3, 0)">
+                <path d="M7 14.18V3a1 1 0 0 0-2 0v11.18a3 3 0 0 0 0 5.64V21a1 1 0 0 0 2 0v-1.18a3 3 0 0 0 0-5.64zM6 18a1 1 0 1 1 1-1 1 1 0 0 1-1 1z" />
+              </g>
+              <path d="M15 5a3 3 0 1 0-4 2.82V21a1 1 0 0 0 2 0V7.82A3 3 0 0 0 15 5zm-3 1a1 1 0 1 1 1-1 1 1 0 0 1-1 1z" />
+              <g transform="translate(3, 0)">
+                <path d="M21 13a3 3 0 0 0-2-2.82V3a1 1 0 0 0-2 0v7.18a3 3 0 0 0 0 5.64V21a1 1 0 0 0 2 0v-5.18A3 3 0 0 0 21 13zm-3 1a1 1 0 1 1 1-1 1 1 0 0 1-1 1z" />
+              </g>
             </svg>
           </button>
         )}

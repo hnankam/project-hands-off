@@ -81,6 +81,8 @@ export interface SessionMetadata {
   selectedPageURLs?: string[]; // Selected context page URLs
   selectedNoteIds?: string[]; // Selected workspace note IDs
   selectedCredentialIds?: string[]; // Selected workspace credential IDs
+  configPanelOpen?: boolean; // Config panel (plans/graphs/context) visibility
+  configPanelTab?: 'context' | 'plans' | 'graphs' | 'sub-agents'; // Active tab when panel was open
 }
 
 export interface SessionUsageLastRecord {

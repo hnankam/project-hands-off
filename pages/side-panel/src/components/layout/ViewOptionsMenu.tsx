@@ -140,16 +140,16 @@ export const ViewOptionsMenu: React.FC<ViewOptionsMenuProps> = ({
       {/* Dropdown Menu */}
       {isOpen && (
         <>
-          {/* Backdrop */}
+          {/* Backdrop - z-[60] to appear above ConfigPanel (z-50) when open */}
           <div
-            className="fixed inset-0 z-40"
+            className="fixed inset-0 z-[60]"
             onClick={() => setIsOpen(false)}
           />
 
-          {/* Menu */}
+          {/* Menu - z-[60] to appear above ConfigPanel when open */}
           <div
             className={cn(
-              'absolute right-0 top-full mt-1 z-50 w-52 rounded-lg shadow-lg border overflow-hidden',
+              'absolute right-0 top-full mt-1 z-[60] w-52 rounded-lg shadow-lg border overflow-hidden',
               isLight
                 ? 'bg-white border-gray-200'
                 : 'bg-[#1C2128] border-gray-700'

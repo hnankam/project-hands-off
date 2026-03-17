@@ -30,7 +30,10 @@ export const InlineThinkingBlock: FC<InlineThinkingBlockProps> = memo(({
   if (!content) return null;
   
   return (
-    <div className={`thinking-block ${isLight ? 'text-gray-600' : 'text-gray-500'}`} style={{ fontSize: 12 }}>
+    <div
+      className={`thinking-block ${isLight ? 'text-gray-600' : 'text-gray-500'}`}
+      style={{ fontSize: 12, '--thinking-block-feather-bg': isLight ? '#ffffff' : '#0D1117' } as React.CSSProperties}
+    >
       {/* Accordion Header - matches ThinkingBlock design */}
       <div
         onClick={() => setIsOpen(!isOpen)}
@@ -116,17 +119,35 @@ export const InlineThinkingBlock: FC<InlineThinkingBlockProps> = memo(({
             marginLeft: 13,
           }}
         >
-          <div
-            ref={contentRef}
-            className={`mb-4 text-xs opacity-80 ${
-              isComplete
-                ? 'max-h-40 overflow-y-auto overscroll-contain'
-                : 'max-h-[75vh] overflow-y-auto overscroll-contain'
-            }`}
-          >
-            <div className="thinking-block-content">
-              <CustomMarkdownRenderer content={content} isLight={isLight} />
+          <div style={{ position: 'relative' }}>
+            <div
+              ref={contentRef}
+              className={`mb-4 text-xs opacity-80 recent-sessions-scroll ${
+                isComplete
+                  ? 'max-h-80 overflow-y-auto overscroll-contain'
+                  : 'max-h-[75vh] overflow-y-auto overscroll-contain'
+              }`}
+              style={{ paddingRight: 6, paddingBottom: 8 }}
+            >
+              <div className="thinking-block-content">
+                <CustomMarkdownRenderer content={content} isLight={isLight} />
+              </div>
             </div>
+            {isOpen && (
+              <div
+                className="thinking-block-feather"
+                style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: 8,
+                  pointerEvents: 'none',
+                  zIndex: 10,
+                }}
+                aria-hidden
+              />
+            )}
           </div>
         </div>
       </div>

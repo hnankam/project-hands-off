@@ -142,3 +142,12 @@
   animation-delay: 0.4s;
 }
 
+/* ==========================================================
+   THINKING BLOCK FEATHER
+   Bottom gradient fade (scrollbar uses recent-sessions-scroll)
+   ========================================================== */
+
+.thinking-block-feather {
+  background: linear-gradient(to bottom, transparent 0%, var(--thinking-block-feather-bg) 80%, var(--thinking-block-feather-bg) 100%);
+}
+

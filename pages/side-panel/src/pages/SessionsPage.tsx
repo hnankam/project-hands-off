@@ -11,6 +11,7 @@ import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { cn, SessionList } from '@extension/ui';
 import { SKELETON_TIMINGS, SESSION_CACHE } from '../constants/ui';
 import { SessionHeader } from '../components/sessions';
+import { SessionsPanel } from '../components/panels/SessionsPanel';
 import { useSessionLoadingState } from '../hooks/useSessionLoadingState';
 import { useSessionActions } from '../hooks/useSessionActions';
 import { useSessionCache } from '../hooks/useSessionCache';
@@ -104,6 +105,61 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     hasAttemptedInitialSessionRef,
   } = useSessionActions(currentSessionId, sessions, sessionMessageCounts);
 
+  // Sessions panel (left side - open chats list) - persisted to localStorage
+  const [showSessionsPanel, setShowSessionsPanel] = useState(() => {
+    try {
+      const stored = localStorage.getItem('sessionsPanelOpen');
+      return stored === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [sessionsPanelWidth, setSessionsPanelWidth] = useState(() => {
+    try {
+      const stored = localStorage.getItem('sessionsPanelWidth');
+      const w = stored ? parseInt(stored, 10) : 280;
+      return !isNaN(w) && w >= 220 && w <= 400 ? w : 280;
+    } catch {
+      return 280;
+    }
+  });
+  const contentAreaRef = useRef<HTMLDivElement>(null);
+  const [isSessionsPanelSmallView, setIsSessionsPanelSmallView] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 600 : true
+  );
+  const SESSIONS_PANEL_SMALL_VIEW_THRESHOLD = 600; // Match ConfigPanel threshold
+
+  // Persist sessions panel state to localStorage (restore on tab open)
+  useEffect(() => {
+    try {
+      localStorage.setItem('sessionsPanelOpen', String(showSessionsPanel));
+    } catch (e) {
+      console.error('[SessionsPage] Failed to persist sessionsPanelOpen', e);
+    }
+  }, [showSessionsPanel]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('sessionsPanelWidth', String(sessionsPanelWidth));
+    } catch (e) {
+      console.error('[SessionsPage] Failed to persist sessionsPanelWidth', e);
+    }
+  }, [sessionsPanelWidth]);
+
+  useEffect(() => {
+    const el = contentAreaRef.current;
+    if (!el) return;
+
+    const checkSize = () => {
+      const width = el.offsetWidth || el.clientWidth || window.innerWidth;
+      setIsSessionsPanelSmallView(width < SESSIONS_PANEL_SMALL_VIEW_THRESHOLD);
+    };
+
+    checkSize();
+    const ro = new ResizeObserver(checkSize);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Ref to open settings modal from header (registered by active ChatSessionContainer)
   const openSettingsRef = useRef<Record<string, () => void>>({});
   const handleRegisterOpenSettings = useCallback((sessionId: string, openFn: () => void) => {
@@ -114,6 +170,48 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       openSettingsRef.current[currentSessionId]();
     }
   }, [currentSessionId]);
+
+  // Config panel state for header button and layout (registered by active ChatSessionContainer)
+  const [configPanelState, setConfigPanelState] = useState<Record<string, { isOpen: boolean; width: number; toggle: () => void }>>({});
+  const handleRegisterConfigPanel = useCallback((sessionId: string, state: { isOpen: boolean; width: number; toggle: () => void }) => {
+    setConfigPanelState((prev) => ({ ...prev, [sessionId]: state }));
+  }, []);
+  const handleToggleConfigPanel = useCallback(() => {
+    configPanelState[currentSessionId ?? '']?.toggle?.();
+  }, [currentSessionId, configPanelState]);
+
+  // Effective config panel state: use current session's state if registered; otherwise fall back to any session with panel open.
+  // Fixes layout when switching sessions—new session may not have registered yet, so we preserve margin until it does.
+  const effectiveConfigPanelState = useMemo(() => {
+    const current = configPanelState[currentSessionId ?? ''];
+    if (current) return current;
+    const fallback = Object.values(configPanelState).find((s) => s.isOpen);
+    return fallback ?? null;
+  }, [configPanelState, currentSessionId]);
+
+  // Portal container for ConfigPanel - same parent as content column (like SessionsPanel) so marginRight pushes footer
+  const configPanelPortalRef = useRef<HTMLDivElement>(null);
+
+  // Delete session from SessionsPanel (with confirmation)
+  const [deleteSessionConfirmOpen, setDeleteSessionConfirmOpen] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<{ id: string; title: string } | null>(null);
+  const handleDeleteSessionFromPanel = useCallback((sessionId: string) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    if (session) {
+      setSessionToDelete({ id: sessionId, title: session.title });
+      setDeleteSessionConfirmOpen(true);
+    }
+  }, [sessions]);
+  const handleConfirmDeleteSessionFromPanel = useCallback(async () => {
+    if (!sessionToDelete) return;
+    try {
+      await sessionStorageDBWrapper.deleteSession(sessionToDelete.id, API_CONFIG.BASE_URL);
+      setDeleteSessionConfirmOpen(false);
+      setSessionToDelete(null);
+    } catch (err) {
+      console.error('[SessionsPage] Failed to delete session:', err);
+    }
+  }, [sessionToDelete]);
   
   const lastStorageUserIdRef = useRef<string | null>(null);
   const hasSeenSessionsForCurrentUserRef = useRef<boolean>(false);
@@ -294,9 +392,42 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         onClose={onClose}
         onGoHome={onGoHome}
         onGoAdmin={onGoAdmin}
+        sessionsPanelOpen={showSessionsPanel}
+        onToggleSessionsPanel={() => setShowSessionsPanel((p) => !p)}
+        configPanelOpen={effectiveConfigPanelState?.isOpen ?? false}
+        onToggleConfigPanel={handleToggleConfigPanel}
       />
 
-      {/* Session Content Area */}
+      {/* Session Content Area - with optional left SessionsPanel and right ConfigPanel (same parent) */}
+      <div ref={contentAreaRef} className="relative flex-1 flex flex-col min-h-0 overflow-hidden">
+        {showSessionsPanel && (
+          <SessionsPanel
+            isLight={isLight}
+            isOpen={showSessionsPanel}
+            onClose={() => setShowSessionsPanel(false)}
+            sessions={sessions}
+            currentSessionId={currentSessionId}
+            onNewSession={handleNewSession}
+            onOpenSession={(id) => sessionStorageDBWrapper.setActiveSession(id)}
+            onCloneSession={(id) => sessionStorageDBWrapper.cloneSession(id, API_CONFIG.BASE_URL)}
+            onArchiveSession={(id) => sessionStorageDBWrapper.closeSession(id)}
+            onDeleteSession={handleDeleteSessionFromPanel}
+            onWidthChange={setSessionsPanelWidth}
+            initialWidth={sessionsPanelWidth}
+            isSmallView={isSessionsPanelSmallView}
+            apiBaseUrl={API_CONFIG.BASE_URL}
+          />
+        )}
+        {/* Portal target for ConfigPanel - sibling of content column so layout matches SessionsPanel */}
+        <div ref={configPanelPortalRef} className="absolute inset-0 pointer-events-none" aria-hidden />
+        <div
+          className="flex flex-1 flex-col min-h-0 overflow-hidden min-w-0"
+          style={{
+            marginLeft: isSessionsPanelSmallView ? 0 : showSessionsPanel ? `${sessionsPanelWidth}px` : 0,
+            marginRight: isSessionsPanelSmallView ? 0 : (effectiveConfigPanelState?.isOpen ? (effectiveConfigPanelState.width ?? 384) : 0),
+            transition: 'margin-left 0.22s ease-out, margin-right 0.22s ease-out',
+          }}
+        >
       <div className="relative flex-1 overflow-hidden">
         {/* Render all cached sessions (hide inactive ones) */}
         {sessionsToRender.map(session => {
@@ -332,9 +463,36 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   onMessagesCountChange={handleMessagesCountChange}
                   onRegisterResetFunction={handleRegisterResetFunction}
                   onRegisterOpenSettings={handleRegisterOpenSettings}
+                  onRegisterConfigPanel={handleRegisterConfigPanel}
                   onRegisterGetMessagesFunction={handleRegisterGetMessagesFunction}
                   onReady={handleSessionReady}
                   onMessagesLoadingChange={handleMessagesLoadingChange}
+                  configPanelPortalRef={configPanelPortalRef}
+                  configPanelOpenOverride={
+                    isActive &&
+                    !configPanelState[session.id] &&
+                    (effectiveConfigPanelState?.isOpen ?? false)
+                  }
+                  moreOptionsMenu={
+                    isActive
+                      ? {
+                          isLight,
+                          currentSessionId,
+                          sessionMessageCount: sessionMessageCounts[currentSessionId ?? ''] ?? 0,
+                          copiedSessionId,
+                          onResetSession: handleResetSession,
+                          onCloseSession: handleCloseSession,
+                          onClearAllMessages: handleClearAllMessages,
+                          onClearAllSessions: openClearSessionsConfirm,
+                          onExportAsMarkdown: handleExportAsMarkdown,
+                          onExportAsHTML: handleExportAsHTML,
+                          onCopySessionId: handleCopySessionId,
+                          onOpenSettings: handleOpenSettings,
+                          onOpenAbout,
+                          onClose,
+                        }
+                      : undefined
+                  }
                 />
             </ErrorBoundary>
           </div>
@@ -390,7 +548,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         )}
       </div>
 
-      {/* Session List - Fixed at bottom */}
+      {/* Session List - Fixed at bottom (pushed by content column marginRight when config panel open) */}
       <div
         className={cn(
           'flex-shrink-0 border-t px-3',
@@ -398,6 +556,25 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         )}>
         <SessionList isLight={isLight} viewMode={viewMode} />
       </div>
+        </div>
+      </div>
+
+      {/* Delete Session from Panel Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={deleteSessionConfirmOpen}
+        onClose={() => {
+          setDeleteSessionConfirmOpen(false);
+          setSessionToDelete(null);
+        }}
+        onConfirm={handleConfirmDeleteSessionFromPanel}
+        title="Delete Chat"
+        message={sessionToDelete ? `Permanently delete "<strong>${sessionToDelete.title}</strong>"? This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        isLight={isLight}
+        mainTextColor={mainTextColor}
+      />
 
       {/* Clear Messages Confirmation Modal */}
       <ConfirmationModal

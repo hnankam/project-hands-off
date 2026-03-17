@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { FC, useEffect, useRef, useMemo, useState } from 'react';
 import { UsageDisplay } from './UsageDisplay';
 import type { CumulativeUsage, UsageData } from '../../hooks/useUsageStream';
@@ -273,11 +274,11 @@ export const UsagePopup: FC<UsagePopupProps> = ({
     };
   }, [isOpen, onClose]);
 
-  return (
+  const popupContent = (
     <>
-      {/* Compact Popup - Always mounted, visibility controlled with CSS */}
+      {/* Compact Popup - Portaled to body so it appears above SessionsPanel (z-40) */}
       <div 
-        className={`fixed top-10 left-3 z-50 transition-opacity ${
+        className={`fixed top-10 left-3 z-[100] transition-opacity ${
           isOpen ? 'opacity-100 pointer-events-auto animate-slideDown' : 'opacity-0 pointer-events-none'
         }`}
         style={{ width: '400px' }}
@@ -648,5 +649,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
       `}</style>
     </>
   );
+
+  return createPortal(popupContent, document.body);
 };
 

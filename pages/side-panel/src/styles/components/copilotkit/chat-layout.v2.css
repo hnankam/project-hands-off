@@ -97,24 +97,24 @@
 
 .copilot-chat-container.font-size-small,
 .copilot-chat-container.font-size-small p,
-.copilot-chat-container.font-size-small div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *),
-.copilot-chat-container.font-size-small span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *) {
+.copilot-chat-container.font-size-small div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *):not(.config-panel-tab-count):not(.config-panel-tab-count *),
+.copilot-chat-container.font-size-small span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *):not(.config-panel-tab-count):not(.config-panel-tab-count *) {
   font-size: 13px !important;
   /* line-height: 1.4 !important; */
 }
 
 .copilot-chat-container.font-size-medium,
 .copilot-chat-container.font-size-medium p,
-.copilot-chat-container.font-size-medium div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *),
-.copilot-chat-container.font-size-medium span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *) {
+.copilot-chat-container.font-size-medium div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *):not(.config-panel-tab-count):not(.config-panel-tab-count *),
+.copilot-chat-container.font-size-medium span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *):not(.config-panel-tab-count):not(.config-panel-tab-count *) {
   font-size: 16px !important;
   /* line-height: 1.5 !important; */
 }
 
 .copilot-chat-container.font-size-large,
 .copilot-chat-container.font-size-large p,
-.copilot-chat-container.font-size-large div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *),
-.copilot-chat-container.font-size-large span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *) {
+.copilot-chat-container.font-size-large div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *):not(.config-panel-tab-count):not(.config-panel-tab-count *),
+.copilot-chat-container.font-size-large span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *):not(.config-panel-tab-count):not(.config-panel-tab-count *) {
   font-size: 19px !important;
   /* line-height: 1.55 !important; */
 }
@@ -122,22 +122,22 @@
 /* Panel font size variants - match chat container font sizes */
 .font-size-small,
 .font-size-small p,
-.font-size-small div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *),
-.font-size-small span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *) {
+.font-size-small div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *):not(.config-panel-tab-count):not(.config-panel-tab-count *),
+.font-size-small span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *):not(.config-panel-tab-count):not(.config-panel-tab-count *) {
   font-size: 13px !important;
 }
 
 .font-size-medium,
 .font-size-medium p,
-.font-size-medium div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *),
-.font-size-medium span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *) {
+.font-size-medium div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *):not(.config-panel-tab-count):not(.config-panel-tab-count *),
+.font-size-medium span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *):not(.config-panel-tab-count):not(.config-panel-tab-count *) {
   font-size: 16px !important;
 }
 
 .font-size-large,
 .font-size-large p,
-.font-size-large div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *),
-.font-size-large span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *) {
+.font-size-large div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *):not(.config-panel-tab-count):not(.config-panel-tab-count *),
+.font-size-large span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *):not(.config-panel-tab-count):not(.config-panel-tab-count *) {
   font-size: 19px !important;
 }
 

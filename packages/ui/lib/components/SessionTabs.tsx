@@ -203,7 +203,10 @@ export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisi
       <div className="relative flex-1 min-w-0">
         <div 
           ref={scrollContainerRef}
-          className="flex items-center space-x-1 overflow-x-auto max-w-full session-tabs-scroll"
+          className={cn(
+            "flex items-center space-x-1 overflow-x-auto max-w-full session-tabs-scroll",
+            !containerHasOverflow && "justify-center"
+          )}
         >
         {sessions.filter(s => s.isOpen).map((session, index) => (
           <div

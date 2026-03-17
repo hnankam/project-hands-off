@@ -1,15 +1,15 @@
 import * as React from 'react';
 import { useEffect, useState, useCallback, useRef, useMemo, memo, startTransition } from 'react';
 import type { FC, CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { useStorage, sessionStorageDBWrapper, debug, type SessionMetadata } from '@extension/shared';
 import { preferencesStorage } from '@extension/storage';
-import { StatusBar } from '../layout/StatusBar';
+import { StatusBar, type MoreOptionsMenuProps } from '../layout/StatusBar';
 import { ChatInner } from './ChatInner';
 import { SelectorsBar } from '../selectors/SelectorsBar';
 import { SettingsModal } from '../modals/SettingsModal';
 import { UsagePopup } from '../menus/UsagePopup';
-import { PlansPanel } from '../panels/PlansPanel';
-import { GraphsPanel } from '../panels/GraphsPanel';
+import { ConfigPanel } from '../panels/ConfigPanel';
 import type { AgentStepState } from '../cards';
 import { useContentManager, type ContentState } from '../layout/ContentManager';
 import { useTabManager } from '../layout/TabManager';
@@ -40,37 +40,41 @@ const clipText = (text: string, maxLength: number): string => {
 };
 
 /**
- * Wrapper component for panels that syncs updates back to CopilotKit agent state.
+ * Wrapper component for the config panel (plans, graphs, and other containers).
+ * Syncs updates back to CopilotKit agent state.
  * Must be rendered inside CopilotKitProvider.
  */
-const PanelsWrapper: FC<{
+const ConfigPanelWrapper: FC<{
   isLight: boolean;
-  showPlansPanel: boolean;
-  showGraphsPanel: boolean;
+  showConfigPanel: boolean;
+  activeTab: 'context' | 'plans' | 'graphs' | 'sub-agents';
+  onTabChange: (tab: 'context' | 'plans' | 'graphs' | 'sub-agents') => void;
   agentPlans: Record<string, any>;
   agentGraphs: Record<string, any>;
   sessionId: string;
-  onClosePlans: () => void;
-  onCloseGraphs: () => void;
+  onCloseConfig: () => void;
   onPlansUpdate: (plans: Record<string, any>) => void;
   onGraphsUpdate: (graphs: Record<string, any>) => void;
   onWidthChange: (width: number) => void;
   initialPanelWidth?: number;
   chatFontSize?: 'small' | 'medium' | 'large';
+  /** When provided, render ConfigPanel into this portal (same parent as content column, like SessionsPanel) */
+  portalRef?: React.RefObject<HTMLDivElement | null>;
 }> = ({
   isLight,
-  showPlansPanel,
-  showGraphsPanel,
+  showConfigPanel,
+  activeTab,
+  onTabChange,
   agentPlans,
   agentGraphs,
   sessionId,
-  onClosePlans,
-  onCloseGraphs,
+  onCloseConfig,
   onPlansUpdate,
   onGraphsUpdate,
   onWidthChange,
   initialPanelWidth = 384,
   chatFontSize = 'medium',
+  portalRef,
 }) => {
   // Detect container size for responsive behavior
   const containerRef = useRef<HTMLDivElement>(null);
@@ -139,38 +143,36 @@ const PanelsWrapper: FC<{
     }
   }, [onGraphsUpdate, setAgentState, currentAgentState, sessionId]);
 
-  return (
-    <div 
+  const panelContent = (
+    <div
       ref={containerRef}
-      className="absolute top-0 bottom-0 right-0 z-50" 
+      className="absolute top-0 bottom-0 right-0 z-50"
       style={{ pointerEvents: 'none', width: '100%', height: '100%' }}
     >
-        <PlansPanel
-          isLight={isLight}
-          isOpen={showPlansPanel}
-          onClose={onClosePlans}
-          plans={agentPlans}
-          sessionId={sessionId}
-          onPlansUpdate={handlePlansUpdate}
-          onWidthChange={onWidthChange}
+      <ConfigPanel
+        isLight={isLight}
+        isOpen={showConfigPanel}
+        onClose={onCloseConfig}
+        activeTab={activeTab}
+        onTabChange={onTabChange}
+        plans={agentPlans}
+        graphs={agentGraphs}
+        sessionId={sessionId}
+        onPlansUpdate={handlePlansUpdate}
+        onGraphsUpdate={handleGraphsUpdate}
+        onWidthChange={onWidthChange}
         initialWidth={initialPanelWidth}
         isSmallView={isSmallView}
         chatFontSize={chatFontSize}
-        />
-        <GraphsPanel
-          isLight={isLight}
-          isOpen={showGraphsPanel}
-          onClose={onCloseGraphs}
-          graphs={agentGraphs}
-          sessionId={sessionId}
-          onGraphsUpdate={handleGraphsUpdate}
-          onWidthChange={onWidthChange}
-        initialWidth={initialPanelWidth}
-        isSmallView={isSmallView}
-        chatFontSize={chatFontSize}
-        />
+      />
     </div>
   );
+
+  // Render into portal when available (same parent as content column, like SessionsPanel - pushes footer)
+  if (portalRef?.current) {
+    return createPortal(panelContent, portalRef.current);
+  }
+  return panelContent;
 };
 
 /**
@@ -346,9 +348,16 @@ interface ChatSessionContainerProps {
   onMessagesCountChange?: (sessionId: string, count: number) => void;
   onRegisterResetFunction?: (sessionId: string, resetFn: () => void) => void;
   onRegisterOpenSettings?: (sessionId: string, openFn: () => void) => void;
+  onRegisterConfigPanel?: (sessionId: string, state: { isOpen: boolean; width: number; toggle: () => void }) => void;
   onRegisterGetMessagesFunction?: (sessionId: string, fn: () => any[]) => void;
   onReady?: (sessionId: string) => void;
   onMessagesLoadingChange?: (sessionId: string, isLoading: boolean) => void;
+  /** Portal ref for ConfigPanel - when provided, ConfigPanel renders as sibling of content column (like SessionsPanel) */
+  configPanelPortalRef?: React.RefObject<HTMLDivElement | null>;
+  /** Override initial config panel open when switching sessions (preserves panel state) */
+  configPanelOpenOverride?: boolean;
+  /** More options menu for status bar (session actions) - only shown for active session */
+  moreOptionsMenu?: MoreOptionsMenuProps;
 }
 
 /**
@@ -369,9 +378,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     onMessagesCountChange,
     onRegisterResetFunction,
     onRegisterOpenSettings,
+    onRegisterConfigPanel,
     onRegisterGetMessagesFunction,
     onReady,
     onMessagesLoadingChange,
+    configPanelPortalRef,
+    configPanelOpenOverride,
+    moreOptionsMenu,
   }) => {
     // Removed: const { sessions } = useSessionStorageDB();
     // This was causing unnecessary re-renders on every session update.
@@ -440,6 +453,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       initialSelectedPageURLs,
       initialSelectedNoteIds,
       initialSelectedCredentialIds,
+      initialConfigPanelOpen,
+      initialConfigPanelTab,
       initialUsage,
       initialLastUsage,
       isUsageHydrating,
@@ -448,7 +463,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       isLoadingMetadata,
       isLoadingFromDB,
       persistUsageStats,
-    } = useSessionData(sessionId, isActive, initialMetadata);
+    } = useSessionData(sessionId, isActive, initialMetadata, configPanelOpenOverride);
 
     // Ref to hold the setDynamicAgentState from ChatInner (via useAgentStateManagement)
     // This allows activity renderers to update the CopilotKit agent state directly
@@ -561,22 +576,15 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       setSelectedCredentialsState(newSelection);
     }, []);
 
-    // Plans and Graphs panels
-    const [showPlansPanel, setShowPlansPanel] = useState(false);
-    const [showGraphsPanel, setShowGraphsPanel] = useState(false);
-    
-    // Refs to track current panel state (avoid stale closures)
-    const plansPanelRef = useRef(false);
-    const graphsPanelRef = useRef(false);
-    
-    // Sync refs with state
+    // Config panel (plans, graphs, and other containers) - restored per session
+    const [showConfigPanel, setShowConfigPanel] = useState(initialConfigPanelOpen);
+    const [configPanelTab, setConfigPanelTab] = useState<'context' | 'plans' | 'graphs' | 'sub-agents'>(initialConfigPanelTab);
+
+    // Sync config panel state when session changes or metadata loads
     useEffect(() => {
-      plansPanelRef.current = showPlansPanel;
-    }, [showPlansPanel]);
-    
-    useEffect(() => {
-      graphsPanelRef.current = showGraphsPanel;
-    }, [showGraphsPanel]);
+      setShowConfigPanel(initialConfigPanelOpen);
+      setConfigPanelTab(initialConfigPanelTab);
+    }, [sessionId, initialConfigPanelOpen, initialConfigPanelTab]);
     
     // Load persisted panel width from localStorage
     const getPersistedPanelWidth = useCallback(() => {
@@ -672,53 +680,30 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
     }, []);
     
-    // Handle plans panel toggle - close graphs panel if open
-    const handlePlansClick = useCallback((e?: React.MouseEvent) => {
+    // Handle config panel toggle
+    const handleConfigClick = useCallback((e?: React.MouseEvent) => {
       if (e) {
         e.preventDefault();
         e.stopPropagation();
       }
-      
-      // Use refs to get current state (avoids stale closures)
-      const graphsIsOpen = graphsPanelRef.current;
-      const plansIsOpen = plansPanelRef.current;
-      
-      if (graphsIsOpen) {
-        // Open plans panel first, then close graphs panel immediately
-        setShowPlansPanel(true);
-        setShowGraphsPanel(false);
-      } else if (plansIsOpen) {
-        // If plans panel is already open, close it
-        setShowPlansPanel(false);
-      } else {
-        // Open plans panel
-        setShowPlansPanel(true);
-      }
+      setShowConfigPanel((prev) => !prev);
     }, []);
-    
-    // Handle graphs panel toggle - close plans panel if open
-    const handleGraphsClick = useCallback((e?: React.MouseEvent) => {
-      if (e) {
-        e.preventDefault();
-        e.stopPropagation();
+
+    // Persist config panel state when it changes (skip initial hydration)
+    const isConfigPanelHydrated = useRef(false);
+    useEffect(() => {
+      if (!isConfigPanelHydrated.current) {
+        isConfigPanelHydrated.current = true;
+        return;
       }
-      
-      // Use refs to get current state (avoids stale closures)
-      const plansIsOpen = plansPanelRef.current;
-      const graphsIsOpen = graphsPanelRef.current;
-      
-      if (plansIsOpen) {
-        // Open graphs panel first, then close plans panel immediately
-        setShowGraphsPanel(true);
-        setShowPlansPanel(false);
-      } else if (graphsIsOpen) {
-        // If graphs panel is already open, close it
-        setShowGraphsPanel(false);
-      } else {
-        // Open graphs panel
-        setShowGraphsPanel(true);
-      }
-    }, []);
+      const timeoutId = setTimeout(() => {
+        sessionStorageDBWrapper.updateSessionConfigPanel(sessionId, showConfigPanel, configPanelTab);
+      }, 300);
+      return () => clearTimeout(timeoutId);
+    }, [showConfigPanel, configPanelTab, sessionId]);
+    useEffect(() => () => {
+      isConfigPanelHydrated.current = false;
+    }, [sessionId]);
     
     // State for agent plans/graphs - must be state (not ref) so React re-renders panels when it changes
     const [agentPlans, setAgentPlans] = useState<Record<string, any>>({});
@@ -1404,14 +1389,15 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           }}
           onUsageClick={() => setIsUsagePopupOpen(true)}
           currentPageUrl={managedTabUrl}
-          onPlansClick={handlePlansClick}
-          onGraphsClick={handleGraphsClick}
-          hasPlans={Object.keys(agentPlans).length > 0}
-          hasGraphs={Object.keys(agentGraphs).length > 0}
+          onConfigClick={handleConfigClick}
+          configPanelOpen={showConfigPanel}
+          moreOptionsMenu={isActive ? moreOptionsMenu : undefined}
         />
       ),
       [
         isLight,
+        isActive,
+        moreOptionsMenu,
         isPanelInteractive,
         agentPlans,
         agentGraphs,
@@ -1431,6 +1417,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         cumulativeUsage,
         isUsageConnected,
         managedTabUrl,
+        showConfigPanel,
       ],
     );
 
@@ -1519,6 +1506,14 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         onRegisterOpenSettings(sessionId, openSettings);
       }
     }, [onRegisterOpenSettings, sessionId]);
+
+    // Register config panel state so header button can toggle and footer can be pushed
+    useEffect(() => {
+      if (onRegisterConfigPanel) {
+        const toggle = () => setShowConfigPanel((prev) => !prev);
+        onRegisterConfigPanel(sessionId, { isOpen: showConfigPanel, width: panelWidth, toggle });
+      }
+    }, [onRegisterConfigPanel, sessionId, showConfigPanel, panelWidth]);
 
     // Callback to update message counts (user and assistant separately)
     const handleSetMessageCounts = useCallback(
@@ -1656,7 +1651,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     );
 
     return (
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="relative flex flex-1 flex-col overflow-hidden">
+        {/* Content area - no margin here; ConfigPanel is portaled to SessionsPage, content column has marginRight */}
+        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         {/* Save/Load buttons and Page Status - Fixed at top */}
         {statusBarElement}
 
@@ -1689,8 +1686,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         )}
 
         {/* Chat container with panels */}
-        {/* Main container with relative positioning for panels */}
-        <div className="relative flex flex-1 flex-col overflow-hidden">
+        {/* Main container - no position so ConfigPanel anchors to root (immediately below header) */}
+        <div className="flex flex-1 flex-col overflow-hidden">
           {/* Note: Agent switching modal removed - switching is now instant without remount */}
 
           {/* Defer mounting CopilotKit until metadata is loaded AND we have valid agent/model.
@@ -1733,8 +1730,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                         '--copilot-kit-primary-color': themeColor,
                         opacity: isCounterReady ? 1 : 0,
                         visibility: isCounterReady ? 'visible' : 'hidden',
-                        // In small view, always full width (panels overlay). In large view, apply margin when panels are open.
-                        marginRight: isSmallChatView ? '0px' : ((showPlansPanel || showGraphsPanel) ? `${panelWidth}px` : '0px'),
+                        // Margin applied at content wrapper level (StatusBar + main + SelectorsBar) for push behavior
                       } as CSSProperties
                     }>
                     <div className="relative flex flex-1 flex-col overflow-hidden h-full">
@@ -1763,19 +1759,20 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                 </div>
 
                 {/* 
-                  Plans and Graphs Panels - Now INSIDE SharedAgentProvider so they can 
-                  access agent setState for bidirectional sync.
+                  Config Panel (plans, graphs, and other containers) - INSIDE SharedAgentProvider 
+                  so it can access agent setState for bidirectional sync.
                 */}
-                {(showPlansPanel || showGraphsPanel) && (
-                  <PanelsWrapper
+                {showConfigPanel && (
+                  <ConfigPanelWrapper
                     isLight={isLight}
-                    showPlansPanel={showPlansPanel}
-                    showGraphsPanel={showGraphsPanel}
+                    showConfigPanel={showConfigPanel}
+                    activeTab={configPanelTab}
+                    onTabChange={setConfigPanelTab}
                     agentPlans={agentPlans}
                     agentGraphs={agentGraphs}
                     sessionId={sessionId}
-                    onClosePlans={() => setShowPlansPanel(false)}
-                    onCloseGraphs={() => setShowGraphsPanel(false)}
+                    onCloseConfig={() => setShowConfigPanel(false)}
+                    portalRef={configPanelPortalRef}
                     onPlansUpdate={(updatedPlans: any) => {
                       const planIds = Object.keys(updatedPlans ?? {});
                       debug.log('[SessionPlans] ChatSessionContainer onPlansUpdate:', {
@@ -1820,6 +1817,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
             onShowThoughtBlocksChange={(show: boolean) => preferencesStorage.setShowThoughtBlocks(show)}
             onExpandSettingsClick={() => setIsSettingsOpen(true)}
           />
+        </div>
 
         {/* Settings Modal */}
         <SettingsModal

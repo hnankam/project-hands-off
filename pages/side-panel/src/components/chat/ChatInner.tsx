@@ -56,6 +56,7 @@ import type { AgentStepState } from '../cards';
 // Note: Graph state rendering is handled by renderActivityMessages at Provider level
 // V2 components are used via chatView slots below
 import { ThinkingBlock } from './ThinkingBlock';
+import { ReasoningMessageBlock } from './ReasoningMessageBlock';
 import { MermaidBlock } from './MermaidBlock';
 import { ChatErrorDisplay } from './ChatErrorDisplay';
 import { CustomAssistantMessageV2 } from './CustomAssistantMessageV2';
@@ -945,6 +946,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     messageView: {
       assistantMessage: CustomAssistantMessageV2,
       userMessage: CustomUserMessageV2,
+      reasoningMessage: ReasoningMessageBlock,
       cursor: CustomCursor,
     },
   } as any), []);

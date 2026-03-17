@@ -66,6 +66,11 @@ export interface UseSessionDataReturn {
   /** Initial selected credential IDs loaded from DB */
   initialSelectedCredentialIds: string[];
   
+  /** Config panel was open when session was last viewed */
+  initialConfigPanelOpen: boolean;
+  /** Active config tab when panel was last open */
+  initialConfigPanelTab: 'context' | 'plans' | 'graphs' | 'sub-agents';
+  
   /** Initial usage totals loaded from DB */
   initialUsage: UsageTotals;
   /** Last usage data point loaded from DB */
@@ -124,7 +129,9 @@ const DEFAULT_USAGE: UsageTotals = {
 export const useSessionData = (
   sessionId: string,
   isActive: boolean,
-  initialMetadata?: SessionMetadata | null
+  initialMetadata?: SessionMetadata | null,
+  /** Override config panel open when switching sessions (preserves panel state) */
+  configPanelOpenOverride?: boolean
 ): UseSessionDataReturn => {
   
   // ============================================================================
@@ -149,6 +156,14 @@ export const useSessionData = (
   const [initialSelectedNoteIds, setInitialSelectedNoteIds] = useState<string[]>(
     initialMetadata?.selectedNoteIds ?? []
   );
+
+  // Config panel state (open/closed and active tab)
+  const [initialConfigPanelOpen, setInitialConfigPanelOpen] = useState<boolean>(
+    configPanelOpenOverride ?? initialMetadata?.configPanelOpen ?? false
+  );
+  const [initialConfigPanelTab, setInitialConfigPanelTab] = useState<'context' | 'plans' | 'graphs' | 'sub-agents'>(
+    (initialMetadata?.configPanelTab as 'context' | 'plans' | 'graphs' | 'sub-agents') ?? 'context'
+  );
   const [initialSelectedCredentialIds, setInitialSelectedCredentialIds] = useState<string[]>(
     initialMetadata?.selectedCredentialIds ?? []
   );
@@ -163,9 +178,10 @@ export const useSessionData = (
       setInitialSelectedPageURLs(initialMetadata?.selectedPageURLs ?? []);
       setInitialSelectedNoteIds(initialMetadata?.selectedNoteIds ?? []);
       setInitialSelectedCredentialIds(initialMetadata?.selectedCredentialIds ?? []);
+      setInitialConfigPanelOpen(configPanelOpenOverride ?? initialMetadata?.configPanelOpen ?? false);
       setIsLoadingMetadata(isActive && !initialMetadata);
     }
-  }, [sessionId, initialMetadata, isActive]);
+  }, [sessionId, initialMetadata, isActive, configPanelOpenOverride]);
   
   const setSelectedAgent = useCallback((agent: string) => {
     setSelections(prev => ({ ...prev, agent }));
@@ -280,6 +296,13 @@ export const useSessionData = (
         setInitialSelectedPageURLs(metadata.selectedPageURLs ?? []);
         setInitialSelectedNoteIds(metadata.selectedNoteIds ?? []);
         setInitialSelectedCredentialIds(metadata.selectedCredentialIds ?? []);
+        setInitialConfigPanelOpen(configPanelOpenOverride ?? metadata.configPanelOpen ?? false);
+        const loadedTab = metadata.configPanelTab;
+        setInitialConfigPanelTab(
+          loadedTab && ['context', 'plans', 'graphs', 'sub-agents'].includes(loadedTab)
+            ? (loadedTab as 'context' | 'plans' | 'graphs' | 'sub-agents')
+            : 'context'
+        );
 
         // Mark session as loaded and clear loading flags ATOMICALLY
         lastLoadedSessionRef.current = sessionId;
@@ -303,7 +326,7 @@ export const useSessionData = (
       setIsLoadingMetadata(false);
       isLoadingFromDBRef.current = false;
     };
-  }, [sessionId, isActive]);
+  }, [sessionId, isActive, configPanelOpenOverride]);
   
   /**
    * Effect 3: Load usage stats and agent state (in parallel)
@@ -473,6 +496,8 @@ export const useSessionData = (
     initialSelectedPageURLs,
     initialSelectedNoteIds,
     initialSelectedCredentialIds,
+    initialConfigPanelOpen,
+    initialConfigPanelTab,
     initialUsage,
     initialLastUsage,
     isUsageHydrating,

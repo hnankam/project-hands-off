@@ -1,6 +1,6 @@
 import type { FC } from 'react';
 import * as React from 'react';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';
@@ -63,6 +63,41 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
   const myIdRef = useRef<number>(0);
   const [isLatest, setIsLatest] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // Manual scroll-up support: when user scrolls up during streaming, pause auto-scroll
+  const isUserScrolledUp = useRef(false);
+  const isAutoScrolling = useRef(false);
+  const prevScrollTopRef = useRef(0);
+  const scrollRafRef = useRef<number | null>(null);
+  const wasStreamingRef = useRef(false);
+  const SCROLL_UP_THRESHOLD = 50;
+
+  const isStreaming = !isComplete;
+
+  const isNearBottom = useCallback((el: HTMLDivElement): boolean => {
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    if (scrollHeight <= clientHeight) return true;
+    return scrollHeight - scrollTop - clientHeight <= SCROLL_UP_THRESHOLD;
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    const element = contentRef.current;
+    if (!element || !isStreaming) return;
+    if (isAutoScrolling.current) return;
+
+    const currentScrollTop = element.scrollTop;
+    const prevScrollTop = prevScrollTopRef.current;
+    const nearBottom = isNearBottom(element);
+    const scrolledUp = currentScrollTop < prevScrollTop - 5;
+
+    prevScrollTopRef.current = currentScrollTop;
+
+    if (scrolledUp && !nearBottom) {
+      isUserScrolledUp.current = true;
+    } else if (nearBottom) {
+      isUserScrolledUp.current = false;
+    }
+  }, [isNearBottom, isStreaming]);
 
   // Sync open state to cache whenever it changes
   useEffect(() => {
@@ -132,7 +167,17 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
     }
   }, [isComplete]);
 
-  // Auto-scroll to bottom while tag is incomplete to keep new content visible
+  // Reset scroll state when new streaming session starts
+  useEffect(() => {
+    const wasStreaming = wasStreamingRef.current;
+    wasStreamingRef.current = isStreaming;
+    if (!wasStreaming && isStreaming) {
+      isUserScrolledUp.current = false;
+      prevScrollTopRef.current = 0;
+    }
+  }, [isStreaming]);
+
+  // Auto-scroll to bottom while streaming, but respect user scroll-up
   // Use throttled MutationObserver for smooth, responsive scrolling
   useEffect(() => {
     if (isComplete || !isOpen || !contentRef.current) {
@@ -141,29 +186,28 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
 
     const element = contentRef.current;
     let lastScrollTime = 0;
-    const SCROLL_THROTTLE_MS = 50; // Throttle to max once per 50ms for smooth scrolling
+    const SCROLL_THROTTLE_MS = 50;
 
-    // Throttled scroll function - immediate first scroll, then max once per 50ms
     const scrollToBottom = () => {
+      if (isUserScrolledUp.current) return;
       const now = Date.now();
-
-      // Allow scroll if enough time has passed since last scroll
       if (now - lastScrollTime >= SCROLL_THROTTLE_MS) {
         lastScrollTime = now;
-        requestAnimationFrame(() => {
+        isAutoScrolling.current = true;
+        if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = requestAnimationFrame(() => {
           if (element) {
-            element.scrollTop = element.scrollHeight;
+            element.scrollTop = element.scrollHeight - element.clientHeight;
           }
+          isAutoScrolling.current = false;
+          scrollRafRef.current = null;
         });
       }
     };
 
-    // Scroll immediately on mount
     scrollToBottom();
 
-    // Set up MutationObserver with immediate throttled scrolling
     const observer = new MutationObserver(() => {
-      // Scroll immediately (or wait for throttle window)
       scrollToBottom();
     });
 
@@ -175,6 +219,9 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
 
     return () => {
       observer.disconnect();
+      if (scrollRafRef.current) {
+        cancelAnimationFrame(scrollRafRef.current);
+      }
     };
   }, [isComplete, isOpen]);
 
@@ -225,7 +272,10 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
   }, [sanitizeContent, isLight]);
 
   return (
-    <div className={`thinking-block ${isLight ? 'text-gray-600' : 'text-gray-500'}`} style={{ fontSize: 12 }}>
+    <div
+      className={`thinking-block ${isLight ? 'text-gray-600' : 'text-gray-500'}`}
+      style={{ fontSize: 12, '--thinking-block-feather-bg': isLight ? '#ffffff' : '#0D1117' } as React.CSSProperties}
+    >
       {/* Accordion Header - Always visible */}
       <div
         onClick={toggleAccordion}
@@ -306,17 +356,36 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
             paddingRight: 6,
             paddingBottom: 0,
             paddingTop: 0,
-            // borderLeft: `2px solid ${isLight ? '#e5e7eb' : '#374151'}`,
             marginLeft: 13,
           }}>
-          <div
-            ref={contentRef}
-            className={`mb-4 text-xs opacity-80 ${
-              isComplete
-                ? 'max-h-40 overflow-y-auto overscroll-contain'
-                : 'max-h-[75vh] overflow-y-auto overscroll-contain'
-            }`}>
-            <div className="thinking-block-content">{renderedContent}</div>
+          <div style={{ position: 'relative' }}>
+            <div
+              ref={contentRef}
+              onScroll={handleScroll}
+              className={`mb-4 text-xs opacity-80 recent-sessions-scroll ${
+                isComplete
+                  ? 'max-h-80 overflow-y-auto overscroll-contain'
+                  : 'max-h-[75vh] overflow-y-auto overscroll-contain'
+              }`}
+              style={{ paddingRight: 6, paddingBottom: 8 }}
+            >
+              <div className="thinking-block-content">{renderedContent}</div>
+            </div>
+            {isOpen && (
+              <div
+                className="thinking-block-feather"
+                style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: 8,
+                  pointerEvents: 'none',
+                  zIndex: 10,
+                }}
+                aria-hidden
+              />
+            )}
           </div>
         </div>
       </div>

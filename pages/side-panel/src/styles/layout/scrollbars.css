@@ -189,6 +189,41 @@
 }
 
 /* ==========================================================
+   ACTION STATUS - Thin scrollbars, visible on hover only
+   Input, output, error (including CodeBlock pre, markdown code blocks)
+   ========================================================== */
+.action-status ::-webkit-scrollbar {
+  width: 3px !important;
+  height: 3px !important;
+}
+
+.action-status ::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+/* Thumb hidden by default, visible when hovering the specific section (Input/Output/Error) */
+.action-status ::-webkit-scrollbar-thumb {
+  background: transparent !important;
+  border-radius: 2px !important;
+}
+
+.action-status .action-status-section-scroll:hover ::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3) !important;
+}
+
+.action-status .action-status-section-scroll:hover ::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5) !important;
+}
+
+.dark .action-status .action-status-section-scroll:hover ::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3) !important;
+}
+
+.dark .action-status .action-status-section-scroll:hover ::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5) !important;
+}
+
+/* ==========================================================
    JSON TEXTAREA UTILITIES
    Remove shiny resizer corner while keeping vertical resize
    ========================================================== */

@@ -397,25 +397,38 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
         {hasExpandableData && chevronIcon}
       </div>
 
-      {/* Expanded content */}
+      {/* Expanded content - scrollable with bottom feather */}
       <div
+        className="action-status-expanded-wrapper"
         style={{
+          position: 'relative',
           overflow: 'hidden',
           transition: 'max-height 0.3s ease-in-out, opacity 0.2s ease-in-out',
-          maxHeight: isExpanded && hasExpandableData ? '500px' : '0',
+          maxHeight: isExpanded && hasExpandableData ? '2000px' : '0',
           opacity: isExpanded && hasExpandableData ? 1 : 0,
-        }}
+          '--action-status-feather-bg': isLight ? '#ffffff' : '#0D1117',
+        } as React.CSSProperties}
       >
         <div
+          className="action-status-expanded-scroll"
           style={{
-            paddingLeft: 8,
-            paddingRight: 6,
-            paddingBottom: 6,
-            // borderLeft: `2px solid ${isLight ? '#e5e7eb' : '#374151'}`,
-            marginLeft: 13,
-            opacity: 0.8,
+            overflowY: 'visible',
+            overflowX: 'auto',
+            paddingBottom: 8,
+            minWidth: 0,
           }}
         >
+          <div
+            style={{
+              paddingLeft: 8,
+              paddingRight: 6,
+              paddingBottom: 6,
+              marginLeft: 13,
+              opacity: 0.8,
+              minWidth: 0,
+              width: '100%',
+            }}
+          >
           {/* Input Arguments */}
           {args && (() => {
             const { content, isMarkdown, language } = formatData(args, true);
@@ -431,22 +444,29 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
                 >
                   Input:
                 </div>
-                {isMarkdown ? (
-                  <div
-                    ref={inputScrollRef as any}
-                    style={{
-                      fontSize: 11,
-                      overflow: 'auto',
-                      maxHeight: 200,
-                    }}
-                  >
-                    <CustomMarkdownRenderer content={content} isLight={isLight} hideToolbars={true} />
-                  </div>
-                ) : (
-                  <div ref={inputScrollRef as any} style={{ maxHeight: 200, overflow: 'auto' }}>
-                    <CodeBlock language={language || 'text'} code={content} isLight={isLight} hideToolbar={true} />
-                  </div>
-                )}
+                <div className="action-status-section-scroll" style={{ position: 'relative', minWidth: 0, width: '100%' }}>
+                  {isMarkdown ? (
+                    <div
+                      ref={inputScrollRef as any}
+                      className="recent-sessions-scroll action-status-scroll"
+                      style={{
+                        fontSize: 11,
+                        overflow: 'auto',
+                        maxHeight: 200,
+                        paddingRight: 6,
+                        paddingBottom: 8,
+                        minWidth: 0,
+                      }}
+                    >
+                      <CustomMarkdownRenderer content={content} isLight={isLight} hideToolbars={true} />
+                    </div>
+                  ) : (
+                    <div ref={inputScrollRef as any} className="recent-sessions-scroll action-status-scroll" style={{ maxHeight: 200, overflow: 'auto', paddingRight: 6, paddingBottom: 8, minWidth: 0 }}>
+                      <CodeBlock language={language || 'text'} code={content} isLight={isLight} hideToolbar={true} />
+                    </div>
+                  )}
+                  <div className="action-status-feather" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 8, pointerEvents: 'none', zIndex: 10 }} aria-hidden />
+                </div>
               </div>
             );
           })()}
@@ -471,6 +491,9 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
+                    minWidth: 0,
+                    width: '100%',
+                    paddingRight: 6,
                   }}
                 >
                   <span>Output:</span>
@@ -492,6 +515,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
                         display: 'flex',
                         alignItems: 'center',
                         gap: 4,
+                        flexShrink: 0,
                       }}
                       onMouseEnter={(e) => {
                         if (!isLoadingContent) {
@@ -557,22 +581,29 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
                     Error: {loadError}
                   </div>
                 )}
-                {isMarkdown ? (
-                  <div
-                    ref={outputScrollRef as any}
-                    style={{
-                      fontSize: 11,
-                      overflow: 'auto',
-                      maxHeight: 200,
-                    }}
-                  >
-                    <CustomMarkdownRenderer content={content} isLight={isLight} hideToolbars={true} />
-                  </div>
-                ) : (
-                  <div ref={outputScrollRef as any} style={{ maxHeight: 200, overflow: 'auto' }}>
-                    <CodeBlock language={language || 'text'} code={content} isLight={isLight} hideToolbar={true} />
-                  </div>
-                )}
+                <div className="action-status-section-scroll" style={{ position: 'relative', minWidth: 0, width: '100%' }}>
+                  {isMarkdown ? (
+                    <div
+                      ref={outputScrollRef as any}
+                      className="recent-sessions-scroll action-status-scroll"
+                      style={{
+                        fontSize: 11,
+                        overflow: 'auto',
+                        maxHeight: 200,
+                        paddingRight: 6,
+                        paddingBottom: 8,
+                        minWidth: 0,
+                      }}
+                    >
+                      <CustomMarkdownRenderer content={content} isLight={isLight} hideToolbars={true} />
+                    </div>
+                  ) : (
+                    <div ref={outputScrollRef as any} className="recent-sessions-scroll action-status-scroll" style={{ maxHeight: 200, overflow: 'auto', paddingRight: 6, paddingBottom: 8, minWidth: 0 }}>
+                      <CodeBlock language={language || 'text'} code={content} isLight={isLight} hideToolbar={true} />
+                    </div>
+                  )}
+                  <div className="action-status-feather" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 8, pointerEvents: 'none', zIndex: 10 }} aria-hidden />
+                </div>
               </div>
             );
           })()}
@@ -592,36 +623,64 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
                 >
                   Error:
                 </div>
-                {isMarkdown ? (
-                  <div
-                    ref={errorScrollRef as any}
-                    style={{
-                      fontSize: 11,
-                      overflow: 'auto',
-                      maxHeight: 200,
-                      borderLeft: '3px solid #ef4444',
-                      paddingLeft: 8,
-                    }}
-                  >
-                    <CustomMarkdownRenderer content={content} isLight={isLight} hideToolbars={true} />
-                  </div>
-                ) : (
-                  <div 
-                    ref={errorScrollRef as any} 
-                    style={{ 
-                      maxHeight: 200, 
-                      overflow: 'auto',
-                      borderLeft: '3px solid #ef4444',
-                      paddingLeft: 8,
-                    }}
-                  >
-                    <CodeBlock language={language || 'text'} code={content} isLight={isLight} hideToolbar={true} />
-                  </div>
-                )}
+                <div className="action-status-section-scroll" style={{ position: 'relative', minWidth: 0, width: '100%' }}>
+                  {isMarkdown ? (
+                    <div
+                      ref={errorScrollRef as any}
+                      className="recent-sessions-scroll action-status-scroll"
+                      style={{
+                        fontSize: 11,
+                        overflow: 'auto',
+                        maxHeight: 200,
+                        borderLeft: '3px solid #ef4444',
+                        paddingLeft: 8,
+                        paddingRight: 6,
+                        paddingBottom: 8,
+                        minWidth: 0,
+                      }}
+                    >
+                      <CustomMarkdownRenderer content={content} isLight={isLight} hideToolbars={true} />
+                    </div>
+                  ) : (
+                    <div 
+                      ref={errorScrollRef as any} 
+                      className="recent-sessions-scroll action-status-scroll"
+                      style={{ 
+                        maxHeight: 200, 
+                        overflow: 'auto',
+                        borderLeft: '3px solid #ef4444',
+                        paddingLeft: 8,
+                        paddingRight: 6,
+                        paddingBottom: 8,
+                        minWidth: 0,
+                      }}
+                    >
+                      <CodeBlock language={language || 'text'} code={content} isLight={isLight} hideToolbar={true} />
+                    </div>
+                  )}
+                  <div className="action-status-feather" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 8, pointerEvents: 'none', zIndex: 10 }} aria-hidden />
+                </div>
               </div>
             );
           })()}
+          </div>
         </div>
+        {/* Bottom feather - soft fade when scrolling (matches archived chats) */}
+        {isExpanded && hasExpandableData && (
+          <div
+            className="action-status-feather"
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: 8,
+              pointerEvents: 'none',
+              zIndex: 10,
+            }}
+            aria-hidden
+          />
+        )}
       </div>
     </div>
   );

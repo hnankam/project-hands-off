@@ -757,7 +757,7 @@ const LivePlanStateCard: React.FC<{
       <PlanStateCard
         state={planState}
         setState={setDynamicAgentState}
-        isCollapsed={false}
+        isCollapsed={true}
       />
     </div>
   );
@@ -818,7 +818,7 @@ const LiveGraphStateCard: React.FC<{
       <GraphStateCard
         state={graphState}
         setState={handleSetState}
-        isCollapsed={false}
+        isCollapsed={true}
         sessionId={sessionId}
         instanceId={graphId}
       />

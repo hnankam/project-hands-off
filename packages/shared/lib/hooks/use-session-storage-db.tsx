@@ -396,7 +396,36 @@ export const sessionStorageDBWrapper = {
   },
 
   /**
-   * Close a session
+   * Clone a session (create new session with same metadata, no messages)
+   * @param sessionId - Source session ID to clone
+   * @param apiBaseUrl - Optional API base URL to persist to backend
+   * @returns New session ID, or null on error
+   */
+  async cloneSession(sessionId: string, apiBaseUrl?: string): Promise<string | null> {
+    const source = await sessionStorageDB.getSession(sessionId);
+    if (!source) return null;
+    const userId = sessionStorageDB.getCurrentUserId();
+    if (!userId) return null;
+    const title = `${source.title} (Copy)`;
+    const session = await sessionStorageDB.addSession({
+      title,
+      userId,
+      isActive: true,
+      isOpen: true,
+      selectedAgent: source.selectedAgent || 'general',
+      selectedModel: source.selectedModel || 'claude-4.5-haiku',
+      ...(source.selectedPageURLs?.length && { selectedPageURLs: source.selectedPageURLs }),
+      ...(source.selectedNoteIds?.length && { selectedNoteIds: source.selectedNoteIds }),
+      ...(source.selectedCredentialIds?.length && { selectedCredentialIds: source.selectedCredentialIds }),
+    });
+    if (apiBaseUrl) {
+      sessionStorageDB.persistSessionTitleToBackend(apiBaseUrl, session.id, title);
+    }
+    return session.id;
+  },
+
+  /**
+   * Close a session (archive - mark as not open)
    */
   async closeSession(sessionId: string): Promise<void> {
     await sessionStorageDB.closeSession(sessionId);
@@ -463,6 +492,17 @@ export const sessionStorageDBWrapper = {
    */
   async updateSessionPageURLs(sessionId: string, selectedPageURLs: string[]): Promise<void> {
     await sessionStorageDB.updateSessionPageURLs(sessionId, selectedPageURLs);
+  },
+
+  /**
+   * Update session config panel state (open/closed and active tab)
+   */
+  async updateSessionConfigPanel(
+    sessionId: string,
+    configPanelOpen: boolean,
+    configPanelTab: 'context' | 'plans' | 'graphs' | 'sub-agents'
+  ): Promise<void> {
+    await sessionStorageDB.updateSessionConfigPanel(sessionId, configPanelOpen, configPanelTab);
   },
 
   /**
