@@ -20,7 +20,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@ag-ui/core": "^0.0.47",
+    "@ag-ui/core": "0.0.45",
     "@better-auth/sso": "^1.4.6",
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/state": "^6.5.2",

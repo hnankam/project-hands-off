@@ -128,6 +128,12 @@
       "eslint --fix"
     ]
   },
+  "pnpm": {
+    "overrides": {
+      "@ag-ui/client": "0.0.45",
+      "@ag-ui/core": "0.0.45"
+    }
+  },
   "packageManager": "pnpm@10.11.0",
   "engines": {
     "node": ">=22.11.0"
