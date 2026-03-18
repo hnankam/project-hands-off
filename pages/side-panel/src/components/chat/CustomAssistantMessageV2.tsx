@@ -5,16 +5,20 @@
  * and styled toolbar buttons matching user message design (right-aligned, no gradient).
  */
 import * as React from 'react';
-import { useMemo, useCallback, useState } from 'react';
-import { CopilotChatAssistantMessage, useCopilotChat } from '../../hooks/copilotkit';
+import { useMemo, useCallback, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { CopilotChatAssistantMessage, useCopilotChat, deleteMessagesFromBackend } from '../../hooks/copilotkit';
+import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
 import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';
 import { 
   CustomCopyButton,
   CustomRegenerateButton,
+  CustomRetryKeepButton,
   CustomThumbsUpButton,
   CustomThumbsDownButton,
   CustomReadAloudButton,
 } from './slots/CustomAssistantMessageButtons';
+import { ExploreAccordionToolCallsView } from './ExploreAccordionToolCallsView';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 
@@ -82,8 +86,11 @@ type AssistantMessageProps = React.ComponentProps<typeof CopilotChatAssistantMes
  */
 const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (props) => {
   const [copied, setCopied] = useState(false);
-  const { reloadMessages } = useCopilotChat();
+  const { reloadMessages, setMessages } = useCopilotChat();
+  const sessionId = useChatSessionIdSafe();
   const [isHovered, setIsHovered] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const contextMenuRef = React.useRef<HTMLDivElement | null>(null);
   const { message, messages, isRunning } = props;
   const { isLight } = useStorage(themeStorage);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -224,7 +231,12 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
     }
   }, [aggregatedSeriesContent, message, extractTextFromMessage]);
   
-  // Custom regenerate handler that filters messages correctly
+  // Retry without deleting: re-run agent with current messages
+  const handleRetryKeep = useCallback(() => {
+    reloadMessages();
+  }, [reloadMessages]);
+
+  // Custom regenerate handler that filters messages correctly (deletes and retries)
   const handleRegenerate = useCallback(() => {
     if (!message?.id || !messages) return;
     
@@ -253,10 +265,43 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
       reloadMessages(message.id);
     }
   }, [message, messages, reloadMessages]);
-  
+
+  // Delete this assistant message
+  const handleDelete = useCallback(async () => {
+    setContextMenu(null);
+    if (!message?.id || !messages) return;
+    const currentMessages = messages as any[];
+    const messageIndex = currentMessages.findIndex((m: any) => m.id === message.id);
+    if (messageIndex === -1) return;
+    const messageIdsToDelete = [message.id];
+    try {
+      if (sessionId) {
+        await deleteMessagesFromBackend(sessionId, messageIdsToDelete);
+      }
+      const updatedMessages = currentMessages.filter((_, i) => i !== messageIndex);
+      setMessages(updatedMessages);
+    } catch (error) {
+      console.error('[CustomAssistantMessageV2] Error deleting message:', error);
+    }
+  }, [message, messages, setMessages, sessionId]);
+
+  // Close context menu when clicking outside the dropdown
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClose = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (!contextMenuRef.current?.contains(target)) {
+        setContextMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClose, true);
+    return () => document.removeEventListener('mousedown', handleClose, true);
+  }, [contextMenu]);
+
   return (
     <CopilotChatAssistantMessage
       {...props}
+      toolCallsView={ExploreAccordionToolCallsView as any}
       markdownRenderer={CustomMarkdownRenderer}
       copyButton={CustomCopyButton}
       regenerateButton={CustomRegenerateButton}
@@ -334,7 +379,6 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
           : copyButton;
         
         // Clone regenerate button with custom onClick handler
-        // This ensures we filter messages correctly before regenerating
         const customRegenerateButton = React.isValidElement(regenerateButton)
           ? React.cloneElement(regenerateButton as React.ReactElement<any>, {
               onClick: (e: React.MouseEvent) => {
@@ -342,10 +386,22 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
                 e.stopPropagation();
                 handleRegenerate();
               },
+              title: 'Regenerate (deletes failed response)',
             })
           : regenerateButton;
+
+        // Retry (keep) button - re-runs without deleting
+        const retryKeepButton = (
+          <CustomRetryKeepButton
+            onClick={(e: React.MouseEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleRetryKeep();
+            }}
+          />
+        );
         
-        // Reorder buttons: Regenerate, ThumbsUp, ThumbsDown, ReadAloud, Copy (rightmost)
+        // Reorder buttons: Regenerate, Retry (keep), Copy (rightmost)
         // Only render toolbar for assistant messages with content
         const reorderedToolbar = shouldRenderToolbar ? (
           <div 
@@ -363,8 +419,10 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
             data-toolbar-visibility={toolbarVisibility}
             data-toolbar-should-show={shouldShowToolbar}
           >
-            {/* Regenerate Button */}
+            {/* Regenerate Button (deletes and retries) */}
             {customRegenerateButton}
+            {/* Retry (keep) - re-runs without deleting */}
+            {retryKeepButton}
             
             {/* Thumbs Up Button */}
             {/* {thumbsUpButton} */}
@@ -381,37 +439,139 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
         ) : null;
         
         return (
-          <div 
-            ref={containerRef}
-            style={{ 
-              color: isLight ? '#374151' : '#d1d5db', 
-              paddingLeft: '12px', 
-              paddingRight: '12px',
-              position: 'relative', // Ensure proper stacking context
-              zIndex: 1, // Ensure hover area is above other elements
-            }}
-            onMouseEnter={(e) => {
-              e.stopPropagation();
-              setIsHovered(true);
-            }}
-            onMouseLeave={(e) => {
-              e.stopPropagation();
-              setIsHovered(false);
-            }}
-            onMouseMove={(e) => {
-              // Ensure hover state is set on mouse move (handles edge cases)
-              if (!isHovered) {
+          <>
+            <div 
+              ref={containerRef}
+              style={{ 
+                color: isLight ? '#374151' : '#d1d5db', 
+                paddingLeft: '12px', 
+                paddingRight: '12px',
+                position: 'relative', // Ensure proper stacking context
+                zIndex: 1, // Ensure hover area is above other elements
+                borderRadius: contextMenu ? '8px' : undefined,
+                border: contextMenu ? (isLight ? '1px solid #3b82f6' : '1px solid #60a5fa') : undefined,
+              }}
+              onMouseEnter={(e) => {
+                e.stopPropagation();
                 setIsHovered(true);
-              }
-            }}
-            data-message-role="assistant"
-            data-message-id={currentMessage?.id}
-            data-is-hovered={isHovered}
-          >
-            {markdownRenderer}
-            {toolCallsView}
-            {reorderedToolbar}
-          </div>
+              }}
+              onMouseLeave={(e) => {
+                e.stopPropagation();
+                setIsHovered(false);
+              }}
+              onMouseMove={(e) => {
+                // Ensure hover state is set on mouse move (handles edge cases)
+                if (!isHovered) {
+                  setIsHovered(true);
+                }
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Slight offset so cursor doesn't obscure first menu item
+                setContextMenu({ x: e.clientX + 2, y: e.clientY + 2 });
+              }}
+              data-message-role="assistant"
+              data-message-id={currentMessage?.id}
+              data-is-hovered={isHovered}
+            >
+              {markdownRenderer}
+              {toolCallsView}
+              {reorderedToolbar}
+            </div>
+            {/* Context menu dropdown - Copy and Delete */}
+            {contextMenu &&
+              createPortal(
+                <div
+                  ref={contextMenuRef}
+                  className="copilotKitAssistantMessageContextMenu"
+                  style={{
+                    position: 'fixed',
+                    top: contextMenu.y,
+                    left: contextMenu.x,
+                    backgroundColor: isLight ? '#f9fafb' : '#151C24',
+                    border: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
+                    borderRadius: '6px',
+                    boxShadow: '0 10px 20px rgba(0, 0, 0, 0.15)',
+                    zIndex: 10002,
+                    minWidth: '140px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleCopy(e as unknown as React.MouseEvent<HTMLButtonElement>);
+                      setContextMenu(null);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      color: isLight ? '#374151' : '#d1d5db',
+                      fontSize: '12px',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = isLight ? '#e5e7eb' : '#374151';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDelete();
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      color: isLight ? '#374151' : '#d1d5db',
+                      fontSize: '12px',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      borderTop: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = isLight ? '#e5e7eb' : '#374151';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      <line x1="10" y1="11" x2="10" y2="17" />
+                      <line x1="14" y1="11" x2="14" y2="17" />
+                    </svg>
+                    Delete
+                  </button>
+                </div>,
+                document.body
+              )}
+          </>
         );
       }}
     </CopilotChatAssistantMessage>

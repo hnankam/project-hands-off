@@ -4,13 +4,14 @@
    and actions are readable over long chat titles
    ============================================================================= */
 
-/* Feather gradient always visible (not just on hover) so time span displays over chat title */
+/* Feather gradient - fades title into background so timestamp/actions are readable */
+/* Match panel background exactly for seamless blend (dark: #0D1117, light: #ffffff) */
 .sessions-panel-list [data-session-id] .sessions-panel-item-feather {
-  background: linear-gradient(to right, transparent 0%, transparent 15%, var(--close-feather-bg) 45%, var(--close-feather-bg) 100%) !important;
+  background: linear-gradient(to right, transparent 0%, transparent 25%, var(--close-feather-bg) 60%, var(--close-feather-bg) 100%) !important;
 }
 
 .sessions-panel-list [data-session-id].group:hover .sessions-panel-item-feather {
-  background: linear-gradient(to right, transparent 0%, transparent 15%, var(--close-feather-hover-bg) 45%, var(--close-feather-hover-bg) 100%) !important;
+  background: linear-gradient(to right, transparent 0%, transparent 25%, var(--close-feather-hover-bg) 60%, var(--close-feather-hover-bg) 100%) !important;
 }
 
 /* =============================================================================

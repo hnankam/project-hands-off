@@ -115,6 +115,61 @@ export const CustomCopyButton: React.FC<CustomCopyButtonProps> = ({
 
 export interface CustomRegenerateButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {}
 
+export interface CustomRetryKeepButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {}
+
+/**
+ * CustomRetryKeepButton - Retry without deleting messages
+ * Re-runs the agent with current conversation (no message deletion).
+ */
+export const CustomRetryKeepButton: React.FC<CustomRetryKeepButtonProps> = ({
+  ...props
+}) => {
+  const { isLight } = useStorage(themeStorage);
+
+  const buttonStyles: React.CSSProperties = {
+    width: '28px',
+    height: '28px',
+    padding: '0.5rem',
+    borderRadius: '6px',
+    border: 'none',
+    backgroundColor: 'transparent',
+    color: isLight ? '#374151' : '#d1d5db',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.2s ease',
+  };
+
+  return (
+    <button
+      {...props}
+      className=""
+      title="Retry without deleting messages"
+      style={buttonStyles}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = 'scale(1.15)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = 'scale(1)';
+      }}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        width="16"
+        height="16"
+      >
+        <polygon points="5 3 19 12 5 21 5 3" />
+      </svg>
+    </button>
+  );
+};
+
 /**
  * CustomRegenerateButton - Regenerate button matching V1 design
  * 

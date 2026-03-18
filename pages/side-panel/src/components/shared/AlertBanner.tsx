@@ -106,7 +106,7 @@ export const AlertBanner: React.FC<AlertBannerProps> = ({
   return (
     <div
       className={cn(
-        'w-full p-3 rounded-lg text-sm flex items-start justify-between gap-3',
+        'w-full max-w-4xl p-3 rounded-lg text-sm flex items-start justify-between gap-3',
         'transform transition-all duration-300 ease-out',
         styles.bg,
         styles.text,

@@ -3,6 +3,7 @@ import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
+import { getCurrentViewMode } from '@src/utils/windowManager';
 
 /**
  * MermaidBlock Component
@@ -43,9 +44,38 @@ type DiagramType = 'flowchart' | 'sequence' | 'class' | 'state' | 'er' | 'journe
  * Sanitize mermaid content to escape special characters in node labels and edge labels.
  * Wraps labels containing special chars in quotes, being careful not to double-quote.
  * Also handles edge label syntax issues.
+ * Converts literal \n to multiline format in node labels (markdown backticks + actual newlines).
  */
 const sanitizeMermaidContent = (content: string): string => {
   let result = content;
+  
+  // Convert literal \n (backslash-n) to line breaks in node labels.
+  // Mermaid's markdown format ["`Line1\nLine2`"] uses actual newlines; <br/> can fail in some node shapes.
+  // Replace \n in quoted labels with actual newline and wrap in backticks for proper multiline rendering.
+  result = result.replace(/\["((?:[^"\\]|\\.)*)"\]/g, (match, labelContent) => {
+    if (labelContent.includes('\\n')) {
+      const withNewlines = labelContent.replace(/\\n/g, '\n');
+      return `["\`${withNewlines}\`"]`;
+    }
+    return match;
+  });
+  // Also handle [[...]] stadium shape and [(...)] cylinder shape
+  result = result.replace(/\[\["((?:[^"\\]|\\.)*)"\]\]/g, (match, labelContent) => {
+    if (labelContent.includes('\\n')) {
+      const withNewlines = labelContent.replace(/\\n/g, '\n');
+      return `[["\`${withNewlines}\`"]]`;
+    }
+    return match;
+  });
+  result = result.replace(/\[\(\"((?:[^"\\]|\\.)*)\"\)\]/g, (match, labelContent) => {
+    if (labelContent.includes('\\n')) {
+      const withNewlines = labelContent.replace(/\\n/g, '\n');
+      return `[("\`${withNewlines}\`")]`;
+    }
+    return match;
+  });
+  // Fallback: global replace any remaining \n with <br/> for edge labels etc.
+  result = result.replace(/\\n/g, '<br/>');
   
   // Characters that require the label to be quoted
   const needsQuote = /[()<>=]/;
@@ -120,7 +150,12 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
   const [showRaw, setShowRaw] = useState(false); // Toggle between raw and rendered
   const [showControls, setShowControls] = useState(false); // Toggle controls panel
   const [refreshCounter, setRefreshCounter] = useState(0); // Counter to force re-render
+  const [copied, setCopied] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [svgSize, setSvgSize] = useState<{ width: number; height: number } | null>(null);
   const renderTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const diagramScrollRef = useRef<HTMLDivElement>(null);
+  const mermaidBlockRef = useRef<HTMLDivElement>(null);
   
   // Flowchart/Graph configuration options
   const [layoutEngine, setLayoutEngine] = useState<LayoutEngine>('dagre-wrapper');
@@ -135,6 +170,17 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
   
   // Class diagram configuration options
   const [classLayout, setClassLayout] = useState<'dagre' | 'elk'>('dagre');
+
+  // Copy mermaid code to clipboard
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('[MermaidBlock] Failed to copy:', err);
+    }
+  };
 
   // Download SVG as file
   const handleDownload = () => {
@@ -204,6 +250,106 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
     
     return rawContent;
   }, [children, direction, diagramType]);
+
+  // Pinch-to-zoom: in side panel, attach to document so we capture before parent scroll containers
+  const lastGestureScaleRef = useRef<number>(1);
+  const viewMode = getCurrentViewMode();
+  const isSidePanel = viewMode === 'sidepanel';
+  useEffect(() => {
+    const blockEl = mermaidBlockRef.current;
+    const diagramEl = diagramScrollRef.current;
+    if (!blockEl) return;
+    const doc = blockEl.ownerDocument;
+    const isDiagramVisible = () => {
+      const el = diagramScrollRef.current;
+      return el && el.style.display !== 'none';
+    };
+    const isOverDiagram = (target: EventTarget | null) => {
+      if (!diagramEl) return blockEl.contains(target as Node);
+      return diagramEl.contains(target as Node);
+    };
+    const wheelHandler = (e: Event) => {
+      const we = e as WheelEvent;
+      if (!(we.ctrlKey || we.metaKey)) return;
+      if (!isOverDiagram(we.target as Node)) return;
+      if (!isDiagramVisible()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setZoomLevel((z) => {
+        const delta = we.deltaY > 0 ? -0.1 : 0.1;
+        return Math.max(0.5, Math.min(2, z + delta));
+      });
+    };
+    const gestureStartHandler = (e: Event) => {
+      if (!isOverDiagram(e.target as Node)) return;
+      if (!isDiagramVisible()) return;
+      e.preventDefault();
+      lastGestureScaleRef.current = 1;
+    };
+    const gestureChangeHandler = (e: Event) => {
+      if (!isOverDiagram(e.target as Node)) return;
+      if (!isDiagramVisible()) return;
+      e.preventDefault();
+      const ge = e as unknown as { scale: number };
+      if (ge.scale !== undefined) {
+        const delta = ge.scale - lastGestureScaleRef.current;
+        lastGestureScaleRef.current = ge.scale;
+        setZoomLevel((z) => Math.max(0.5, Math.min(2, z + delta)));
+      }
+    };
+    // Use document with capture: true so we get wheel events before scroll containers
+    doc.addEventListener('wheel', wheelHandler, { passive: false, capture: true });
+    doc.addEventListener('gesturestart', gestureStartHandler, { capture: true });
+    doc.addEventListener('gesturechange', gestureChangeHandler, { capture: true });
+    return () => {
+      doc.removeEventListener('wheel', wheelHandler, { capture: true });
+      doc.removeEventListener('gesturestart', gestureStartHandler, { capture: true });
+      doc.removeEventListener('gesturechange', gestureChangeHandler, { capture: true });
+    };
+  }, [isSidePanel, svgContent, showRaw]);
+
+  // Measure SVG dimensions when content is rendered (for zoom/scroll)
+  useEffect(() => {
+    if (!containerRef.current || !svgContent) {
+      setSvgSize(null);
+      return;
+    }
+    const svg = containerRef.current.querySelector('svg');
+    if (!svg) {
+      setSvgSize(null);
+      return;
+    }
+    const updateSize = () => {
+      let w = svg.width?.baseVal?.value ?? svg.clientWidth ?? 0;
+      let h = svg.height?.baseVal?.value ?? svg.clientHeight ?? 0;
+      if (w <= 0 || h <= 0) {
+        const rect = svg.getBoundingClientRect();
+        w = rect.width || w;
+        h = rect.height || h;
+      }
+      if (w <= 0 || h <= 0) {
+        const viewBox = svg.getAttribute('viewBox');
+        if (viewBox) {
+          const parts = viewBox.split(/\s+/);
+          if (parts.length >= 4) {
+            w = parseFloat(parts[2]) || w;
+            h = parseFloat(parts[3]) || h;
+          }
+        }
+      }
+      if (w > 0 && h > 0) {
+        setSvgSize({ width: w, height: h });
+      }
+    };
+    updateSize();
+    const t = setTimeout(updateSize, 100);
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(svg);
+    return () => {
+      clearTimeout(t);
+      ro.disconnect();
+    };
+  }, [svgContent]);
 
   // Lazy load mermaid library
   useEffect(() => {
@@ -418,10 +564,11 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
   // Always render the container with ref, show loading/error as overlays
   return (
     <div
+      ref={mermaidBlockRef}
       className="mermaid-block"
       style={{
         position: 'relative',
-        padding: '12px',
+        padding: '6px',
         borderRadius: '8px',
         backgroundColor: cardBackground,
         border: `1px solid ${borderColor}`,
@@ -445,49 +592,75 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
             justifyContent: 'flex-end',
           }}
         >
-          {/* Code toggle button */}
-          <button
-            onClick={() => setShowRaw(!showRaw)}
-            className="mermaid-toggle-btn"
-            title={showRaw ? 'Show Diagram' : 'Show Code'}
+          {/* Diagram / Code switch */}
+          <div
+            role="tablist"
+            aria-label="View diagram or code"
+            className="mermaid-view-switch"
             style={{
-              padding: '5px 10px',
-              borderRadius: '6px',
-              border: 'none',
-              backgroundColor: isLight ? '#f9fafb' : '#151C24',
-              color: isLight ? '#6b7280' : '#9ca3af',
-              fontSize: '11px',
-              fontWeight: 500,
-              cursor: 'pointer',
               display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
               height: '28px',
-              transition: 'all 0.2s ease',
+              borderRadius: '6px',
+              overflow: 'hidden',
+              backgroundColor: isLight ? '#e5e7eb' : '#374151',
               boxShadow: isLight 
                 ? '0 1px 2px rgba(0, 0, 0, 0.05)' 
                 : '0 1px 2px rgba(0, 0, 0, 0.2)',
-              whiteSpace: 'nowrap',
             }}
           >
-            {showRaw ? (
-              <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-                Diagram
-              </>
-            ) : (
-              <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="16 18 22 12 16 6" />
-                  <polyline points="8 6 2 12 8 18" />
-                </svg>
-                Code
-              </>
-            )}
-          </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={!showRaw}
+              aria-label="Show Diagram"
+              onClick={() => setShowRaw(false)}
+              title="Show Diagram"
+              style={{
+                padding: '0 8px',
+                border: 'none',
+                borderRadius: '6px',
+                backgroundColor: !showRaw ? (isLight ? '#ffffff' : '#1f2937') : 'transparent',
+                color: !showRaw ? (isLight ? '#111827' : '#f3f4f6') : (isLight ? '#6b7280' : '#9ca3af'),
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+                boxShadow: !showRaw ? (isLight ? '0 1px 2px rgba(0, 0, 0, 0.05)' : '0 1px 2px rgba(0, 0, 0, 0.15)') : 'none',
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={showRaw}
+              aria-label="Show Code"
+              onClick={() => setShowRaw(true)}
+              title="Show Code"
+              style={{
+                padding: '0 8px',
+                border: 'none',
+                borderRadius: '6px',
+                backgroundColor: showRaw ? (isLight ? '#ffffff' : '#1f2937') : 'transparent',
+                color: showRaw ? (isLight ? '#111827' : '#f3f4f6') : (isLight ? '#6b7280' : '#9ca3af'),
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+                boxShadow: showRaw ? (isLight ? '0 1px 2px rgba(0, 0, 0, 0.05)' : '0 1px 2px rgba(0, 0, 0, 0.15)') : 'none',
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
+            </button>
+          </div>
 
           {/* Download button */}
           <button
@@ -518,6 +691,42 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
+          </button>
+
+          {/* Copy button */}
+          <button
+            onClick={handleCopy}
+            className="mermaid-copy-btn"
+            title={copied ? 'Copied!' : 'Copy Code'}
+            style={{
+              padding: '6px',
+              borderRadius: '6px',
+              border: 'none',
+              backgroundColor: isLight ? '#f9fafb' : '#151C24',
+              color: copied ? (isLight ? '#22c55e' : '#4ade80') : (isLight ? '#6b7280' : '#9ca3af'),
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '28px',
+              width: '28px',
+              transition: 'all 0.2s ease',
+              boxShadow: isLight 
+                ? '0 1px 2px rgba(0, 0, 0, 0.05)' 
+                : '0 1px 2px rgba(0, 0, 0, 0.2)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {copied ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            )}
           </button>
 
           {/* Refresh button */}
@@ -635,6 +844,8 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
                 className="mermaid-select"
                 style={{
                   width: '100%',
+                  minHeight: 28,
+                  lineHeight: 1.4,
                   padding: '5px 10px',
                   borderRadius: '6px',
                   border: `1px solid ${isLight ? '#e5e7eb' : '#374151'}`,
@@ -646,6 +857,7 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
                   outline: 'none',
                   transition: 'all 0.15s ease',
                   appearance: 'none',
+                  WebkitAppearance: 'none',
                   backgroundImage: `url("data:image/svg+xml,%3Csvg width='8' height='8' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M19 9l-7 7-7-7' stroke='${isLight ? '%23111827' : '%23f3f4f6'}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
                   backgroundRepeat: 'no-repeat',
                   backgroundPosition: 'right 8px center',
@@ -677,6 +889,8 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
                 className="mermaid-select"
                 style={{
                   width: '100%',
+                  minHeight: 28,
+                  lineHeight: 1.4,
                   padding: '5px 10px',
                   borderRadius: '6px',
                   border: `1px solid ${isLight ? '#e5e7eb' : '#374151'}`,
@@ -688,6 +902,7 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
                   outline: 'none',
                   transition: 'all 0.15s ease',
                   appearance: 'none',
+                  WebkitAppearance: 'none',
                   backgroundImage: `url("data:image/svg+xml,%3Csvg width='8' height='8' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M19 9l-7 7-7-7' stroke='${isLight ? '%23111827' : '%23f3f4f6'}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
                   backgroundRepeat: 'no-repeat',
                   backgroundPosition: 'right 8px center',
@@ -967,6 +1182,8 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
                     className="mermaid-select"
                     style={{
                       width: '100%',
+                      minHeight: 28,
+                      lineHeight: 1.4,
                       padding: '5px 10px',
                       borderRadius: '6px',
                       border: `1px solid ${isLight ? '#e5e7eb' : '#374151'}`,
@@ -978,6 +1195,7 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
                       outline: 'none',
                       transition: 'all 0.15s ease',
                       appearance: 'none',
+                      WebkitAppearance: 'none',
                       backgroundImage: `url("data:image/svg+xml,%3Csvg width='8' height='8' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M19 9l-7 7-7-7' stroke='${isLight ? '%23111827' : '%23f3f4f6'}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
                       backgroundRepeat: 'no-repeat',
                       backgroundPosition: 'right 8px center',
@@ -1033,17 +1251,119 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
         </pre>
       )}
 
-      {/* Container for mermaid SVG - always rendered so ref is available */}
+      {/* Container for mermaid SVG - use transform scale for cross-browser zoom */}
       <div
-        ref={containerRef}
-        style={{ 
+        style={{
           display: svgContent && !isLoading && !error && !showRaw ? 'block' : 'none',
-          width: '100%',
-          overflow: 'auto', // Allow scrolling if diagram is too large
           position: 'relative',
+          width: '100%',
+          maxHeight: '500px',
         }}
-        dangerouslySetInnerHTML={svgContent ? { __html: svgContent } : undefined}
-      />
+      >
+        <div
+          ref={diagramScrollRef}
+          className="mermaid-diagram-scroll"
+          style={{ 
+            width: '100%',
+            height: '100%',
+            overflow: 'auto',
+            maxHeight: '500px',
+          }}
+        >
+          <div
+            style={{
+              width: svgSize ? svgSize.width * zoomLevel : '100%',
+              height: svgSize ? svgSize.height * zoomLevel : undefined,
+              minHeight: svgSize ? undefined : 100,
+            }}
+          >
+            <div
+              ref={containerRef}
+              style={{
+                transform: `scale(${zoomLevel})`,
+                transformOrigin: 'top left',
+                width: svgSize ? svgSize.width : '100%',
+                height: svgSize ? svgSize.height : undefined,
+              }}
+              dangerouslySetInnerHTML={svgContent ? { __html: svgContent } : undefined}
+            />
+          </div>
+        </div>
+
+        {/* Zoom controls - fixed at bottom right of diagram viewport (stays fixed when scrolling) */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '8px',
+            right: '8px',
+            left: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: '4px',
+            zIndex: 20,
+            pointerEvents: 'auto',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setZoomLevel((z) => Math.max(0.5, z - 0.25))}
+            title="Zoom out"
+            style={{
+              padding: '6px',
+              borderRadius: '6px',
+              border: 'none',
+              backgroundColor: isLight ? '#f9fafb' : '#151C24',
+              color: isLight ? '#6b7280' : '#9ca3af',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '28px',
+              width: '28px',
+              transition: 'all 0.2s ease',
+              boxShadow: isLight 
+                ? '0 1px 2px rgba(0, 0, 0, 0.05)' 
+                : '0 1px 2px rgba(0, 0, 0, 0.2)',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              <line x1="8" y1="11" x2="14" y2="11" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => setZoomLevel((z) => Math.min(2, z + 0.25))}
+            title="Zoom in"
+            style={{
+              padding: '6px',
+              borderRadius: '6px',
+              border: 'none',
+              backgroundColor: isLight ? '#f9fafb' : '#151C24',
+              color: isLight ? '#6b7280' : '#9ca3af',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '28px',
+              width: '28px',
+              transition: 'all 0.2s ease',
+              boxShadow: isLight 
+                ? '0 1px 2px rgba(0, 0, 0, 0.05)' 
+                : '0 1px 2px rgba(0, 0, 0, 0.2)',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              <line x1="11" y1="8" x2="11" y2="14" />
+              <line x1="8" y1="11" x2="14" y2="11" />
+            </svg>
+          </button>
+        </div>
+      </div>
 
       {/* Loading overlay */}
       {isLoading && (

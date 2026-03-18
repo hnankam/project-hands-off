@@ -59,7 +59,7 @@ export const InvitationBanner: React.FC<InvitationBannerProps> = ({
   return (
     <div
       className={cn(
-        'px-4 py-3 border-b',
+        'w-full max-w-4xl mx-auto px-4 py-3 border-b',
         isLight
           ? 'bg-yellow-50 border-yellow-200'
           : 'bg-yellow-900/20 border-yellow-800',

@@ -14,6 +14,8 @@ import { useState, useEffect } from 'react';
 interface ChatErrorDisplayProps {
   error: Error;
   retry?: () => void;
+  /** Retry without deleting messages - re-runs agent with current conversation */
+  retryWithoutDelete?: () => void;
   isLight?: boolean;
   autoDismissMs?: number;
 }
@@ -21,6 +23,7 @@ interface ChatErrorDisplayProps {
 export const ChatErrorDisplay: React.FC<ChatErrorDisplayProps> = ({
   error,
   retry,
+  retryWithoutDelete,
   isLight = true,
   autoDismissMs = 60 * 60 * 1000, // Default: 1 hour
 }) => {
@@ -45,26 +48,31 @@ export const ChatErrorDisplay: React.FC<ChatErrorDisplayProps> = ({
     }, 300); // Match animation duration
   };
 
+  const dismissAndCall = (fn?: () => void) => {
+    if (fn) {
+      try {
+        fn();
+      } catch (e) {
+        console.error('[ChatErrorDisplay] Handler failed:', e);
+      }
+    }
+    setIsClosing(true);
+    setTimeout(() => setIsVisible(false), 300);
+  };
+
   const handleRetry = () => {
     if (retry) {
-      console.log('[ChatErrorDisplay] Retry clicked - calling onRetry immediately');
-      
-      // Call retry immediately while component is still fully mounted
-      try {
-        retry(); // This calls CopilotKit's onRetry (regenerate function)
-        console.log('[ChatErrorDisplay] onRetry called successfully');
-      } catch (e) {
-        console.error('[ChatErrorDisplay] Error calling onRetry:', e);
-      }
-      
-      // Then start smooth dismissal
-      setIsClosing(true);
-      setTimeout(() => {
-        setIsVisible(false);
-        console.log('[ChatErrorDisplay] Dismissal complete');
-      }, 300); // Match animation duration
+      console.log('[ChatErrorDisplay] Retry clicked');
+      dismissAndCall(retry);
     } else {
       console.warn('[ChatErrorDisplay] Retry clicked but no retry function provided');
+    }
+  };
+
+  const handleRetryWithoutDelete = () => {
+    if (retryWithoutDelete) {
+      console.log('[ChatErrorDisplay] Retry (keep messages) clicked');
+      dismissAndCall(retryWithoutDelete);
     }
   };
 
@@ -72,7 +80,7 @@ export const ChatErrorDisplay: React.FC<ChatErrorDisplayProps> = ({
 
   return (
     <div
-      className={`flex-shrink-0 transform transition-all duration-300 ease-out ${
+      className={`flex-shrink-0 w-full max-w-4xl mx-auto transform transition-all duration-300 ease-out ${
         isClosing ? 'translate-y-2 opacity-0' : 'translate-y-0 opacity-100'
       }`}>
       <div
@@ -116,7 +124,8 @@ export const ChatErrorDisplay: React.FC<ChatErrorDisplayProps> = ({
                   isLight
                     ? 'bg-red-100 text-red-900 hover:bg-red-200'
                     : 'bg-red-900/50 text-red-200 hover:bg-red-900/70'
-                }`}>
+                }`}
+                title="Delete failed response and retry from last user message">
                 <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path
                     strokeLinecap="round"
@@ -125,6 +134,18 @@ export const ChatErrorDisplay: React.FC<ChatErrorDisplayProps> = ({
                   />
                 </svg>
                 Retry
+              </button>
+            )}
+            {retryWithoutDelete && (
+              <button
+                onClick={handleRetryWithoutDelete}
+                className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium transition-colors ${
+                  isLight
+                    ? 'bg-red-100 text-red-900 hover:bg-red-200'
+                    : 'bg-red-900/50 text-red-200 hover:bg-red-900/70'
+                }`}
+                title="Retry without deleting any messages">
+                Retry (keep)
               </button>
             )}
 
@@ -204,7 +225,7 @@ export const ChatErrorDisplayCompact: React.FC<ChatErrorDisplayProps> = ({
 
   return (
     <div
-      className={`flex-shrink-0 transform transition-all duration-300 ease-out ${
+      className={`flex-shrink-0 w-full max-w-4xl mx-auto transform transition-all duration-300 ease-out ${
         isClosing ? 'scale-95 opacity-0' : 'scale-100 opacity-100'
       }`}>
       <div

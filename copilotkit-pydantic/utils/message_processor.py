@@ -130,6 +130,96 @@ async def count_tokens_with_model_fallback(messages: Sequence[ModelMessage]) -> 
     return count_tokens_approximately(messages)
 
 
+async def remove_orphaned_tool_results_after_compaction(
+    ctx: RunContext[UnifiedDeps], messages: list[ModelMessage]
+) -> list[ModelMessage]:
+    """Remove tool_result parts whose tool_call_id does not exist in the message history.
+
+    Runs AFTER context_manager (which may drop messages for token limits). When the
+    context manager drops a message containing a tool_use, any tool_result in a later
+    message becomes orphaned. This processor removes such orphans to prevent
+    'Tool call with ID X not found in the history' errors from pydantic-ai/AG-UI.
+    """
+
+    def _get_tool_return_id(part: Any) -> str | None:
+        try:
+            val = getattr(part, 'tool_call_id', None)
+            if isinstance(val, (str, int)):
+                return str(val)
+        except Exception:
+            pass
+        return None
+
+    def _is_tool_result_part(part: Any) -> bool:
+        if isinstance(part, ToolReturnPart):
+            return True
+        if isinstance(part, RetryPromptPart):
+            return getattr(part, 'tool_name', None) is not None
+        return False
+
+    def _iter_tool_call_ids_from_msg(msg: ModelMessage) -> list[str]:
+        ids: list[str] = []
+        for part in getattr(msg, 'parts', []) or []:
+            if isinstance(part, ToolCallPart):
+                try:
+                    cid = getattr(part, 'tool_call_id', None)
+                    if isinstance(cid, (str, int)):
+                        ids.append(str(cid))
+                except Exception:
+                    continue
+        return ids
+
+    # Collect ALL tool_call_ids that exist anywhere in the history
+    all_tool_call_ids: set[str] = set()
+    for msg in messages:
+        for cid in _iter_tool_call_ids_from_msg(msg):
+            all_tool_call_ids.add(cid)
+
+    # Also require Anthropic ordering: tool_result must have tool_use in immediately previous message
+    def _collect_prev_call_ids(index: int) -> set[str]:
+        if index <= 0:
+            return set()
+        return set(_iter_tool_call_ids_from_msg(messages[index - 1]))
+
+    result: list[ModelMessage] = []
+    for idx, msg in enumerate(messages):
+        original_parts = getattr(msg, 'parts', []) or []
+        prev_call_ids = _collect_prev_call_ids(idx)
+        filtered_parts: list[Any] = []
+        for part in original_parts:
+            if _is_tool_result_part(part):
+                rid = _get_tool_return_id(part)
+                if rid is None:
+                    continue
+                # Must exist in history AND be in immediately previous message (Anthropic requirement)
+                if rid not in all_tool_call_ids:
+                    logger.warning(
+                        "Removing orphaned tool_result (id=%s) at message %d - tool_call_id not in history",
+                        rid, idx,
+                    )
+                    continue
+                if rid not in prev_call_ids:
+                    logger.warning(
+                        "Removing tool_result (id=%s) at message %d - tool_use not in immediately previous message",
+                        rid, idx,
+                    )
+                    continue
+            filtered_parts.append(part)
+
+        if not filtered_parts:
+            logger.warning("Skipping message %d - all parts removed during post-compaction orphan cleanup", idx)
+            continue
+
+        if hasattr(msg, 'parts'):
+            try:
+                msg.parts = filtered_parts
+            except Exception:
+                pass
+        result.append(msg)
+
+    return result
+
+
 async def set_run_context_for_token_counter(
     ctx: RunContext[UnifiedDeps], messages: list[ModelMessage]
 ) -> list[ModelMessage]:

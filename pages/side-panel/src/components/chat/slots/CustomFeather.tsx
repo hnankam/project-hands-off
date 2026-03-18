@@ -36,7 +36,7 @@ export const CustomFeather: React.FC<CustomFeatherProps> = ({
     <div
       className={`absolute left-0 right-4 h-24 pointer-events-none z-10 ${className}`.trim()}
       style={{
-        bottom: -40,
+        bottom: -55,
         background: `linear-gradient(to top, ${bgColor} 0%, ${bgColor} 50%, transparent 100%)`,
         ...style,
       }}

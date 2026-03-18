@@ -215,11 +215,30 @@ export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatS
     const currentMessages = (agent.messages ?? []) as Message[];
     
     if (!messageId || currentMessages.length === 0) {
-      // No messageId provided or no messages - just run agent with all messages
-      if (typeof agent.run === 'function') {
+      // Retry keep: run agent with all current messages (no filtering, no deletions)
+      // Explicitly set messages and pass context/state so the request body is built correctly
+      if (currentMessages.length === 0) {
+        console.warn('[useCopilotChat] reloadMessages: no messages to run');
+        return;
+      }
+      if (typeof agent.setMessages === 'function') {
+        agent.setMessages(currentMessages);
+      }
+      const gatheredContext = extractContextFromCopilotKit(copilotkit);
+      const parameters: any = {};
+      if (threadId) {
+        parameters.threadId = threadId;
+      }
+      if (gatheredContext.length > 0) {
+        parameters.context = gatheredContext;
+      }
+      if (agent.state) {
+        parameters.state = agent.state;
+      }
+      if (typeof agent.runAgent === 'function') {
+        await agent.runAgent(parameters);
+      } else if (typeof agent.run === 'function') {
         await agent.run();
-      } else if (typeof agent.runAgent === 'function') {
-        await agent.runAgent();
       }
       return;
     }

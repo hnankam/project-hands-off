@@ -76,7 +76,7 @@ const SessionMoreOptionsButton: React.FC<SessionMoreOptionsButtonProps> = ({
   }, [isOpen, onToggle]);
 
   const buttonClassName = cn(
-    'rounded transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100',
+    'rounded transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100 pt-1',
     isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300',
   );
 
@@ -368,8 +368,9 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
     }
   }, [editingSessionId]);
 
-  const handleSessionMouseEnter = useCallback((sessionId: string, el: HTMLElement) => {
+  const handleSessionMouseEnter = useCallback((sessionId: string, el: HTMLElement, e?: React.MouseEvent) => {
     if (editingSessionId && editingSessionId === sessionId) return;
+    if (e?.target && (e.target as Element).closest?.('[data-tooltip-exclude]')) return;
     hoverTimeoutRef.current = setTimeout(async () => {
       const rect = el.getBoundingClientRect();
       setHoverRect({ left: rect.left + rect.width / 2, top: rect.bottom });
@@ -395,6 +396,16 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
       hoverTimeoutRef.current = null;
     }
     hoverFetchSessionRef.current = null;
+    setHoveredSessionId(null);
+    setHoverRect(null);
+    setHoverUsageStats('loading');
+  }, []);
+
+  const handleTooltipExcludeMouseEnter = useCallback(() => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
     setHoveredSessionId(null);
     setHoverRect(null);
     setHoverUsageStats('loading');
@@ -461,7 +472,7 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
             <button
               onClick={onNewSession}
               className={cn(
-                'flex w-full items-center gap-2 px-3 py-1.5 mb-1 rounded text-xs font-bold transition-colors',
+                'flex w-full items-center gap-2 px-3 py-3 mb-3 mt-3 rounded text-md font-bold uppercase transition-colors',
                 isLight
                   ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700',
@@ -493,7 +504,7 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                   key={session.id}
                   data-session-id={session.id}
                   onClick={() => handleSessionClick(session.id)}
-                  onMouseEnter={(e) => handleSessionMouseEnter(session.id, e.currentTarget)}
+                  onMouseEnter={(e) => handleSessionMouseEnter(session.id, e.currentTarget, e)}
                   onMouseLeave={handleSessionMouseLeave}
                   className={cn(
                     'group flex items-center px-3 py-2 text-xs cursor-pointer transition-colors rounded relative',
@@ -510,11 +521,11 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                       ? { color: isLight ? '#4b5563' : '#6b7280' }
                       : {}),
                     '--close-feather-bg': session.id === currentSessionId
-                      ? (isLight ? '#e5e7eb' : '#374151')
+                      ? (isLight ? '#e5e7eb' : '#181f2a')
                       : (isLight ? '#ffffff' : '#0D1117'),
                     '--close-feather-hover-bg': session.id === currentSessionId
-                      ? (isLight ? '#e5e7eb' : '#374151')
-                      : (isLight ? '#f3f4f6' : '#374151'),
+                      ? (isLight ? '#e5e7eb' : '#181f2a')
+                      : (isLight ? '#f3f4f6' : '#1f2937'),
                   } as React.CSSProperties}
                 >
                   <div className="flex-1 min-w-0 relative">
@@ -550,18 +561,22 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                     {editingSessionId !== session.id && (
                       <div
                         className="sessions-panel-item-feather absolute right-0 top-0 bottom-0 flex items-center justify-end pl-16 pr-0 gap-1 pointer-events-none group-hover:pointer-events-auto min-w-[100px]"
-                        style={{ paddingRight: '2px' }}
+                        style={{ paddingRight: '2px', marginRight: '-5px' }}
                       >
                         <span
                           className={cn(
-                            'text-xs flex-shrink-0 pointer-events-none mr-3',
-                            isLight ? 'text-gray-500' : 'text-gray-500'
+                            'text-xs flex-shrink-0 mr-1',
+                            isLight ? 'text-gray-500' : 'text-gray-400'
                           )}
+                          data-tooltip-exclude
+                          onMouseEnter={handleTooltipExcludeMouseEnter}
                         >
                           {formatTimestamp(session.timestamp)}
                         </span>
                         <button
                           type="button"
+                          data-tooltip-exclude
+                          onMouseEnter={handleTooltipExcludeMouseEnter}
                           onClick={(e) => handleEditClick(session.id, session.title, e)}
                           className={cn(
                             'opacity-0 group-hover:opacity-100 p-1 rounded transition-all flex items-center justify-center flex-shrink-0',
@@ -576,7 +591,11 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                           </svg>
                         </button>
                         {(onOpenSession || onCloneSession || onArchiveSession || onDeleteSession) && (
-                          <div className="pointer-events-auto flex-shrink-0">
+                          <div
+                            className="pointer-events-auto flex-shrink-0"
+                            data-tooltip-exclude
+                            onMouseEnter={handleTooltipExcludeMouseEnter}
+                          >
                             <SessionMoreOptionsButton
                               session={session}
                               isLight={isLight}
@@ -647,7 +666,7 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                       key={session.id}
                       data-session-id={session.id}
                       onClick={() => handleSessionClick(session.id)}
-                      onMouseEnter={(e) => handleSessionMouseEnter(session.id, e.currentTarget)}
+                      onMouseEnter={(e) => handleSessionMouseEnter(session.id, e.currentTarget, e)}
                       onMouseLeave={handleSessionMouseLeave}
                       className={cn(
                         'group flex items-center px-3 py-2 text-xs cursor-pointer transition-colors rounded relative',
@@ -656,7 +675,7 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                       style={{
                         color: isLight ? '#4b5563' : '#6b7280',
                         '--close-feather-bg': isLight ? '#ffffff' : '#0D1117',
-                        '--close-feather-hover-bg': isLight ? '#f3f4f6' : '#374151',
+                        '--close-feather-hover-bg': isLight ? '#f3f4f6' : '#1f2937',
                       } as React.CSSProperties}
                     >
                       <div className="flex-1 min-w-0 relative">
@@ -687,11 +706,17 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                             className="sessions-panel-item-feather absolute right-0 top-0 bottom-0 flex items-center justify-end pl-16 pr-0 gap-1 pointer-events-none group-hover:pointer-events-auto min-w-[100px]"
                             style={{ paddingRight: '2px' }}
                           >
-                            <span className={cn('text-xs flex-shrink-0 pointer-events-none mr-3', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                            <span
+                              className={cn('text-xs flex-shrink-0 mr-3', isLight ? 'text-gray-500' : 'text-gray-400')}
+                              data-tooltip-exclude
+                              onMouseEnter={handleTooltipExcludeMouseEnter}
+                            >
                               {formatTimestamp(session.timestamp)}
                             </span>
                             <button
                               type="button"
+                              data-tooltip-exclude
+                              onMouseEnter={handleTooltipExcludeMouseEnter}
                               onClick={(e) => handleEditClick(session.id, session.title, e)}
                               className={cn(
                                 'opacity-0 group-hover:opacity-100 p-1 rounded transition-all flex items-center justify-center flex-shrink-0',
@@ -706,7 +731,11 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                               </svg>
                             </button>
                             {(onOpenSession || onCloneSession || onDeleteSession) && (
-                              <div className="pointer-events-auto flex-shrink-0">
+                              <div
+                                className="pointer-events-auto flex-shrink-0"
+                                data-tooltip-exclude
+                                onMouseEnter={handleTooltipExcludeMouseEnter}
+                              >
                                 <SessionMoreOptionsButton
                                   session={session}
                                   isLight={isLight}

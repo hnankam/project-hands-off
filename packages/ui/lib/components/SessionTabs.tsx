@@ -21,9 +21,6 @@ export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisi
   const [containerHasOverflow, setContainerHasOverflow] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  
-  // Only show extra roundness on first tab in side panel view
-  const shouldShowExtraRoundness = viewMode === 'sidepanel';
 
   const handleSessionClick = (sessionId: string) => {
     // Don't trigger setActiveSession if the session is already active
@@ -208,7 +205,7 @@ export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisi
             !containerHasOverflow && "justify-center"
           )}
         >
-        {sessions.filter(s => s.isOpen).map((session, index) => (
+        {sessions.filter(s => s.isOpen).map((session) => (
           <div
             key={session.id}
             data-session-id={session.id}
@@ -216,7 +213,6 @@ export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisi
             onDoubleClick={() => handleDoubleClick(session.id, session.title)}
             className={cn(
               "group relative flex items-center px-2 py-1 pr-1 text-xs rounded cursor-pointer transition-colors whitespace-nowrap flex-shrink-0",
-              index === 0 && shouldShowExtraRoundness && "rounded-tl-xl",
               session.id === currentSessionId
                 ? isLight 
                   ? "bg-gray-200 text-gray-900" 

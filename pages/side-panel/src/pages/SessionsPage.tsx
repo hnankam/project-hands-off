@@ -420,8 +420,9 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         )}
         {/* Portal target for ConfigPanel - sibling of content column so layout matches SessionsPanel */}
         <div ref={configPanelPortalRef} className="absolute inset-0 pointer-events-none" aria-hidden />
+        {/* Content column: relative z-50 so modals (z-10000+) render above SessionsPanel (z-40) */}
         <div
-          className="flex flex-1 flex-col min-h-0 overflow-hidden min-w-0"
+          className="relative z-50 flex flex-1 flex-col min-h-0 overflow-hidden min-w-0"
           style={{
             marginLeft: isSessionsPanelSmallView ? 0 : showSessionsPanel ? `${sessionsPanelWidth}px` : 0,
             marginRight: isSessionsPanelSmallView ? 0 : (effectiveConfigPanelState?.isOpen ? (effectiveConfigPanelState.width ?? 384) : 0),

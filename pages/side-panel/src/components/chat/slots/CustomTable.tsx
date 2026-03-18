@@ -154,6 +154,7 @@ const TableAutoScrollContainer: FC<TableAutoScrollContainerProps> = memo(({ chil
     <div
       ref={scrollRef}
       onScroll={handleScroll}
+      className="recent-sessions-scroll"
       style={{
         overflowX: 'auto',
         overflowY: 'auto',

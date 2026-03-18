@@ -465,6 +465,7 @@ async def create_agent(
     from pydantic_ai_summarization import create_context_manager_middleware, resolve_max_tokens
     from utils.message_processor import (
         count_tokens_with_model_fallback,
+        remove_orphaned_tool_results_after_compaction,
         sanitize_tool_message_alignment,
         set_run_context_for_token_counter,
     )
@@ -589,6 +590,7 @@ async def create_agent(
             set_run_context_for_token_counter,
             sanitize_tool_message_alignment,
             context_manager,
+            remove_orphaned_tool_results_after_compaction,  # After context_manager - it may drop messages and create orphans
         ],
         "builtin_tools": builtin_tool_instances,
         "tools": backend_tools,  # Backend callable functions

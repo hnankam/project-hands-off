@@ -26,6 +26,7 @@ import { useEnabledFrontendTools } from '../../hooks/useEnabledFrontendTools';
 import { TIMING_CONSTANTS, COPIOLITKIT_CONFIG, ABLY_CONFIG } from '../../constants';
 import { ts } from '../../utils/logging';
 import { useAuth } from '../../context/AuthContext';
+import { ExploreAccordionProvider } from '../../context/ExploreAccordionContext';
 import { useMultiPageMetadata } from '../../hooks/useMultiPageMetadata';
 import { useWorkspaceContext } from '../../hooks/useWorkspaceContext';
 import { CopilotKitProvider, useCopilotChat, useCopilotAgent, SharedAgentProvider } from '../../hooks/copilotkit';
@@ -1651,6 +1652,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     );
 
     return (
+      <ExploreAccordionProvider>
       <div className="relative flex flex-1 flex-col overflow-hidden">
         {/* Content area - no margin here; ConfigPanel is portaled to SessionsPage, content column has marginRight */}
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
@@ -1849,6 +1851,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           sessionId={sessionId}
         />
       </div>
+      </ExploreAccordionProvider>
     );
   },
   // Custom comparison function to prevent unnecessary re-renders

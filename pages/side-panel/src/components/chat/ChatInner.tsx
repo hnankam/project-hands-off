@@ -356,27 +356,19 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         reloadMessages(lastMessageId);
       }
     },
-    
+
     // Log errors for analytics/monitoring
-    onError: (error) => {
-      // ============================================================================
-      // SPECIFIC filter for anyio cancel scope errors (backup safety net)
+    onError: (error: any) => {
       const errorMsg = error.error.message || '';
       const lowerMsg = errorMsg.toLowerCase();
-      
-      const isAnyCancelScopeError = 
+      const isAnyCancelScopeError =
         (lowerMsg.includes('attempted to exit') && lowerMsg.includes('cancel scope')) ||
         (lowerMsg.includes('exit cancel scope') && lowerMsg.includes('different task'));
-      
       if (isAnyCancelScopeError) {
         debug.log('[ChatInner] ✅ Filtered anyio cancel scope error (backup filter)');
-        return; // Don't log or track - this is expected
+        return;
       }
-      
-      // Log all other errors for debugging and analytics
       debug.error('[ChatInner] Agent error occurred:', errorMsg, error.code);
-      // Could send to error tracking service here
-      // trackError('agent_run_failed', { message: error.error.message, code: error.code });
     },
   });
 
@@ -411,6 +403,13 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
 
   const { messages, setMessages, isLoading, reloadMessages, reset, stopGeneration } =
     useCopilotChat();
+
+  // Retry without deleting: clear error and re-run agent with current messages
+  const handleRetryWithoutDelete = useCallback(() => {
+    handleAgentDismiss();
+    debug.log('[ChatInner] Retry (keep messages) - re-running agent with current messages');
+    reloadMessages();
+  }, [handleAgentDismiss, reloadMessages]);
 
   // Track streaming state to avoid restoring messages after edits/deletes
   const wasStreamingRef = useRef(false);
@@ -1000,6 +999,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
             <ChatErrorDisplay
               error={agentError}
               retry={handleAgentRetry}
+              retryWithoutDelete={handleRetryWithoutDelete}
               isLight={isLight}
               autoDismissMs={60 * 60 * 1000}
             />

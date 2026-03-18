@@ -4,6 +4,7 @@ import { cn } from '@extension/ui';
 import { useStorage } from '@extension/shared';
 import { themeStorage, preferencesStorage, type ChatFontSize } from '@extension/storage';
 import { API_CONFIG } from '../../constants';
+import { useExploreAccordion } from '../../context/ExploreAccordionContext';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -68,6 +69,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const { theme } = useStorage(themeStorage);
   const { chatFontSize } = useStorage(preferencesStorage);
+  const exploreAccordion = useExploreAccordion();
   const [toolsExpanded, setToolsExpanded] = useState(false);
   const [contextsExpanded, setContextsExpanded] = useState(false);
   const [expandedContexts, setExpandedContexts] = useState<Set<string>>(new Set());
@@ -540,6 +542,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
 
+            {/* Grouped Tool View Toggle */}
+            {exploreAccordion && (
+              <>
+                <div className={cn('border-t', isLight ? 'border-gray-200' : 'border-gray-700')} />
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <label
+                      htmlFor="grouped-tool-view"
+                      className="text-xs font-medium cursor-pointer"
+                      style={{ color: isLight ? '#374151' : '#bcc1c7' }}
+                    >
+                      Grouped Tool View
+                    </label>
+                    <p
+                      className={cn(
+                        'text-xs mt-0.5',
+                        isLight ? 'text-gray-500' : 'text-gray-400'
+                      )}
+                    >
+                      {exploreAccordion.enabled ? 'Grouped' : 'Original'} view for tool calls
+                    </p>
+                  </div>
+                  <button
+                    id="grouped-tool-view"
+                    role="switch"
+                    aria-checked={exploreAccordion.enabled}
+                    onClick={exploreAccordion.toggle}
+                    className={cn(
+                      'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 ml-3',
+                      exploreAccordion.enabled
+                        ? 'bg-blue-600 focus:ring-blue-500'
+                        : isLight
+                        ? 'bg-gray-200 focus:ring-gray-300'
+                        : 'bg-gray-600 focus:ring-gray-500'
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                        exploreAccordion.enabled ? 'translate-x-4' : 'translate-x-0'
+                      )}
+                    />
+                  </button>
+                </div>
+              </>
+            )}
+
             {/* Divider */}
             <div className={cn('border-t', isLight ? 'border-gray-200' : 'border-gray-700')} />
 
@@ -654,7 +704,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   >
                     {/* Tool Categories */}
                     <div 
-                      className="max-h-[320px] overflow-y-auto rounded-md"
+                      className="recent-sessions-scroll max-h-[320px] overflow-y-auto rounded-md"
                       style={{
                         scrollbarWidth: 'thin',
                         scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
@@ -709,7 +759,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 {/* Category Tools */}
                                 {isExpanded && type !== 'mcp' && (
                                   <div 
-                                    className="overflow-x-auto"
+                                    className="recent-sessions-scroll overflow-x-auto"
                                     style={{
                                       scrollbarWidth: 'thin',
                                       scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
@@ -796,7 +846,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                           {/* MCP Server Tools */}
                                           {isServerExpanded && (
                                             <div 
-                                              className="overflow-x-auto"
+                                              className="recent-sessions-scroll overflow-x-auto"
                                               style={{
                                                 scrollbarWidth: 'thin',
                                                 scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
@@ -922,7 +972,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   )}
                 >
                   <div 
-                    className="max-h-[320px] overflow-y-auto rounded-md"
+                    className="recent-sessions-scroll max-h-[320px] overflow-y-auto rounded-md"
                     style={{
                       scrollbarWidth: 'thin',
                       scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
@@ -973,7 +1023,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {expandedContexts.has('multiPage') && (
                         <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
                           <pre className={cn(
-                            'text-[10px] p-2 rounded overflow-x-auto',
+                            'recent-sessions-scroll text-[10px] p-2 rounded overflow-x-auto',
                             isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
                           )}
                           style={{
@@ -1022,7 +1072,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {expandedContexts.has('user') && (
                         <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
                           <pre className={cn(
-                            'text-[10px] p-2 rounded overflow-x-auto',
+                            'recent-sessions-scroll text-[10px] p-2 rounded overflow-x-auto',
                             isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
                           )}
                           style={{
@@ -1071,7 +1121,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {expandedContexts.has('workspace') && (
                         <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
                           <pre className={cn(
-                            'text-[10px] p-2 rounded overflow-x-auto',
+                            'recent-sessions-scroll text-[10px] p-2 rounded overflow-x-auto',
                             isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
                           )}
                           style={{
@@ -1126,7 +1176,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         {expandedContexts.has('notes') && (
                           <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
                             <pre className={cn(
-                              'text-[10px] p-2 rounded overflow-x-auto',
+                              'recent-sessions-scroll text-[10px] p-2 rounded overflow-x-auto',
                               isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
                             )}
                             style={{
@@ -1186,7 +1236,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         {expandedContexts.has('credentials') && (
                           <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
                             <pre className={cn(
-                              'text-[10px] p-2 rounded overflow-x-auto',
+                              'recent-sessions-scroll text-[10px] p-2 rounded overflow-x-auto',
                               isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
                             )}
                             style={{
