@@ -466,6 +466,7 @@ async def create_agent(
     from utils.message_processor import (
         count_tokens_with_model_fallback,
         remove_orphaned_tool_results_after_compaction,
+        sanitize_invalid_tool_call_args,
         sanitize_tool_message_alignment,
         set_run_context_for_token_counter,
     )
@@ -589,6 +590,7 @@ async def create_agent(
         "history_processors": [
             set_run_context_for_token_counter,
             sanitize_tool_message_alignment,
+            sanitize_invalid_tool_call_args,  # Fix truncated JSON in ToolCallPart args before count_tokens
             context_manager,
             remove_orphaned_tool_results_after_compaction,  # After context_manager - it may drop messages and create orphans
         ],

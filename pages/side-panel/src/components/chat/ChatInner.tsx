@@ -448,6 +448,14 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     return () => ro.disconnect();
   }, [messages?.length]);
 
+  // Agent state management (extracted to hook) - must be before useLoadMoreHistory so setDynamicAgentState is available
+  const { dynamicAgentState, setDynamicAgentState, latestAssistantMessageIdRef } = useAgentStateManagement({
+    sessionId,
+    messages,
+    initialAgentStepState,
+    onAgentStepStateChange,
+  });
+
   // Paginated history loading ("load more") - auto-triggers on scroll to top
   const { isLoading: isLoadingMore } = useLoadMoreHistory({
     threadId: sessionId,
@@ -455,14 +463,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     setMessages,
     enabled: true,
     scrollContainerRef: chatWrapperRef,
-  });
-
-  // Agent state management (extracted to hook)
-  const { dynamicAgentState, setDynamicAgentState, latestAssistantMessageIdRef } = useAgentStateManagement({
-    sessionId,
-    messages,
-    initialAgentStepState,
-    onAgentStepStateChange,
+    setAgentState: setDynamicAgentState,
   });
 
   // Expose setDynamicAgentState via ref for activity renderers

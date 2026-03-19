@@ -70,6 +70,71 @@ const SQLITE_DB_PATH = process.env.SQLITE_DB_PATH || './copilotkit.db';
 
 import { log } from './utils/index.js';
 
+/**
+ * Reorder messages so each tool result immediately follows the assistant message
+ * that contains the matching tool call. Required by common LLM providers.
+ * Fixes "Tool call with ID X not found in the history" when tool results appear
+ * before their corresponding tool calls.
+ */
+function reorderMessages(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return messages;
+
+  // Build map: toolCallId -> assistant message index
+  const toolCallIdToAssistantIdx = new Map();
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg?.role === 'assistant' && Array.isArray(msg.toolCalls)) {
+      for (const tc of msg.toolCalls) {
+        if (tc?.id) toolCallIdToAssistantIdx.set(tc.id, i);
+      }
+    }
+  }
+
+  // Collect tool messages by their assistant index (preserve order within same assistant)
+  const toolMsgsByAssistantIdx = new Map(); // assistantIdx -> [toolMsg, ...]
+  const toolMsgsProcessed = new Set(); // track which we've placed
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    const toolCallId = msg?.toolCallId ?? msg?.tool_call_id;
+    if (msg?.role === 'tool' && toolCallId) {
+      const assistantIdx = toolCallIdToAssistantIdx.get(toolCallId);
+      if (assistantIdx !== undefined) {
+        if (!toolMsgsByAssistantIdx.has(assistantIdx)) {
+          toolMsgsByAssistantIdx.set(assistantIdx, []);
+        }
+        toolMsgsByAssistantIdx.get(assistantIdx).push({ msg, origIdx: i });
+        toolMsgsProcessed.add(i);
+      }
+    }
+  }
+
+  if (toolMsgsProcessed.size === 0) return messages;
+
+  // Build new order: for each message, emit it, then emit any tool messages that belong to the previous assistant
+  const result = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (toolMsgsProcessed.has(i)) continue; // skip tool msgs, we'll insert them after their assistant
+    result.push(messages[i]);
+    if (messages[i]?.role === 'assistant') {
+      const toolMsgs = toolMsgsByAssistantIdx.get(i);
+      if (toolMsgs) {
+        // Sort by tool call order in assistant (Anthropic expects tool results to match tool call order)
+        const toolCallOrder = (messages[i].toolCalls || []).map((tc) => tc.id);
+        toolMsgs.sort((a, b) => {
+          const aid = a.msg.toolCallId ?? a.msg.tool_call_id;
+          const bid = b.msg.toolCallId ?? b.msg.tool_call_id;
+          const ai = toolCallOrder.indexOf(aid);
+          const bi = toolCallOrder.indexOf(bid);
+          if (ai >= 0 && bi >= 0) return ai - bi;
+          return (ai >= 0 ? ai : 999) - (bi >= 0 ? bi : 999);
+        });
+        for (const { msg } of toolMsgs) result.push(msg);
+      }
+    }
+  }
+  return result;
+}
+
 // ============================================================================
 // Database & Auth
 // ============================================================================
@@ -707,11 +772,12 @@ const app = express();
                 return true;
               });
               
-              if (bodyJson.messages.length !== originalLength) {
-                if (DEBUG) {
-                  console.log(`[server.js] Filtered ${originalLength - bodyJson.messages.length} orphaned tool returns from request body`);
-                }
+              if (bodyJson.messages.length !== originalLength && DEBUG) {
+                console.log(`[server.js] Filtered ${originalLength - bodyJson.messages.length} orphaned tool returns from request body`);
               }
+
+              // Reorder messages so each tool result immediately follows its assistant message
+              bodyJson.messages = reorderMessages(bodyJson.messages);
             }
             
             // Re-serialize the filtered body
@@ -1114,6 +1180,7 @@ const app = express();
           events: result.events,
           hasMore: result.hasMore,
           oldestRunId: result.oldestRunId,
+          nextBeforeRunId: result.oldestRunId ?? undefined,
           afterRunId: result.afterRunId || undefined,
           runs: result.runs,
         });

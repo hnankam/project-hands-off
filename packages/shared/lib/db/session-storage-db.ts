@@ -927,6 +927,7 @@ export class SessionStorageDB {
       { id: sessionId, configPanelOpen, configPanelTab, timestamp: Date.now() }
     );
     this.invalidateSessionCache(sessionId);
+    this.notify({ type: 'sessionChanged', sessionId });
   }
 
   /**

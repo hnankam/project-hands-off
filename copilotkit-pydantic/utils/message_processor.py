@@ -126,7 +126,30 @@ async def count_tokens_with_model_fallback(messages: Sequence[ModelMessage]) -> 
             if current_tokens is not None and hasattr(current_tokens, "input_tokens"):
                 return current_tokens.input_tokens
         except Exception as e:
-            logger.debug(f"model.count_tokens not supported or failed: {e}")
+            import traceback
+            model_name = getattr(model_for_counting, "model_name", None) or getattr(
+                model_for_counting, "model_id", ""
+            )
+            msg_count = len(messages) if messages else 0
+            # Sample message parts that may have JSON (tool args, tool results) - common source of parse errors
+            samples = []
+            for i, m in enumerate(list(messages or [])[:8]):
+                for part in getattr(m, "parts", []) or []:
+                    ptype = type(part).__name__
+                    content = getattr(part, "content", None) or getattr(part, "args", None)
+                    if content is not None:
+                        s = str(content)
+                        samples.append(
+                            f"msg[{i}] {ptype} len={len(s)} preview={s[:120]!r}"
+                        )
+            logger.warning(
+                "model.count_tokens failed: model=%s msg_count=%s error=%s samples=%s traceback=%s",
+                model_name,
+                msg_count,
+                e,
+                samples,
+                traceback.format_exc(),
+            )
     return count_tokens_approximately(messages)
 
 
@@ -218,6 +241,28 @@ async def remove_orphaned_tool_results_after_compaction(
         result.append(msg)
 
     return result
+
+
+async def sanitize_invalid_tool_call_args(
+    ctx: RunContext[UnifiedDeps], messages: list[ModelMessage]
+) -> list[ModelMessage]:
+    """Replace ToolCallPart args that are invalid/truncated JSON with '{}'.
+    Prevents count_tokens and model APIs from failing with 'EOF while parsing' errors.
+    """
+    from dataclasses import replace
+    for msg in messages:
+        parts = getattr(msg, "parts", []) or []
+        for i, part in enumerate(parts):
+            if isinstance(part, ToolCallPart) and isinstance(getattr(part, "args", None), str):
+                try:
+                    json.loads(part.args)
+                except (json.JSONDecodeError, TypeError):
+                    parts[i] = replace(part, args="{}")
+                    logger.debug(
+                        "sanitize_invalid_tool_call_args: replaced invalid JSON args for tool %s",
+                        getattr(part, "tool_name", "?"),
+                    )
+    return messages
 
 
 async def set_run_context_for_token_counter(

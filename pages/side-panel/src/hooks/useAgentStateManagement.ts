@@ -30,7 +30,7 @@ export interface UseAgentStateManagementProps {
 
 export interface UseAgentStateManagementReturn {
   dynamicAgentState: AgentStepState;
-  setDynamicAgentState: (state: AgentStepState) => void;
+  setDynamicAgentState: (state: AgentStepState | ((prev: AgentStepState) => AgentStepState)) => void;
   latestAssistantMessageIdRef: React.MutableRefObject<string | null>;
 }
 
@@ -126,10 +126,18 @@ export const useAgentStateManagement = ({
    * - Flat structure updates
    */
   const setDynamicAgentState = useCallback(
-    (nextState: UnifiedAgentState) => {
-      const nextPlans = nextState?.plans ?? {};
+    (nextState: UnifiedAgentState | ((prev: UnifiedAgentState) => UnifiedAgentState)) => {
+      const resolveState = (): UnifiedAgentState => {
+        if (typeof nextState === 'function') {
+          const prev = rawDynamicAgentState || { sessionId, plans: {}, graphs: {} };
+          return nextState(prev);
+        }
+        return nextState;
+      };
+      const resolved = resolveState();
+      const nextPlans = resolved?.plans ?? {};
       const numPlans = Object.keys(nextPlans).length;
-      
+
       // Handle all plans deleted (empty plans dictionary)
       if (numPlans === 0) {
         debug.log('[AgentStepState] Clearing all plans (all deleted)');
@@ -137,19 +145,19 @@ export const useAgentStateManagement = ({
           deleted: true,
           lastAssistantId: latestAssistantMessageIdRef.current,
         };
-        setRawDynamicAgentState({ sessionId, plans: {}, graphs: nextState?.graphs || {} });
+        setRawDynamicAgentState({ sessionId, plans: {}, graphs: resolved?.graphs || {} });
         return;
       }
-      
+
       // Normal state update
       planDeletionInfoRef.current = {
         deleted: false,
         lastAssistantId: latestAssistantMessageIdRef.current,
       };
-      
-      setRawDynamicAgentState({ ...nextState, sessionId });
+
+      setRawDynamicAgentState({ ...resolved, sessionId });
     },
-    [sessionId, setRawDynamicAgentState],
+    [sessionId, setRawDynamicAgentState, rawDynamicAgentState],
   );
   
   /**

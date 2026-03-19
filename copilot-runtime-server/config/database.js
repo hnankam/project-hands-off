@@ -50,8 +50,10 @@ export function getPool() {
       idleTimeoutMillis: 120000,  // 2 minutes - shorter for Neon to avoid stale connections
       connectionTimeoutMillis: 30000,  // 30s for cold starts
       allowExitOnIdle: false,
-      statement_timeout: 10000,  // 10 second statement timeout
-      query_timeout: 10000,  // Query timeout
+      // Client-side query timeout (ms). Heavy queries (e.g. loading 100 runs) need more than 10s on Neon.
+      query_timeout: parseInt(process.env.DB_QUERY_TIMEOUT || process.env.DB_STATEMENT_TIMEOUT || '60000', 10),
+      // Server-side statement timeout (Postgres). Passed as session param.
+      statement_timeout: parseInt(process.env.DB_STATEMENT_TIMEOUT || '60000', 10),
       // Don't use keepalive - Neon's pooler handles this
       keepAlive: false,
     });

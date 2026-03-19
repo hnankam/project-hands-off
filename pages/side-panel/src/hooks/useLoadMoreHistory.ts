@@ -9,6 +9,7 @@
 import type * as React from 'react';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import type { Message } from '@ag-ui/core';
+import { applyPatch, type Operation } from 'fast-json-patch';
 import { API_CONFIG } from '../constants';
 
 const SCROLL_CONTAINER_SELECTOR = '.copilotKitMessagesContainer';
@@ -22,8 +23,8 @@ const SCROLL_CONTAINER_FALLBACK = '[data-load-more-scroll]';
 /** CopilotKit may use overflow-y-auto on a wrapper */
 const SCROLL_CONTAINER_OVERFLOW = '.overflow-y-auto';
 
-/** Root runs loaded per "load more" request. 1 = one run at a time for smallest payloads. */
-export const LOAD_MORE_RUNS_LIMIT = 1;
+/** Root runs loaded per "load more" request. */
+export const LOAD_MORE_RUNS_LIMIT = 5;
 
 /** Scroll distance from top (px) that triggers auto load more - triggers when scroll bar is close to top */
 const SCROLL_TOP_THRESHOLD = 150;
@@ -103,7 +104,94 @@ const EventType = {
   TOOL_CALL_ARGS: 'TOOL_CALL_ARGS',
   TOOL_CALL_END: 'TOOL_CALL_END',
   TOOL_CALL_RESULT: 'TOOL_CALL_RESULT',
+  STATE_SNAPSHOT: 'STATE_SNAPSHOT',
+  STATE_DELTA: 'STATE_DELTA',
 } as const;
+
+const LOG_PREFIX = '[useLoadMoreHistory]';
+
+/**
+ * Apply STATE_SNAPSHOT and STATE_DELTA events to agent state.
+ * Load-more returns events from older runs; applying them ensures plans/graphs and their
+ * incremental updates (deltas) appear in the UI.
+ *
+ * Process all state events in a single setAgentState call so each delta is applied
+ * to the result of the previous operation (snapshot or delta). Multiple setState
+ * calls can be batched by React, causing deltas to apply to stale state.
+ */
+function applyStateEventsToAgent(
+  events: Array<Record<string, unknown>>,
+  setAgentState: (state: AgentStateWithPlans | ((prev: AgentStateWithPlans) => AgentStateWithPlans)) => void
+): void {
+  const stateEvents = events.filter(
+    (e) =>
+      (e.type === EventType.STATE_SNAPSHOT && e.snapshot && typeof e.snapshot === 'object') ||
+      (e.type === EventType.STATE_DELTA && e.delta && Array.isArray(e.delta))
+  );
+  const eventTypeCounts = events.reduce<Record<string, number>>((acc, e) => {
+    const t = (e.type as string) || 'unknown';
+    acc[t] = (acc[t] || 0) + 1;
+    return acc;
+  }, {});
+  console.log(`${LOG_PREFIX} applyStateEventsToAgent: totalEvents=${events.length} stateEvents=${stateEvents.length}`, {
+    eventTypeCounts,
+    stateEventTypes: stateEvents.map((e) => e.type),
+  });
+  if (stateEvents.length === 0) return;
+
+  setAgentState((prev) => {
+    let state: AgentStateWithPlans = prev ? { ...prev } : {};
+    console.log(`${LOG_PREFIX} applyStateEventsToAgent: prevState`, {
+      planIds: prev ? Object.keys(prev.plans || {}) : [],
+      graphIds: prev ? Object.keys(prev.graphs || {}) : [],
+    });
+    for (let i = 0; i < stateEvents.length; i++) {
+      const event = stateEvents[i];
+      const type = event.type as string;
+      if (type === EventType.STATE_SNAPSHOT && event.snapshot && typeof event.snapshot === 'object') {
+        const snapshot = event.snapshot as AgentStateWithPlans;
+        const planIds = Object.keys(snapshot.plans || {});
+        const graphIds = Object.keys(snapshot.graphs || {});
+        console.log(`${LOG_PREFIX} applyStateEventsToAgent: [${i}] STATE_SNAPSHOT`, {
+          planIds,
+          graphIds,
+          planSteps: planIds.map((id) => ({
+            id,
+            steps: (snapshot.plans as Record<string, { steps?: unknown[] }>)?.[id]?.steps?.length ?? 0,
+          })),
+        });
+        state = {
+          ...state,
+          sessionId: state.sessionId,
+          plans: { ...(snapshot.plans || {}), ...(state.plans || {}) },
+          graphs: { ...(snapshot.graphs || {}), ...(state.graphs || {}) },
+        };
+      } else if (type === EventType.STATE_DELTA && event.delta && Array.isArray(event.delta)) {
+        const delta = event.delta as Operation[];
+        console.log(`${LOG_PREFIX} applyStateEventsToAgent: [${i}] STATE_DELTA`, {
+          opCount: delta.length,
+          ops: delta.map((op) => ({ op: op.op, path: op.path })),
+        });
+        try {
+          const result = applyPatch({ ...state }, delta, true, false);
+          state = result.newDocument as AgentStateWithPlans;
+          console.log(`${LOG_PREFIX} applyStateEventsToAgent: [${i}] STATE_DELTA applied OK`);
+        } catch (err) {
+          console.warn(`${LOG_PREFIX} applyStateEventsToAgent: [${i}] STATE_DELTA applyPatch FAILED`, err);
+        }
+      }
+    }
+    console.log(`${LOG_PREFIX} applyStateEventsToAgent: finalState`, {
+      planIds: Object.keys(state.plans || {}),
+      graphIds: Object.keys(state.graphs || {}),
+      planSteps: Object.entries(state.plans || {}).map(([id, p]) => ({
+        id,
+        steps: ((p as { steps?: Array<{ status?: string }> })?.steps ?? []).map((s) => s?.status),
+      })),
+    });
+    return state;
+  });
+}
 
 /**
  * Convert AG-UI events to Message[] (minimal reducer for pagination)
@@ -202,6 +290,13 @@ function eventsToMessages(events: Array<Record<string, unknown>>): Message[] {
   return messages;
 }
 
+/** Agent state with plans and graphs - matches UnifiedAgentState */
+type AgentStateWithPlans = {
+  sessionId?: string;
+  plans?: Record<string, unknown>;
+  graphs?: Record<string, unknown>;
+};
+
 export interface UseLoadMoreHistoryOptions {
   threadId: string | null;
   messages: Message[];
@@ -209,6 +304,11 @@ export interface UseLoadMoreHistoryOptions {
   enabled?: boolean;
   /** Ref to a container that includes the chat scroll area. Used to preserve scroll position when prepending. */
   scrollContainerRef?: React.RefObject<HTMLElement | null>;
+  /**
+   * Agent setState from useCopilotAgent. When load-more returns STATE_SNAPSHOT/STATE_DELTA events,
+   * they are applied so plans/graphs from older runs appear in the UI.
+   */
+  setAgentState?: (state: AgentStateWithPlans | ((prev: AgentStateWithPlans) => AgentStateWithPlans)) => void;
 }
 
 export interface UseLoadMoreHistoryResult {
@@ -224,6 +324,7 @@ export function useLoadMoreHistory({
   setMessages,
   enabled = true,
   scrollContainerRef,
+  setAgentState,
 }: UseLoadMoreHistoryOptions): UseLoadMoreHistoryResult {
   console.log('[useLoadMoreHistory] hook called', { threadId: threadId?.slice(0, 8), messagesLength: messages.length });
   const [isLoading, setIsLoading] = useState(false);
@@ -233,7 +334,7 @@ export function useLoadMoreHistory({
   const afterRunIdRef = useRef<string | null>(null);
   const prependedCountRef = useRef(0);
   /** When true, load only child runs (exclude root) so Review is loaded last. When false, include root. */
-  const excludeRootRef = useRef(true);
+  const excludeRootRef = useRef(false);
   /** Oldest runId from last successful batch; used when beforeMessageId lookup fails (e.g. tool/activity messages) */
   const oldestRunIdRef = useRef<string | null>(null);
 
@@ -243,7 +344,7 @@ export function useLoadMoreHistory({
     setError(null);
     afterRunIdRef.current = null;
     prependedCountRef.current = 0;
-    excludeRootRef.current = true;
+    excludeRootRef.current = false;
     oldestRunIdRef.current = null;
   }, [threadId]);
 
@@ -267,7 +368,11 @@ export function useLoadMoreHistory({
       typeof oldestMessage?.id === 'string'
         ? oldestMessage.id
         : messages.find((m) => typeof m?.id === 'string')?.id ?? null;
-    if (!beforeMessageId) {
+    // Prefer beforeRunId when we have it from a previous batch - avoids loop when prepended
+    // messages are deduplicated by the agent (same content already in newer run's history).
+    // Must use run-based cursor for 2nd+ request to advance past duplicate content.
+    const useBeforeRunId = !afterRunIdRef.current && !!oldestRunIdRef.current;
+    if (!useBeforeRunId && !beforeMessageId) {
       if (process.env.NODE_ENV === 'development') {
         console.warn('[useLoadMoreHistory] No message with id found in messages');
       }
@@ -301,24 +406,39 @@ export function useLoadMoreHistory({
             afterRunId: afterRunIdRef.current!,
             ...(afterBeforeMessageId ? { beforeMessageId: afterBeforeMessageId } : {}),
           })
-        : new URLSearchParams({
-            beforeMessageId,
-            limit: String(LOAD_MORE_RUNS_LIMIT),
-            ...(excludeRoot ? { excludeRoot: 'true' } : {}),
-          });
+        : useBeforeRunId
+          ? new URLSearchParams({
+              before: oldestRunIdRef.current!,
+              limit: String(LOAD_MORE_RUNS_LIMIT),
+              ...(excludeRoot ? { excludeRoot: 'true' } : {}),
+            })
+          : new URLSearchParams({
+              beforeMessageId: beforeMessageId!,
+              limit: String(LOAD_MORE_RUNS_LIMIT),
+              ...(excludeRoot ? { excludeRoot: 'true' } : {}),
+            });
 
       const data = (await doFetch(params)) as {
         events: Array<Record<string, unknown>>;
         hasMore: boolean;
         afterRunId?: string | null;
         oldestRunId?: string | null;
+        nextBeforeRunId?: string | null;
       };
-      const { events, hasMore: more, afterRunId: nextAfter, oldestRunId } = data;
+      const { events, hasMore: more, afterRunId: nextAfter, oldestRunId, nextBeforeRunId } = data;
 
       setHasMore(more);
       afterRunIdRef.current = nextAfter || null;
-      if (oldestRunId && Array.isArray(events) && events.length > 0) {
-        oldestRunIdRef.current = oldestRunId;
+      const cursorForNext = nextBeforeRunId ?? oldestRunId;
+      if (cursorForNext && Array.isArray(events) && events.length > 0) {
+        oldestRunIdRef.current = cursorForNext;
+      }
+
+      if (setAgentState && Array.isArray(events) && events.length > 0) {
+        console.log(`${LOG_PREFIX} Applying state events from main fetch (events=${events.length})`);
+        applyStateEventsToAgent(events, setAgentState as (s: AgentStateWithPlans | ((p: AgentStateWithPlans) => AgentStateWithPlans)) => void);
+      } else if (Array.isArray(events) && events.length > 0 && !setAgentState) {
+        console.warn(`${LOG_PREFIX} Skipping state events: setAgentState not provided`);
       }
 
       if (!Array.isArray(events) || events.length === 0) {
@@ -354,6 +474,10 @@ export function useLoadMoreHistory({
           afterRunIdRef.current = runAfter || null;
           if (runOldest) oldestRunIdRef.current = runOldest;
           if (Array.isArray(runEvents) && runEvents.length > 0) {
+            if (setAgentState) {
+              console.log(`${LOG_PREFIX} Applying state events from runData retry (events=${runEvents.length})`);
+              applyStateEventsToAgent(runEvents, setAgentState as (s: AgentStateWithPlans | ((p: AgentStateWithPlans) => AgentStateWithPlans)) => void);
+            }
             const runMessages = eventsToMessages(runEvents);
             if (runMessages.length > 0) {
               const scrollEl = findScrollContainer(scrollContainerRef?.current ?? null);
@@ -370,7 +494,7 @@ export function useLoadMoreHistory({
           // No more child runs; retry with root included (load Review last)
           excludeRootRef.current = false;
           const retryParams = new URLSearchParams({
-            beforeMessageId,
+            ...(beforeMessageId ? { beforeMessageId } : {}),
             limit: String(LOAD_MORE_RUNS_LIMIT),
           });
           const retryData = (await doFetch(retryParams)) as {
@@ -384,6 +508,10 @@ export function useLoadMoreHistory({
           if (!Array.isArray(retryEvents) || retryEvents.length === 0) {
             setHasMore(false);
             return;
+          }
+          if (setAgentState) {
+            console.log(`${LOG_PREFIX} Applying state events from excludeRoot retry (events=${retryEvents.length})`);
+            applyStateEventsToAgent(retryEvents, setAgentState as (s: AgentStateWithPlans | ((p: AgentStateWithPlans) => AgentStateWithPlans)) => void);
           }
           const retryMessages = eventsToMessages(retryEvents);
           if (retryMessages.length === 0) {
@@ -440,7 +568,7 @@ export function useLoadMoreHistory({
     } finally {
       setIsLoading(false);
     }
-  }, [threadId, messages, setMessages, enabled, isLoading, hasMore, scrollContainerRef]);
+  }, [threadId, messages, setMessages, enabled, isLoading, hasMore, scrollContainerRef, setAgentState]);
 
   // Restore scroll position after React commits the prepended messages
   useEffect(() => {

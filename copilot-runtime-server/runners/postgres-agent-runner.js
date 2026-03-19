@@ -22,6 +22,63 @@ import fastJsonPatch from 'fast-json-patch';
 const { applyPatch } = fastJsonPatch;
 
 /**
+ * Check if tool call arguments are the truncated placeholder (load_full_tool_result message - no real tool uses this)
+ */
+function isTruncatedPlaceholderArgs(args) {
+  if (typeof args !== 'string') return false;
+  try {
+    const parsed = JSON.parse(args);
+    return (
+      parsed?.truncated === true &&
+      typeof parsed?.message === 'string' &&
+      parsed.message.includes('load_full_tool_result')
+    );
+  } catch {
+    return args.includes('"truncated":true') && args.includes('load_full_tool_result');
+  }
+}
+
+/**
+ * Extract tool call IDs with truncated placeholder args from messages.
+ * Returns a Set of toolCallIds to filter out.
+ */
+function getTruncatedPlaceholderToolCallIds(messages) {
+  const ids = new Set();
+  if (!Array.isArray(messages)) return ids;
+  for (const msg of messages) {
+    if (msg?.role !== 'assistant' || !Array.isArray(msg.toolCalls)) continue;
+    for (const tc of msg.toolCalls) {
+      if (isTruncatedPlaceholderArgs(tc?.function?.arguments)) {
+        ids.add(tc.id);
+      }
+    }
+  }
+  return ids;
+}
+
+/**
+ * Filter truncated placeholder tool calls from messages array (mutates in place).
+ * Removes tool calls from assistant messages and removes tool messages with matching toolCallId.
+ * Returns the Set of removed toolCallIds.
+ */
+function filterTruncatedPlaceholderToolCallsFromMessages(messages) {
+  const toRemove = getTruncatedPlaceholderToolCallIds(messages);
+  if (toRemove.size === 0) return toRemove;
+  const filtered = messages.filter((msg) => {
+    if (msg?.role === 'assistant' && Array.isArray(msg.toolCalls)) {
+      msg.toolCalls = msg.toolCalls.filter((tc) => !toRemove.has(tc?.id));
+    }
+    if (msg?.role === 'tool' && msg?.toolCallId && toRemove.has(msg.toolCallId)) {
+      return false;
+    }
+    return true;
+  });
+  messages.length = 0;
+  messages.push(...filtered);
+  return toRemove;
+}
+
+/**
  * Aggressive event compaction for history storage
  * 
  * Extends the basic compactEvents from @ag-ui/client to also compact:
@@ -558,9 +615,10 @@ export class PostgresAgentRunner extends AgentRunner {
     const currentEvents = []; // UNTRUNCATED events for database persistence (source of truth)
     
     try {
-      // Step 1: Get parent run ID (latest root = user-initiated run; sub-agents become siblings under it)
-      const parentRunId = await this.getLatestRootRunId(threadId);
-      
+      // Step 1: Determine parent run ID. User-initiated runs have parent_run_id=null (new root).
+      // Sub-agent runs (tool calls, auxiliary agents) have parent_run_id set by the client.
+      const parentRunId = (input.parent_run_id ?? input.parentRunId) || null;
+
       // Step 2: Acquire lock and validate (pass agent for auth context)
       await this.acquireRunLock(threadId, runId, agent, parentRunId);
       
@@ -587,6 +645,19 @@ export class PostgresAgentRunner extends AgentRunner {
         'executeRun',
         false // Don't filter incomplete tool calls - save them to DB
       );
+
+      // Build set of tool call IDs with truncated placeholder args (no real tool uses this)
+      const truncatedToolCallIds = new Set();
+      for (const run of completeRuns) {
+        for (const event of run.events || []) {
+          if (event.type === EventType.RUN_STARTED && event.input?.messages) {
+            for (const id of getTruncatedPlaceholderToolCallIds(event.input.messages)) {
+              truncatedToolCallIds.add(id);
+            }
+          }
+        }
+      }
+      const toolCallIdsToFilter = new Set([...deletedToolCallIds, ...truncatedToolCallIds]);
       
       if (this.debug && toolCallIdToMessageId.size > 0) {
         console.log(`[PostgresAgentRunner] Tool call to message ID mapping (executeRun, ${toolCallIdToMessageId.size} entries):`);
@@ -619,20 +690,19 @@ export class PostgresAgentRunner extends AgentRunner {
             
             // Filter deleted messages
             event.input.messages = event.input.messages.filter(msg => {
-              // Filter deleted messages
               if (deletedMessageIds.has(msg.id)) {
                 return false;
               }
-              
               return true;
             });
             
+            // Filter truncated placeholder tool calls (no real tool uses this arg format)
+            filterTruncatedPlaceholderToolCallsFromMessages(event.input.messages);
+            
             if (event.input.messages.length !== originalLength && this.debug) {
-              console.log(`[PostgresAgentRunner] Filtered ${originalLength - event.input.messages.length} deleted messages from RUN_STARTED input in executeRun`);
+              console.log(`[PostgresAgentRunner] Filtered ${originalLength - event.input.messages.length} messages from RUN_STARTED input in executeRun`);
             }
             
-            // Always include RUN_STARTED event (even if it had deleted messages)
-            // The deleted messages have been filtered from input.messages
             filtered.push(event);
             continue;
           }
@@ -656,9 +726,9 @@ export class PostgresAgentRunner extends AgentRunner {
           if ('toolCallId' in event && 
               typeof event.toolCallId === 'string') {
             // Check if tool call is deleted (associated message was deleted)
-            if (deletedToolCallIds.has(event.toolCallId)) {
+            if (toolCallIdsToFilter.has(event.toolCallId)) {
               if (this.debug) {
-                // console.log(`[PostgresAgentRunner] Filtering out tool call event ${event.type} with toolCallId ${event.toolCallId} (associated message deleted) in executeRun`);
+                // console.log(`[PostgresAgentRunner] Filtering out tool call event ${event.type} with toolCallId ${event.toolCallId} in executeRun`);
               }
               continue; // Skip this event
             }
@@ -1061,18 +1131,25 @@ export class PostgresAgentRunner extends AgentRunner {
         return !currentEventTypes.has(eventKey);
       });
       
-      const eventsToSave = [
+      let eventsToSave = [
         ...currentEvents.filter(e => e.type !== 'RUN_ERROR'),
         ...finalizationEventsToSave
       ];
+
+      // Keep RUN_ERROR when it would leave us with 0 events (preserves error info for debugging)
+      if (eventsToSave.length === 0 && hasRunError) {
+        const runErrors = currentEvents.filter(e => e.type === 'RUN_ERROR' || e.type === EventType.RUN_ERROR);
+        eventsToSave = runErrors;
+        if (this.debug) {
+          console.log(`[PostgresAgentRunner] Keeping ${runErrors.length} RUN_ERROR event(s) for run ${runId} (would otherwise have 0 events)`);
+        }
+      } else if (hasRunError && this.debug) {
+        console.log(`[PostgresAgentRunner] Filtered out ${currentEvents.length - eventsToSave.length} RUN_ERROR events before saving run ${runId}, marking as 'error'`);
+      }
       
       // Determine final status
       // stopRequested takes precedence over error flag for user-initiated stops
       const status = stopRequested ? 'stopped' : ((error || hasRunError) ? 'error' : 'completed');
-      
-      if (hasRunError && this.debug) {
-        console.log(`[PostgresAgentRunner] Filtered out ${currentEvents.length - eventsToSave.length} RUN_ERROR events before saving run ${runId}, marking as 'error'`);
-      }
       
       // Aggressive compact and store (use filtered events)
       // This merges STATE_DELTA, ACTIVITY_DELTA, and THINKING events in addition to TEXT/TOOL
@@ -1246,7 +1323,19 @@ export class PostgresAgentRunner extends AgentRunner {
         'loadAndStreamHistory',
         true // Filter incomplete tool calls from history
       );
-      
+
+      // Add truncated placeholder tool call IDs (no real tool uses this arg format)
+      const truncatedToolCallIds = new Set();
+      for (const run of completeRuns) {
+        for (const event of run.events || []) {
+          if (event.type === EventType.RUN_STARTED && event.input?.messages) {
+            for (const id of getTruncatedPlaceholderToolCallIds(event.input.messages)) {
+              truncatedToolCallIds.add(id);
+            }
+          }
+        }
+      }
+      const toolCallIdsToFilter = new Set([...deletedToolCallIds, ...truncatedToolCallIds]);
       
       // Filter events to exclude ONLY the specific deleted messages and their associated tool calls
       // IMPORTANT: Do NOT filter based on chronological position - only filter by specific message/tool IDs
@@ -1272,20 +1361,19 @@ export class PostgresAgentRunner extends AgentRunner {
             
             // Filter deleted messages
             event.input.messages = event.input.messages.filter(msg => {
-              // Filter deleted messages
               if (deletedMessageIds.has(msg.id)) {
                 return false;
               }
-              
               return true;
             });
             
+            // Filter truncated placeholder tool calls (no real tool uses this arg format)
+            filterTruncatedPlaceholderToolCallsFromMessages(event.input.messages);
+            
             if (event.input.messages.length !== originalLength && this.debug) {
-              console.log(`[PostgresAgentRunner] Filtered ${originalLength - event.input.messages.length} deleted messages from RUN_STARTED input`);
+              console.log(`[PostgresAgentRunner] Filtered ${originalLength - event.input.messages.length} messages from RUN_STARTED input`);
             }
             
-            // Always include RUN_STARTED event (even if it had deleted messages)
-            // The deleted messages have been filtered from input.messages
             filtered.push(event);
             continue;
           }
@@ -1313,12 +1401,12 @@ export class PostgresAgentRunner extends AgentRunner {
           // Only filter if this specific toolCallId is in the deleted set (ID-based, not chronological)
           if ('toolCallId' in event && 
               typeof event.toolCallId === 'string') {
-            // Check if tool call is deleted (associated message was deleted)
-            if (deletedToolCallIds.has(event.toolCallId)) {
+            // Check if tool call is deleted or has truncated placeholder args
+            if (toolCallIdsToFilter.has(event.toolCallId)) {
               if (this.debug) {
-                // console.log(`[PostgresAgentRunner] Filtering out tool call event ${event.type} with toolCallId ${event.toolCallId} (associated message deleted)`);
+                // console.log(`[PostgresAgentRunner] Filtering out tool call event ${event.type} with toolCallId ${event.toolCallId}`);
               }
-              continue; // Skip this event - tool call belongs to deleted assistant message
+              continue; // Skip this event
             }
             
             // Check if tool call is orphaned (no associated message found)
@@ -1357,6 +1445,14 @@ export class PostgresAgentRunner extends AgentRunner {
       // Replace content > 1200 characters with JSON containing toolCallId
       const truncatedEvents = this.truncateToolCallResults(compactedEvents);
       
+      // Track plans we've seen STATE_SNAPSHOT for. When we hit STATE_DELTA without base, fetch older snapshot+deltas.
+      const plansWithSnapshot = new Set();
+      for (const e of compactedEvents) {
+        if ((e.type === 'STATE_SNAPSHOT' || e.type === EventType.STATE_SNAPSHOT) && e.snapshot?.plans) {
+          for (const id of Object.keys(e.snapshot.plans)) plansWithSnapshot.add(id);
+        }
+      }
+      
       // Fix: Track active text messages and add synthetic TEXT_MESSAGE_END events before RUN_FINISHED
       // This prevents "Cannot send 'RUN_FINISHED' while text messages are still active" errors
       // when loading historical events that may have incomplete message sequences
@@ -1364,6 +1460,24 @@ export class PostgresAgentRunner extends AgentRunner {
       const eventsWithSyntheticEnds = [];
       
       for (const event of truncatedEvents) {
+        // When STATE_DELTA references a plan we don't have yet, fetch snapshot + older deltas from runs before this one
+        const isDelta = event.type === 'STATE_DELTA' || event.type === EventType.STATE_DELTA;
+        if (isDelta && event.runId) {
+          const planId = this._extractPlanIdFromDelta(event);
+          if (planId && !plansWithSnapshot.has(planId)) {
+            const baseEvents = await this.getStateEventsForPlanBeforeRun(threadId, planId, event.runId);
+            if (baseEvents.length > 0) {
+              for (const evt of baseEvents) {
+                if (!evt.threadId) evt.threadId = threadId;
+                eventsWithSyntheticEnds.push(evt);
+              }
+              plansWithSnapshot.add(planId);
+              if (this.debug) {
+                console.log(`[loadAndStreamHistory] prepended ${baseEvents.length} state events for plan ${planId} (delta had no base)`);
+              }
+            }
+          }
+        }
         // Track TEXT_MESSAGE_START events
         if (event.type === 'TEXT_MESSAGE_START' || event.type === EventType.TEXT_MESSAGE_START) {
           if (event.messageId) {
@@ -2029,39 +2143,41 @@ export class PostgresAgentRunner extends AgentRunner {
     
     let query;
     if (this.maxHistoricRuns && this.maxHistoricRuns > 0) {
-      // Load most recent N runs by wrapping the CTE and applying LIMIT to DESC ordered results
+      // Load most recent N ROOT runs (each with full subtree). This ensures we always have
+      // complete conversation trees including the first user message. The previous logic
+      // took the N most recent runs from the entire tree, which could return 10 child runs
+      // (e.g. tool calls) without their root - causing the first user message to be missing
+      // when load-more used beforeMessageId from the assistant message (runs older than
+      // run 1 = empty).
       query = `
-        WITH RECURSIVE run_chain AS (
-          -- Base case: find root runs (those without parent)
-          SELECT run_id, parent_run_id, events, created_at, completed_at
-       FROM agent_runs 
-          WHERE thread_id = $1 
+        WITH RECURSIVE recent_roots AS (
+          SELECT run_id FROM agent_runs
+          WHERE thread_id = $1
             AND status IN ${statusList}
             AND parent_run_id IS NULL
-          
+            AND jsonb_array_length(events) > 0
+          ORDER BY created_at DESC
+          LIMIT $2
+        ),
+        run_chain AS (
+          SELECT run_id, parent_run_id, events, created_at, completed_at
+          FROM agent_runs
+          WHERE thread_id = $1
+            AND status IN ${statusList}
+            AND run_id IN (SELECT run_id FROM recent_roots)
           UNION ALL
-          
-          -- Recursive case: find children of current level
           SELECT ar.run_id, ar.parent_run_id, ar.events, ar.created_at, ar.completed_at
           FROM agent_runs ar
           INNER JOIN run_chain rc ON ar.parent_run_id = rc.run_id
-          WHERE ar.thread_id = $1 
+          WHERE ar.thread_id = $1
             AND ar.status IN ${statusList}
-        ),
-        recent_runs AS (
-          -- Select the most recent N runs
-          SELECT * FROM run_chain
-       ORDER BY created_at DESC 
-          LIMIT $2
         )
-        -- Return in chronological order for proper event replay
-        SELECT * FROM recent_runs
-        ORDER BY created_at ASC
+        SELECT * FROM run_chain ORDER BY created_at ASC
       `;
       params.push(this.maxHistoricRuns);
       
       if (this.debug) {
-        console.log(`[PostgresAgentRunner] Loading most recent ${this.maxHistoricRuns} runs for thread ${threadId} (statuses: ${statusList})`);
+        console.log(`[PostgresAgentRunner] Loading most recent ${this.maxHistoricRuns} root runs (with subtrees) for thread ${threadId} (statuses: ${statusList})`);
       }
     } else {
       // Load all runs (no limit)
@@ -2128,27 +2244,44 @@ export class PostgresAgentRunner extends AgentRunner {
         [beforeMessageId, threadId]
       );
       if (msgResult.rows.length === 0) {
-        // Fallback: search RUN_STARTED events for runs containing this message.
-        // Use jsonb_array_elements for reliable id matching (avoids @> format issues).
-        // ORDER BY created_at ASC to get the OLDEST run containing the message - that's our
-        // cutoff; we want runs with created_at < that run.
+        // Fallback: search RUN_STARTED events for runs where this message is the INITIATING message
+        // (last in input.messages). This matters when initial load is capped (e.g. 5 roots): the oldest
+        // displayed message may be the first user msg which appears in every run's history; we must
+        // use the run that OWNS it (initiating message), not the oldest run containing it (root 1).
         const runsWithMessage = await this.pool.query(
           `SELECT ar.created_at FROM agent_runs ar
            CROSS JOIN LATERAL jsonb_array_elements(ar.events) AS evt
-           CROSS JOIN LATERAL jsonb_array_elements(
-             CASE WHEN jsonb_typeof(evt->'input'->'messages') = 'array'
-               THEN evt->'input'->'messages' ELSE '[]'::jsonb END
-           ) AS msg
            WHERE ar.thread_id = $1 AND ar.status IN ${statusList}
            AND evt->>'type' = 'RUN_STARTED'
-           AND msg->>'id' = $2
+           AND jsonb_typeof(evt->'input'->'messages') = 'array'
+           AND jsonb_array_length(evt->'input'->'messages') > 0
+           AND (evt->'input'->'messages'->(jsonb_array_length(evt->'input'->'messages')-1))->>'id' = $2
            ORDER BY ar.created_at ASC
            LIMIT 1`,
           [threadId, beforeMessageId]
         );
         if (runsWithMessage.rows.length === 0) {
-          // Fallback: search any event with messageId (TEXT_MESSAGE_START, TOOL_CALL_RESULT, etc.)
-          const runsWithMessageId = await this.pool.query(
+          // Fallback: any run containing this message in input.messages (e.g. message in history but not initiating).
+          // Use OLDEST run containing it - correct cutoff for load-more.
+          const runsWithMessageAny = await this.pool.query(
+            `SELECT ar.created_at FROM agent_runs ar
+             CROSS JOIN LATERAL jsonb_array_elements(ar.events) AS evt
+             CROSS JOIN LATERAL jsonb_array_elements(
+               CASE WHEN jsonb_typeof(evt->'input'->'messages') = 'array'
+                 THEN evt->'input'->'messages' ELSE '[]'::jsonb END
+             ) AS msg
+             WHERE ar.thread_id = $1 AND ar.status IN ${statusList}
+             AND evt->>'type' = 'RUN_STARTED'
+             AND msg->>'id' = $2
+             ORDER BY ar.created_at ASC
+             LIMIT 1`,
+            [threadId, beforeMessageId]
+          );
+          if (runsWithMessageAny.rows.length > 0) {
+            beforeCreatedAt = runsWithMessageAny.rows[0].created_at;
+          } else {
+            // Fallback: search any event with messageId (TEXT_MESSAGE_START, TOOL_CALL_RESULT, etc.)
+            const runsWithMessageId = await this.pool.query(
             `SELECT ar.created_at FROM agent_runs ar
              CROSS JOIN LATERAL jsonb_array_elements(ar.events) AS evt
              WHERE ar.thread_id = $1 AND ar.status IN ${statusList}
@@ -2164,6 +2297,7 @@ export class PostgresAgentRunner extends AgentRunner {
             return [];
           }
           beforeCreatedAt = runsWithMessageId.rows[0].created_at;
+          }
         } else {
           beforeCreatedAt = runsWithMessage.rows[0].created_at;
         }
@@ -2184,7 +2318,7 @@ export class PostgresAgentRunner extends AgentRunner {
       beforeCreatedAt = beforeResult.rows[0].created_at;
     }
 
-    // Cap total runs to avoid 6MB payloads (1 root can have hundreds of children). Use afterRunId to fill gap.
+    // For excludeRoot: cap child runs to avoid huge payloads
     const maxTotalRuns = limit === 1 ? 20 : 50;
 
     let result;
@@ -2206,15 +2340,24 @@ export class PostgresAgentRunner extends AgentRunner {
       `;
       result = await this.pool.query(excludeQuery, [threadId, beforeCreatedAt, maxTotalRuns]);
     } else {
+      // Cap by root count only - each root loads with its full subtree (user message + response + all children).
+      // No cap on total runs so we always get complete runs.
       const query = `
         WITH RECURSIVE older_roots AS (
-          SELECT run_id
-          FROM agent_runs
-          WHERE thread_id = $1
-            AND status IN ${statusList}
-            AND parent_run_id IS NULL
-            AND created_at < $2
-          ORDER BY created_at DESC
+          SELECT ar.run_id
+          FROM agent_runs ar
+          WHERE ar.thread_id = $1
+            AND ar.status IN ${statusList}
+            AND ar.parent_run_id IS NULL
+            AND ar.created_at < $2
+            AND (
+              EXISTS (SELECT 1 FROM jsonb_array_elements(ar.events) evt
+                WHERE evt->>'type' = 'RUN_STARTED' AND jsonb_typeof(evt->'input'->'messages') = 'array'
+                AND jsonb_array_length(evt->'input'->'messages') > 0)
+              OR EXISTS (SELECT 1 FROM jsonb_array_elements(ar.events) evt
+                WHERE evt->>'type' = 'TEXT_MESSAGE_START')
+            )
+          ORDER BY ar.created_at DESC
           LIMIT $3
         ),
         run_chain AS (
@@ -2231,15 +2374,10 @@ export class PostgresAgentRunner extends AgentRunner {
           INNER JOIN run_chain rc ON ar.parent_run_id = rc.run_id
           WHERE ar.thread_id = $1
             AND ar.status IN ${statusList}
-        ),
-        limited AS (
-          SELECT run_id, parent_run_id, events, created_at, completed_at
-          FROM (SELECT *, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn FROM run_chain) sub
-          WHERE rn <= $4
         )
-        SELECT * FROM limited ORDER BY created_at ASC
+        SELECT * FROM run_chain ORDER BY created_at ASC
       `;
-      result = await this.pool.query(query, [threadId, beforeCreatedAt, limit, maxTotalRuns]);
+      result = await this.pool.query(query, [threadId, beforeCreatedAt, limit]);
     }
 
     const rootCount = result.rows.filter(r => !r.parent_run_id).length;
@@ -2277,29 +2415,41 @@ export class PostgresAgentRunner extends AgentRunner {
       completeRuns, toolCallIdToMessageId, deletedMessageIds, 'getHistoryEventsBefore', true
     );
 
-    // Dedupe RUN_STARTED messages: each run's input has full history; we only need to send each message once.
-    let totalMsgsBeforeDedupe = 0;
-    let totalMsgsAfterDedupe = 0;
-    const sentMessageIds = new Set();
+    const truncatedToolCallIds = new Set();
+    for (const run of completeRuns) {
+      for (const event of run.events || []) {
+        if (event.type === EventType.RUN_STARTED && event.input?.messages) {
+          for (const id of getTruncatedPlaceholderToolCallIds(event.input.messages)) {
+            truncatedToolCallIds.add(id);
+          }
+        }
+      }
+    }
+    const toolCallIdsToFilter = new Set([...deletedToolCallIds, ...truncatedToolCallIds]);
+
     const filteredEvents = completeRuns.flatMap(run => {
       const runEvents = run.events || [];
+      const runStateCounts = runEvents.reduce((acc, e) => {
+        const t = e?.type || 'unknown';
+        if (t === 'STATE_SNAPSHOT' || t === 'STATE_DELTA') acc[t] = (acc[t] || 0) + 1;
+        return acc;
+      }, {});
+      if (Object.keys(runStateCounts).length > 0) {
+        console.log(`[getHistoryEventsBefore] run ${run.runId?.slice(0, 8)} (parent=${(run.parentRunId || 'root')?.slice(0, 8)}) state in DB:`, runStateCounts);
+      }
       const filtered = [];
       for (const event of runEvents) {
         if (!event.runId) event.runId = run.runId;
         if (!event.threadId) event.threadId = threadId;
         if (event.type === EventType.RUN_STARTED && event.input?.messages) {
-          const kept = event.input.messages.filter(msg => !deletedMessageIds.has(msg.id));
-          totalMsgsBeforeDedupe += kept.length;
-          const newMsgs = kept.filter(msg => msg.id && !sentMessageIds.has(msg.id));
-          totalMsgsAfterDedupe += newMsgs.length;
-          for (const m of newMsgs) if (m.id) sentMessageIds.add(m.id);
-          event.input.messages = newMsgs; // Only send messages we haven't sent yet
+          event.input.messages = event.input.messages.filter(msg => !deletedMessageIds.has(msg.id));
+          filterTruncatedPlaceholderToolCallsFromMessages(event.input.messages);
           filtered.push(event);
           continue;
         }
         if ('messageId' in event && typeof event.messageId === 'string' && deletedMessageIds.has(event.messageId)) continue;
         if ('toolCallId' in event && typeof event.toolCallId === 'string') {
-          if (deletedToolCallIds.has(event.toolCallId)) continue;
+          if (toolCallIdsToFilter.has(event.toolCallId)) continue;
           if (!toolCallIdToMessageId.get(event.toolCallId)) continue;
         }
         filtered.push(event);
@@ -2307,14 +2457,51 @@ export class PostgresAgentRunner extends AgentRunner {
       return filtered;
     });
 
-    console.log(`[getHistoryEventsBefore] RUN_STARTED msgs: beforeDedupe=${totalMsgsBeforeDedupe} afterDedupe=${totalMsgsAfterDedupe} uniqueIds=${sentMessageIds.size}`);
-
     const compactedEvents = aggressiveCompactEvents(filteredEvents, { debug: this.debug });
+    const inputStateCounts = filteredEvents.reduce((acc, e) => {
+      const t = e?.type || 'unknown';
+      if (t === 'STATE_SNAPSHOT' || t === 'STATE_DELTA') acc[t] = (acc[t] || 0) + 1;
+      return acc;
+    }, {});
+    const outputStateCounts = compactedEvents.reduce((acc, e) => {
+      const t = e?.type || 'unknown';
+      if (t === 'STATE_SNAPSHOT' || t === 'STATE_DELTA') acc[t] = (acc[t] || 0) + 1;
+      return acc;
+    }, {});
+    if (Object.keys(inputStateCounts).length > 0 || Object.keys(outputStateCounts).length > 0) {
+      console.log(`[getHistoryEventsBefore] state events: input=`, inputStateCounts, `output=`, outputStateCounts, `runs=${completeRuns.length}`);
+    }
     const truncatedEvents = this.truncateToolCallResults(compactedEvents);
+
+    // Track plans we've seen STATE_SNAPSHOT for (in this batch). When we hit STATE_DELTA without base, fetch older snapshot+deltas.
+    const plansWithSnapshot = new Set();
+    for (const e of compactedEvents) {
+      if ((e.type === 'STATE_SNAPSHOT' || e.type === EventType.STATE_SNAPSHOT) && e.snapshot?.plans) {
+        for (const id of Object.keys(e.snapshot.plans)) plansWithSnapshot.add(id);
+      }
+    }
 
     const activeTextMessages = new Map();
     const eventsWithSyntheticEnds = [];
     for (const event of truncatedEvents) {
+      // When STATE_DELTA references a plan we don't have yet, fetch snapshot + older deltas from runs before this one
+      const isDelta = event.type === 'STATE_DELTA' || event.type === EventType.STATE_DELTA;
+      if (isDelta && event.runId) {
+        const planId = this._extractPlanIdFromDelta(event);
+        if (planId && !plansWithSnapshot.has(planId)) {
+          const baseEvents = await this.getStateEventsForPlanBeforeRun(threadId, planId, event.runId);
+          if (baseEvents.length > 0) {
+            for (const evt of baseEvents) {
+              if (!evt.threadId) evt.threadId = threadId;
+              eventsWithSyntheticEnds.push(evt);
+            }
+            plansWithSnapshot.add(planId);
+            if (this.debug) {
+              console.log(`[getHistoryEventsBefore] prepended ${baseEvents.length} state events for plan ${planId} (delta had no base)`);
+            }
+          }
+        }
+      }
       if (event.type === 'TEXT_MESSAGE_START' || event.type === EventType.TEXT_MESSAGE_START) {
         if (event.messageId) activeTextMessages.set(event.messageId, { messageId: event.messageId, runId: event.runId, threadId: event.threadId || threadId });
       }
@@ -2338,10 +2525,11 @@ export class PostgresAgentRunner extends AgentRunner {
     const oldestRunId = historicRuns.length > 0 ? historicRuns[0].runId : null;
     const newestRunId = historicRuns.length > 0 ? historicRuns[historicRuns.length - 1].runId : null;
     const rootCount = historicRuns.filter((r) => !r.parentRunId).length;
-    const capped = historicRuns.length >= (limit === 1 ? 20 : 50);
+    // When excludeRoot=false: we cap by root count only (full subtree per root), so no total-run cap; afterRunId unused
+    const capped = excludeRoot && historicRuns.length >= (limit === 1 ? 20 : 50);
     // When excludeRoot: always hasMore if we got runs (client will fetch next batch; when we return 0, client retries with excludeRoot=false for root)
-    const hasMore = excludeRoot ? historicRuns.length > 0 : (rootCount >= limit || capped);
-    const afterRunIdValue = excludeRoot ? null : (capped ? newestRunId : null);
+    const hasMore = excludeRoot ? historicRuns.length > 0 : rootCount >= limit;
+    const afterRunIdValue = capped ? newestRunId : null;
     const runs = historicRuns.map((r) => ({ runId: r.runId, parentRunId: r.parentRunId }));
 
     const eventTypeCounts = {};
@@ -2354,6 +2542,67 @@ export class PostgresAgentRunner extends AgentRunner {
     console.log(`[getHistoryEventsBefore] events=${eventsWithSyntheticEnds.length} payloadBytes=${payloadBytes} (${(payloadBytes / 1024).toFixed(1)} KB) hasMore=${hasMore} capped=${capped} afterRunId=${afterRunIdValue ?? 'null'} types=${JSON.stringify(eventTypeCounts)}`);
 
     return { events: eventsWithSyntheticEnds, hasMore, oldestRunId, afterRunId: afterRunIdValue, runs };
+  }
+
+  /**
+   * Extract plan ID from a STATE_DELTA path (e.g. /plans/5e9d4b3e6743/steps/0/status -> 5e9d4b3e6743)
+   */
+  _extractPlanIdFromDelta(evt) {
+    if (!Array.isArray(evt?.delta)) return null;
+    for (const op of evt.delta) {
+      const p = op.path || '';
+      const m = p.match(/^\/plans\/([^/]+)\//);
+      if (m) return m[1];
+    }
+    return null;
+  }
+
+  /**
+   * Get STATE_SNAPSHOT and STATE_DELTA events for a plan from runs older than beforeRunId.
+   * Used when we encounter STATE_DELTA without a base (plan not in state yet) - fetch the
+   * snapshot and older deltas so the frontend can apply them in correct order.
+   * More efficient than scanning newer runs: only fetches when needed, targeted query.
+   * @param {string} threadId
+   * @param {string} planId - Plan ID to fetch (from delta path)
+   * @param {string} beforeRunId - Only consider runs with created_at < this run's created_at
+   * @returns {Promise<Array>} STATE_SNAPSHOT + STATE_DELTA events in chronological order
+   */
+  async getStateEventsForPlanBeforeRun(threadId, planId, beforeRunId) {
+    const statusList = this.transformErrors ? "('completed', 'stopped', 'error')" : "('completed', 'stopped')";
+    const beforeResult = await this.pool.query(
+      'SELECT created_at FROM agent_runs WHERE run_id = $1 AND thread_id = $2',
+      [beforeRunId, threadId]
+    );
+    if (beforeResult.rows.length === 0) return [];
+    const beforeCreatedAt = beforeResult.rows[0].created_at;
+
+    const runsResult = await this.pool.query(
+      `SELECT run_id, events, created_at FROM agent_runs
+       WHERE thread_id = $1 AND status IN ${statusList} AND created_at < $2
+       ORDER BY created_at ASC`,
+      [threadId, beforeCreatedAt]
+    );
+    const out = [];
+    for (const row of runsResult.rows) {
+      const events = row.events || [];
+      for (const evt of events) {
+        const t = evt?.type;
+        if (t === 'STATE_SNAPSHOT' || t === EventType.STATE_SNAPSHOT) {
+          if (evt.snapshot?.plans?.[planId]) {
+            out.push({ ...evt, runId: evt.runId || row.run_id });
+          }
+        } else if ((t === 'STATE_DELTA' || t === EventType.STATE_DELTA) && Array.isArray(evt.delta)) {
+          const pathMatches = evt.delta.some((op) => {
+            const p = op.path || '';
+            return p.startsWith(`/plans/${planId}/`) || p.includes(`/plans/${planId}/`);
+          });
+          if (pathMatches) {
+            out.push({ ...evt, runId: evt.runId || row.run_id });
+          }
+        }
+      }
+    }
+    return out;
   }
 
   /**
@@ -2443,7 +2692,17 @@ export class PostgresAgentRunner extends AgentRunner {
     const deletedToolCallIds = this.buildDeletedToolCallIds(
       completeRuns, toolCallIdToMessageId, deletedMessageIds, 'getHistoryEventsAfter', true
     );
-    const sentMessageIds = new Set();
+    const truncatedToolCallIds = new Set();
+    for (const run of completeRuns) {
+      for (const event of run.events || []) {
+        if (event.type === EventType.RUN_STARTED && event.input?.messages) {
+          for (const id of getTruncatedPlaceholderToolCallIds(event.input.messages)) {
+            truncatedToolCallIds.add(id);
+          }
+        }
+      }
+    }
+    const toolCallIdsToFilter = new Set([...deletedToolCallIds, ...truncatedToolCallIds]);
     const filteredEvents = completeRuns.flatMap(run => {
       const runEvents = run.events || [];
       const filtered = [];
@@ -2451,16 +2710,14 @@ export class PostgresAgentRunner extends AgentRunner {
         if (!event.runId) event.runId = run.runId;
         if (!event.threadId) event.threadId = threadId;
         if (event.type === EventType.RUN_STARTED && event.input?.messages) {
-          const kept = event.input.messages.filter(msg => !deletedMessageIds.has(msg.id));
-          const newMsgs = kept.filter(msg => msg.id && !sentMessageIds.has(msg.id));
-          for (const m of newMsgs) if (m.id) sentMessageIds.add(m.id);
-          event.input.messages = newMsgs;
+          event.input.messages = event.input.messages.filter(msg => !deletedMessageIds.has(msg.id));
+          filterTruncatedPlaceholderToolCallsFromMessages(event.input.messages);
           filtered.push(event);
           continue;
         }
         if ('messageId' in event && typeof event.messageId === 'string' && deletedMessageIds.has(event.messageId)) continue;
         if ('toolCallId' in event && typeof event.toolCallId === 'string') {
-          if (deletedToolCallIds.has(event.toolCallId)) continue;
+          if (toolCallIdsToFilter.has(event.toolCallId)) continue;
           if (!toolCallIdToMessageId.get(event.toolCallId)) continue;
         }
         filtered.push(event);

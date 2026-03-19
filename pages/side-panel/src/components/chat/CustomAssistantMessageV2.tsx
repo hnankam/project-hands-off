@@ -411,9 +411,10 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
             width: '100%',
             gap: '0.25rem',
             opacity: toolbarOpacity,
-              visibility: toolbarVisibility,
+            visibility: toolbarVisibility,
             pointerEvents: toolbarPointerEvents,
-              transition: 'opacity 0.2s ease-in-out, visibility 0.2s ease-in-out',
+            transition: 'opacity 0.2s ease-in-out, visibility 0.2s ease-in-out',
+            marginBottom: '12px',
             }}
             data-toolbar-opacity={toolbarOpacity}
             data-toolbar-visibility={toolbarVisibility}

@@ -40,6 +40,21 @@ const clipText = (text: string, maxLength: number): string => {
   return text.substring(0, maxLength - 3) + '...';
 };
 
+/** Read config panel state from localStorage (matches SessionsPage pattern for reliable restore) */
+function getConfigPanelFromLocalStorage(sessionId: string): { open: boolean; tab: 'context' | 'plans' | 'graphs' | 'sub-agents' } | null {
+  try {
+    const stored = localStorage.getItem(`configPanel_${sessionId}`);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    if (parsed && typeof parsed.open === 'boolean' && ['context', 'plans', 'graphs', 'sub-agents'].includes(parsed.tab)) {
+      return { open: parsed.open, tab: parsed.tab as 'context' | 'plans' | 'graphs' | 'sub-agents' };
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return null;
+}
+
 /**
  * Wrapper component for the config panel (plans, graphs, and other containers).
  * Syncs updates back to CopilotKit agent state.
@@ -454,8 +469,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       initialSelectedPageURLs,
       initialSelectedNoteIds,
       initialSelectedCredentialIds,
-      initialConfigPanelOpen,
-      initialConfigPanelTab,
       initialUsage,
       initialLastUsage,
       isUsageHydrating,
@@ -578,14 +591,23 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     }, []);
 
     // Config panel (plans, graphs, and other containers) - restored per session
-    const [showConfigPanel, setShowConfigPanel] = useState(initialConfigPanelOpen);
-    const [configPanelTab, setConfigPanelTab] = useState<'context' | 'plans' | 'graphs' | 'sub-agents'>(initialConfigPanelTab);
+    // Initialize from localStorage directly (matches SessionsPage pattern for reliable restore on reopen)
+    const [showConfigPanel, setShowConfigPanel] = useState(() => {
+      const stored = getConfigPanelFromLocalStorage(sessionId);
+      return stored?.open ?? false;
+    });
+    const [configPanelTab, setConfigPanelTab] = useState<'context' | 'plans' | 'graphs' | 'sub-agents'>(() => {
+      const stored = getConfigPanelFromLocalStorage(sessionId);
+      return stored?.tab ?? 'context';
+    });
 
-    // Sync config panel state when session changes or metadata loads
+    // Sync config panel state when session changes (read from localStorage for new session)
+    // Use || not ?? so when configPanelOpenOverride is false we fall through to stored?.open
     useEffect(() => {
-      setShowConfigPanel(initialConfigPanelOpen);
-      setConfigPanelTab(initialConfigPanelTab);
-    }, [sessionId, initialConfigPanelOpen, initialConfigPanelTab]);
+      const stored = getConfigPanelFromLocalStorage(sessionId);
+      setShowConfigPanel(configPanelOpenOverride || (stored?.open ?? false));
+      setConfigPanelTab(stored?.tab ?? 'context');
+    }, [sessionId, configPanelOpenOverride]);
     
     // Load persisted panel width from localStorage
     const getPersistedPanelWidth = useCallback(() => {
@@ -690,17 +712,22 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       setShowConfigPanel((prev) => !prev);
     }, []);
 
-    // Persist config panel state when it changes (skip initial hydration)
+    // Persist config panel state immediately on change (matches SessionsPage - no debounce)
     const isConfigPanelHydrated = useRef(false);
     useEffect(() => {
       if (!isConfigPanelHydrated.current) {
         isConfigPanelHydrated.current = true;
         return;
       }
-      const timeoutId = setTimeout(() => {
-        sessionStorageDBWrapper.updateSessionConfigPanel(sessionId, showConfigPanel, configPanelTab);
-      }, 300);
-      return () => clearTimeout(timeoutId);
+      try {
+        localStorage.setItem(
+          `configPanel_${sessionId}`,
+          JSON.stringify({ open: showConfigPanel, tab: configPanelTab })
+        );
+      } catch (e) {
+        console.error('[ChatSessionContainer] Failed to persist config panel to localStorage', e);
+      }
+      sessionStorageDBWrapper.updateSessionConfigPanel(sessionId, showConfigPanel, configPanelTab);
     }, [showConfigPanel, configPanelTab, sessionId]);
     useEffect(() => () => {
       isConfigPanelHydrated.current = false;
@@ -1763,8 +1790,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                 {/* 
                   Config Panel (plans, graphs, and other containers) - INSIDE SharedAgentProvider 
                   so it can access agent setState for bidirectional sync.
+                  Only portal when active - multiple sessions share the portal, so inactive ones must not render.
                 */}
-                {showConfigPanel && (
+                {isActive && showConfigPanel && (
                   <ConfigPanelWrapper
                     isLight={isLight}
                     showConfigPanel={showConfigPanel}
