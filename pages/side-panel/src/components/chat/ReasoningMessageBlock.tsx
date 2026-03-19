@@ -180,7 +180,7 @@ const ReasoningMessageContent: FC<
  * ReasoningMessageBlock - CopilotChatReasoningMessage with ThinkingBlock styling.
  * Uses built-in "Thought for X seconds" label via custom header.
  */
-export const ReasoningMessageBlock: FC<CopilotChatReasoningMessageProps> = (props) => {
+const ReasoningMessageBlockComponent: FC<CopilotChatReasoningMessageProps> = (props) => {
   const { isLight } = useStorage(themeStorage);
 
   return (
@@ -200,3 +200,10 @@ export const ReasoningMessageBlock: FC<CopilotChatReasoningMessageProps> = (prop
     </div>
   );
 };
+
+// Copy static properties from CopilotChatReasoningMessage to match the expected slot type
+export const ReasoningMessageBlock = Object.assign(ReasoningMessageBlockComponent, {
+  Header: CopilotChatReasoningMessage.Header,
+  Content: CopilotChatReasoningMessage.Content,
+  Toggle: CopilotChatReasoningMessage.Toggle,
+}) as typeof CopilotChatReasoningMessage;

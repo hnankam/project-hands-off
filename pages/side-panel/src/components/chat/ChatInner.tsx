@@ -61,6 +61,7 @@ import { MermaidBlock } from './MermaidBlock';
 import { ChatErrorDisplay } from './ChatErrorDisplay';
 import { CustomAssistantMessageV2 } from './CustomAssistantMessageV2';
 import { CustomUserMessageV2 } from './CustomUserMessageV2';
+import { VirtualizedMessageView } from './VirtualizedMessageView';
 import { CustomInputV2, PageSelectorProvider } from './CustomInputV2';
 import { 
   CustomScrollToBottomButton,
@@ -83,6 +84,7 @@ import { useWorkspaceContext } from '../../hooks/useWorkspaceContext';
 import { ChatSessionIdProvider } from '../../context/ChatSessionIdContext';
 import { ScrollContainerRefProvider } from '../../context/ScrollContainerRefContext';
 import { ScrollToBottomProvider } from '../../context/ScrollToBottomContext';
+import { MessageOperationsProvider } from '../../context/MessageOperationsContext';
 import { useAgentStateManagement } from '../../hooks/useAgentStateManagement';
 import { useAuth } from '../../context/AuthContext';
 import { useLoadMoreHistory } from '../../hooks/useLoadMoreHistory';
@@ -97,6 +99,9 @@ import {
 
 // Constants
 import { CHAT_SUGGESTIONS_INSTRUCTIONS } from '../../constants/chatSuggestions';
+
+/** Enable virtualized message list (Virtua) for long conversations. Toggle to compare performance. */
+const VIRTUALIZATION_MODE = true;
 
 // CopilotKit Action Creators
 import {
@@ -404,6 +409,11 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   const { messages, setMessages, isLoading, reloadMessages, reset, stopGeneration } =
     useCopilotChat();
 
+  // Stable ref so getMessages() reads current messages without subscribing child components
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const getMessages = useCallback(() => messagesRef.current, []);
+
   // Retry without deleting: clear error and re-run agent with current messages
   const handleRetryWithoutDelete = useCallback(() => {
     handleAgentDismiss();
@@ -426,8 +436,9 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // Ref for the scroll container - used by load-more-history and scroll-to-bottom
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Debug: log scroll container layout when messages change
+  // Debug: log scroll container layout when container resizes (not on every message change)
   useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
     const el = chatWrapperRef.current;
     if (!el) return;
     const logLayout = () => {
@@ -446,7 +457,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     const ro = new ResizeObserver(logLayout);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [messages?.length]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Agent state management (extracted to hook) - must be before useLoadMoreHistory so setDynamicAgentState is available
   const { dynamicAgentState, setDynamicAgentState, latestAssistantMessageIdRef } = useAgentStateManagement({
@@ -932,7 +944,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
 
   // Stabilize chatView to prevent unnecessary rerenders
   // Note: feather is a slot on ScrollView, not CopilotChatView - must nest under scrollView
-  // messageView uses slot object - VirtualizedMessageView as component caused messages not to render
+  // When VIRTUALIZATION_MODE: messageView is VirtualizedMessageView (wraps Virtua virtualizer)
+  // Otherwise: messageView uses slot object with custom message components
   const chatView = useMemo(() => ({
     scrollView: {
       scrollToBottomButton: CustomScrollToBottomButton,
@@ -943,12 +956,14 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     suggestionView: CustomSuggestionView as any,
     input: CustomInputV2,
     inputContainer: CustomInputContainer,
-    messageView: {
-      assistantMessage: CustomAssistantMessageV2,
-      userMessage: CustomUserMessageV2,
-      reasoningMessage: ReasoningMessageBlock,
-      cursor: CustomCursor,
-    },
+    messageView: VIRTUALIZATION_MODE
+      ? VirtualizedMessageView
+      : {
+          assistantMessage: CustomAssistantMessageV2,
+          userMessage: CustomUserMessageV2,
+          reasoningMessage: ReasoningMessageBlock,
+          cursor: CustomCursor,
+        },
   } as any), []);
 
 
@@ -1012,6 +1027,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
               'copilot-chat-wrapper relative min-h-0 flex-1 flex flex-col overflow-hidden',
               !isAgentAndModelSelected && 'chat-input-disabled',
             )}>
+            <MessageOperationsProvider value={{ getMessages, setMessages, reloadMessages }}>
             <ScrollContainerRefProvider scrollContainerRef={scrollContainerRef}>
             <ScrollToBottomProvider>
             {isLoadingMore && (
@@ -1049,7 +1065,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
             )}
             <div
               ref={scrollContainerRef}
-              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+              className="flex-1 min-h-0 overflow-hidden"
               data-load-more-scroll
             >
               <CopilotChat
@@ -1061,6 +1077,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
             </div>
             </ScrollToBottomProvider>
             </ScrollContainerRefProvider>
+            </MessageOperationsProvider>
           </div>
         </div>
       </PageSelectorProvider>

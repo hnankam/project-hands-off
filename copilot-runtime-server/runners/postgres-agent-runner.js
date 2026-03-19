@@ -295,11 +295,17 @@ function aggressiveCompactEvents(events, options = {}) {
       // ========================================
       case EventType.STATE_DELTA:
       case 'STATE_DELTA':
+        // Flush any pending activity buffers inline before buffering state.
+        // This positions plan cards close to the tool call that created them,
+        // not at the end of the run (where RUN_FINISHED would otherwise flush them).
+        if (activityBuffers.size > 0) flushAllActivityDeltas();
         stateDeltas.push(event);
         break;
-        
+
       case EventType.STATE_SNAPSHOT:
       case 'STATE_SNAPSHOT':
+        // Flush pending activity buffers inline (same reasoning as STATE_DELTA above)
+        if (activityBuffers.size > 0) flushAllActivityDeltas();
         // New snapshot supersedes any pending deltas
         stateDeltas = [];
         lastStateSnapshot = event.snapshot;
@@ -419,7 +425,12 @@ function aggressiveCompactEvents(events, options = {}) {
       // Pass-through events
       // ========================================
       default:
-        // For other events, just pass through
+        // Flush any pending activity buffers inline before emitting this event.
+        // This ensures ACTIVITY_SNAPSHOT is positioned right after the burst of
+        // ACTIVITY_DELTA events (close to the plan-creation tool call) rather than
+        // being deferred to the run boundary (RUN_FINISHED), which placed plan cards
+        // at the bottom of the conversation.
+        if (activityBuffers.size > 0) flushAllActivityDeltas();
         result.push(event);
         break;
     }
@@ -469,6 +480,78 @@ function aggressiveCompactEvents(events, options = {}) {
     });
   }
   
+  return result;
+}
+
+/**
+ * Reorder TOOL_CALL_RESULT events so each one immediately follows its
+ * corresponding TOOL_CALL_END (falling back to TOOL_CALL_START when no END
+ * is present).  This is the event-stream equivalent of the Anthropic
+ * requirement that tool_result blocks must immediately follow tool_use blocks.
+ *
+ * Only moves a result if a TEXT_MESSAGE_START appears between the tool call
+ * end and the result — i.e. only when the out-of-order placement would
+ * actually break display.
+ *
+ * @param {Array} events - filtered event array for a single run
+ * @returns {Array} possibly-reordered event array
+ */
+function reorderToolCallResults(events) {
+  // Index TOOL_CALL_END and TOOL_CALL_START positions by toolCallId
+  const endIdx   = new Map(); // toolCallId -> last TOOL_CALL_END index
+  const startIdx = new Map(); // toolCallId -> TOOL_CALL_START index
+
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    const id = e.toolCallId;
+    if (!id) continue;
+    if (e.type === 'TOOL_CALL_END' || e.type === EventType.TOOL_CALL_END) {
+      endIdx.set(id, i);
+    } else if (e.type === 'TOOL_CALL_START' || e.type === EventType.TOOL_CALL_START) {
+      startIdx.set(id, i);
+    }
+  }
+
+  // Find TOOL_CALL_RESULT events that appear after a TEXT_MESSAGE_START
+  // that itself comes after the tool call's end anchor.
+  const skipIndices = new Set();           // original indices to omit in the main pass
+  const insertAfterMap = new Map();        // anchor index -> [events to inject after it]
+
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    if (e.type !== 'TOOL_CALL_RESULT' && e.type !== EventType.TOOL_CALL_RESULT) continue;
+    const id = e.toolCallId;
+    if (!id) continue;
+
+    const anchor = endIdx.has(id) ? endIdx.get(id) : startIdx.get(id);
+    if (anchor === undefined || anchor >= i) continue; // not out of order
+
+    // Only move if a TEXT_MESSAGE_START sits between the anchor and this result
+    const hasTextBetween = events
+      .slice(anchor + 1, i)
+      .some(ev => ev.type === 'TEXT_MESSAGE_START' || ev.type === EventType.TEXT_MESSAGE_START);
+    if (!hasTextBetween) continue;
+
+    skipIndices.add(i);
+    if (!insertAfterMap.has(anchor)) insertAfterMap.set(anchor, []);
+    insertAfterMap.get(anchor).push(e);
+  }
+
+  if (skipIndices.size === 0) return events;
+
+  // Single-pass reconstruction: iterate original indices once, skip events that
+  // need to move, and inject them immediately after their anchor.
+  // Using original indices throughout avoids the index-shifting bug that occurs
+  // when multiple splice() calls are applied sequentially.
+  const result = [];
+  for (let i = 0; i < events.length; i++) {
+    if (skipIndices.has(i)) continue;   // will be injected at anchor position
+    result.push(events[i]);
+    const toInject = insertAfterMap.get(i);
+    if (toInject) {
+      for (const evt of toInject) result.push(evt);
+    }
+  }
   return result;
 }
 
@@ -1317,9 +1400,9 @@ export class PostgresAgentRunner extends AgentRunner {
       // Build set of tool call IDs to filter (deleted + incomplete)
       // Filter incomplete tool calls from historical context for cleaner replay
       const deletedToolCallIds = this.buildDeletedToolCallIds(
-        completeRuns, 
-        toolCallIdToMessageId, 
-        deletedMessageIds, 
+        completeRuns,
+        toolCallIdToMessageId,
+        deletedMessageIds,
         'loadAndStreamHistory',
         true // Filter incomplete tool calls from history
       );
@@ -1341,6 +1424,12 @@ export class PostgresAgentRunner extends AgentRunner {
       // IMPORTANT: Do NOT filter based on chronological position - only filter by specific message/tool IDs
       // This ensures new messages created after deletions are NOT filtered (they have new IDs)
       // Only messages/tool calls with IDs in deletedMessageIds/deletedToolCallIds are filtered
+
+      // The oldest run in the window keeps its full input.messages (establishes correct message ordering).
+      // All subsequent runs have input.messages stripped to only the triggering (last) message.
+      // This prevents O(n²) message processing: 5 runs with cumulative history → 75 messages → 15 messages.
+      const oldestRunIdInWindow = completeRuns.length > 0 ? completeRuns[0].runId : null;
+
       const filteredEvents = completeRuns.flatMap(run => {
         const runEvents = run.events || [];
         const filtered = [];
@@ -1369,15 +1458,57 @@ export class PostgresAgentRunner extends AgentRunner {
             
             // Filter truncated placeholder tool calls (no real tool uses this arg format)
             filterTruncatedPlaceholderToolCallsFromMessages(event.input.messages);
-            
+
             if (event.input.messages.length !== originalLength && this.debug) {
               console.log(`[PostgresAgentRunner] Filtered ${originalLength - event.input.messages.length} messages from RUN_STARTED input`);
             }
-            
+
+            // Strip input.messages history for non-oldest runs.
+            // The oldest run in the window keeps its full input.messages to establish correct
+            // message ordering in the UI. Subsequent runs only need the triggering (last) message.
+            // Without this, n runs carry O(n²) message objects to the browser, freezing the UI.
+            //
+            // Exception: if the immediately preceding turn was a tool-call-only assistant message
+            // whose tool calls are ALL filtered (incomplete frontend tools like searchPageContent),
+            // keep that assistant message + any tool result messages that follow it. This ensures
+            // the assistant message remains visible in the UI even though its TOOL_CALL_START
+            // events are suppressed (to prevent CopilotKit from re-triggering them).
+            if (run.runId !== oldestRunIdInWindow && event.input.messages.length > 1) {
+              const msgs = event.input.messages;
+              let keepFrom = msgs.length - 1; // default: keep only last message
+
+              // Walk backward from second-to-last, skipping over tool-result messages,
+              // to find if the preceding assistant turn is entirely filtered tool calls.
+              let idx = msgs.length - 2;
+              while (idx >= 0 && msgs[idx].role === 'tool') {
+                idx--;
+              }
+              if (
+                idx >= 0 &&
+                msgs[idx].role === 'assistant' &&
+                Array.isArray(msgs[idx].toolCalls) &&
+                msgs[idx].toolCalls.length > 0 &&
+                msgs[idx].toolCalls.every((tc) => toolCallIdsToFilter.has(tc.id))
+              ) {
+                // Keep from this assistant message onwards (includes its tool results + last msg)
+                keepFrom = idx;
+              }
+
+              event.input.messages = msgs.slice(keepFrom);
+            }
+
+            // Strip agent-only fields from history — the frontend only needs messages to
+            // render the chat. tools/context/state are only needed by the agent at run time.
+            // Plans and workspace state come from STATE_SNAPSHOT events, not input.state.
+            // Combined savings: ~14 KB/run (≈84% of a typical RUN_STARTED event).
+            if (event.input.tools !== undefined) event.input.tools = [];
+            if (event.input.context !== undefined) event.input.context = [];
+            if (event.input.state !== undefined) event.input.state = {};
+
             filtered.push(event);
             continue;
           }
-          
+
           // Filter any event with messageId property that's deleted
           // Only filter if this specific messageId is in the deleted set
           if ('messageId' in event && 
@@ -1433,8 +1564,69 @@ export class PostgresAgentRunner extends AgentRunner {
           }
           filtered.push(event);
         }
-        
-        return filtered;
+
+        // ── Plan-card repositioning ───────────────────────────────────────────
+        // The agent emits the task_progress ACTIVITY_SNAPSHOT late (after several
+        // Databricks queries / text messages that follow create_plan). During history
+        // replay this causes the plan card to appear at the bottom of the run instead
+        // of right after the "Create Plan complete" tool call block.
+        //
+        // Fix: find the last create_plan / update_plan_steps TOOL_CALL_START in the
+        // *original* run events, then find the first TEXT_MESSAGE_START that comes
+        // after it. Move the first task_progress ACTIVITY_SNAPSHOT (if any) to just
+        // before that text message in the *filtered* event array.
+        const PLAN_CREATION_TOOLS = new Set(['create_plan', 'update_plan_steps']);
+        let lastPlanCreationOriginalIdx = -1;
+        for (let i = 0; i < runEvents.length; i++) {
+          const e = runEvents[i];
+          if (
+            (e.type === 'TOOL_CALL_START' || e.type === EventType.TOOL_CALL_START) &&
+            PLAN_CREATION_TOOLS.has(e.toolCallName)
+          ) {
+            lastPlanCreationOriginalIdx = i;
+          }
+        }
+
+        if (lastPlanCreationOriginalIdx >= 0) {
+          // Find the messageId of the first TEXT_MESSAGE_START after plan creation
+          let insertBeforeMessageId = null;
+          for (let i = lastPlanCreationOriginalIdx + 1; i < runEvents.length; i++) {
+            const e = runEvents[i];
+            if (e.type === 'TEXT_MESSAGE_START' || e.type === EventType.TEXT_MESSAGE_START) {
+              insertBeforeMessageId = e.messageId;
+              break;
+            }
+          }
+
+          if (insertBeforeMessageId) {
+            const firstTaskProgressIdx = filtered.findIndex(
+              e =>
+                (e.type === 'ACTIVITY_SNAPSHOT' || e.type === EventType.ACTIVITY_SNAPSHOT) &&
+                e.activityType === 'task_progress'
+            );
+            if (firstTaskProgressIdx >= 0) {
+              const insertBeforeIdx = filtered.findIndex(
+                e =>
+                  (e.type === 'TEXT_MESSAGE_START' || e.type === EventType.TEXT_MESSAGE_START) &&
+                  e.messageId === insertBeforeMessageId
+              );
+              if (insertBeforeIdx >= 0 && insertBeforeIdx < firstTaskProgressIdx) {
+                // Splice the snapshot out of its original position and inject it earlier
+                const snapshot = filtered[firstTaskProgressIdx];
+                const reordered = [];
+                for (let i = 0; i < filtered.length; i++) {
+                  if (i === firstTaskProgressIdx) continue; // skip original slot
+                  if (i === insertBeforeIdx) reordered.push(snapshot); // inject early
+                  reordered.push(filtered[i]);
+                }
+                return reorderToolCallResults(reordered);
+              }
+            }
+          }
+        }
+        // ── End plan-card repositioning ───────────────────────────────────────
+
+        return reorderToolCallResults(filtered);
       });
       
       // Aggressive compact filtered events for history replay
@@ -1557,49 +1749,24 @@ export class PostgresAgentRunner extends AgentRunner {
         }
       }
       
-      // Emit historic events (now with synthetic TEXT_MESSAGE_END events added)
-      const emittedMessageIds = new Set();
-      const emittedRunIds = new Set(); // Track emitted runIds to prevent duplicate RUN_FINISHED
-      const toolCallEventsEmitted = [];
-      
+      // ── HISTORY EMISSION ──────────────────────────────────────────────────────
+      // Stream the original compacted events directly (proven format that CopilotKit renders).
+      console.log(
+        `[PostgresAgentRunner] Streaming history for ${threadId?.slice(0, 12)}`,
+        `| emitting=${eventsWithSyntheticEnds.length} events`,
+      );
+
       for (const event of eventsWithSyntheticEnds) {
-        // Log all tool call events before emitting
-        if (event.type === 'TOOL_CALL_START' || event.type === 'TOOL_CALL_ARGS' || event.type === 'TOOL_CALL_END' || event.type === 'TOOL_CALL_RESULT') {
-          // Look up the associated message ID from the toolCallId
-          const associatedMessageId = event.toolCallId ? toolCallIdToMessageId.get(event.toolCallId) : null;
-          const associatedMessageRole = associatedMessageId ? messageIdToRole.get(associatedMessageId) : null;
-          
-          toolCallEventsEmitted.push({
-            type: event.type,
-            toolCallId: event.toolCallId || 'none',
-            messageId: event.messageId || 'none', // This is the tool result message ID
-            associatedMessageId: associatedMessageId || 'none',
-            associatedMessageRole: associatedMessageRole || 'unknown',
-            runId: event.runId || 'none'
-          });
-        }
-        
         connectionSubject.next(event);
-        if ('messageId' in event && typeof event.messageId === 'string') {
-          emittedMessageIds.add(event.messageId);
-        }
-        // Track RUN_FINISHED events by runId to prevent duplicates
-        if ((event.type === 'RUN_FINISHED' || event.type === EventType.RUN_FINISHED) && event.runId) {
-          emittedRunIds.add(event.runId);
-        }
       }
-      
-      if (this.debug && toolCallEventsEmitted.length > 0) {
-        console.log(`[PostgresAgentRunner] Loaded ${eventsWithSyntheticEnds.length} events (${toolCallEventsEmitted.length} tool calls) for ${threadId}`);
-      if (this.debug) {
-          toolCallEventsEmitted.forEach(evt => {
-            const associationInfo = evt.associatedMessageId !== 'none' 
-              ? `associated with ${evt.associatedMessageRole} message ${evt.associatedMessageId}`
-              : 'no associated message found';
-            // console.log(`[PostgresAgentRunner]   ${evt.type} - toolCallId: ${evt.toolCallId}, ${associationInfo}`);
-          });
-        } else {
-          console.log(`[PostgresAgentRunner] No tool call events being emitted`);
+
+      // Track emitted message IDs so the active-run deduplication below still works
+      const emittedMessageIds = new Set();
+      const emittedRunIds = new Set();
+      for (const e of eventsWithSyntheticEnds) {
+        if (e.messageId) emittedMessageIds.add(e.messageId);
+        if ((e.type === 'RUN_FINISHED' || e.type === EventType.RUN_FINISHED) && e.runId) {
+          emittedRunIds.add(e.runId);
         }
       }
       
@@ -1612,6 +1779,12 @@ export class PostgresAgentRunner extends AgentRunner {
         if (activeSubjects?.threadSubject) {
           activeSubjects.threadSubject.subscribe({
             next: (event) => {
+              // Skip ALL events for runs that already completed in history.
+              // Prevents "Cannot send TEXT_MESSAGE_START after RUN_FINISHED" when a
+              // run that is still live in the active subject was also replayed from history.
+              if (event.runId && emittedRunIds.has(event.runId)) {
+                return;
+              }
               // Deduplicate by messageId
               if ('messageId' in event && emittedMessageIds.has(event.messageId)) {
                 return;
@@ -2280,12 +2453,18 @@ export class PostgresAgentRunner extends AgentRunner {
           if (runsWithMessageAny.rows.length > 0) {
             beforeCreatedAt = runsWithMessageAny.rows[0].created_at;
           } else {
-            // Fallback: search any event with messageId (TEXT_MESSAGE_START, TOOL_CALL_RESULT, etc.)
+            // Fallback: search any event that references this message ID, in any field:
+          // - messageId: TEXT_MESSAGE_START, TOOL_CALL_RESULT, etc.
+          // - parentMessageId: TOOL_CALL_START (the assistant message that owns the tool call)
+          // Note: no status filter — this lookup is only for the created_at cutoff timestamp.
+          // A run may have DB status=error but still be included in history (filterAndCompleteRuns
+          // uses RUN_ERROR event-type, not DB status). Excluding error runs here would prevent
+          // finding the cutoff and return [] even when there is more history to load.
             const runsWithMessageId = await this.pool.query(
             `SELECT ar.created_at FROM agent_runs ar
              CROSS JOIN LATERAL jsonb_array_elements(ar.events) AS evt
-             WHERE ar.thread_id = $1 AND ar.status IN ${statusList}
-             AND evt->>'messageId' = $2
+             WHERE ar.thread_id = $1
+             AND (evt->>'messageId' = $2 OR evt->>'parentMessageId' = $2)
              ORDER BY ar.created_at ASC
              LIMIT 1`,
             [threadId, beforeMessageId]
@@ -2444,6 +2623,38 @@ export class PostgresAgentRunner extends AgentRunner {
         if (event.type === EventType.RUN_STARTED && event.input?.messages) {
           event.input.messages = event.input.messages.filter(msg => !deletedMessageIds.has(msg.id));
           filterTruncatedPlaceholderToolCallsFromMessages(event.input.messages);
+          // Strip ALL runs to only the triggering (last) message.
+          // The initial loadAndStreamHistory already established the full message history via
+          // the oldest run's full input.messages. Load-more batches only contribute new triggering
+          // messages; any overlap with existingMessages is dropped by dedupeMessages on the
+          // frontend, preventing repositioning flashes.
+          //
+          // Exception: preserve a preceding tool-call-only assistant turn whose tool calls are
+          // ALL filtered (incomplete frontend tools), so those assistant messages remain visible.
+          if (event.input.messages.length > 1) {
+            const msgs = event.input.messages;
+            let keepFrom = msgs.length - 1;
+            let idx = msgs.length - 2;
+            while (idx >= 0 && msgs[idx].role === 'tool') {
+              idx--;
+            }
+            if (
+              idx >= 0 &&
+              msgs[idx].role === 'assistant' &&
+              Array.isArray(msgs[idx].toolCalls) &&
+              msgs[idx].toolCalls.length > 0 &&
+              msgs[idx].toolCalls.every((tc) => toolCallIdsToFilter.has(tc.id))
+            ) {
+              keepFrom = idx;
+            }
+            event.input.messages = msgs.slice(keepFrom);
+          }
+
+          // Clear agent-only bulk fields (same reason as loadAndStreamHistory).
+          if (event.input.tools !== undefined) event.input.tools = [];
+          if (event.input.context !== undefined) event.input.context = [];
+          if (event.input.state !== undefined) event.input.state = {};
+
           filtered.push(event);
           continue;
         }
@@ -2454,7 +2665,55 @@ export class PostgresAgentRunner extends AgentRunner {
         }
         filtered.push(event);
       }
-      return filtered;
+
+      // Plan-card repositioning (same logic as loadAndStreamHistory)
+      const PLAN_CREATION_TOOLS_LC = new Set(['create_plan', 'update_plan_steps']);
+      let lastPlanCreationOriginalIdxLC = -1;
+      for (let i = 0; i < runEvents.length; i++) {
+        const e = runEvents[i];
+        if (
+          (e.type === 'TOOL_CALL_START' || e.type === EventType.TOOL_CALL_START) &&
+          PLAN_CREATION_TOOLS_LC.has(e.toolCallName)
+        ) {
+          lastPlanCreationOriginalIdxLC = i;
+        }
+      }
+      if (lastPlanCreationOriginalIdxLC >= 0) {
+        let insertBeforeMessageIdLC = null;
+        for (let i = lastPlanCreationOriginalIdxLC + 1; i < runEvents.length; i++) {
+          const e = runEvents[i];
+          if (e.type === 'TEXT_MESSAGE_START' || e.type === EventType.TEXT_MESSAGE_START) {
+            insertBeforeMessageIdLC = e.messageId;
+            break;
+          }
+        }
+        if (insertBeforeMessageIdLC) {
+          const firstTPIdx = filtered.findIndex(
+            e =>
+              (e.type === 'ACTIVITY_SNAPSHOT' || e.type === EventType.ACTIVITY_SNAPSHOT) &&
+              e.activityType === 'task_progress'
+          );
+          if (firstTPIdx >= 0) {
+            const insertBeforeIdxLC = filtered.findIndex(
+              e =>
+                (e.type === 'TEXT_MESSAGE_START' || e.type === EventType.TEXT_MESSAGE_START) &&
+                e.messageId === insertBeforeMessageIdLC
+            );
+            if (insertBeforeIdxLC >= 0 && insertBeforeIdxLC < firstTPIdx) {
+              const snapshot = filtered[firstTPIdx];
+              const reordered = [];
+              for (let i = 0; i < filtered.length; i++) {
+                if (i === firstTPIdx) continue;
+                if (i === insertBeforeIdxLC) reordered.push(snapshot);
+                reordered.push(filtered[i]);
+              }
+              return reorderToolCallResults(reordered);
+            }
+          }
+        }
+      }
+
+      return reorderToolCallResults(filtered);
     });
 
     const compactedEvents = aggressiveCompactEvents(filteredEvents, { debug: this.debug });

@@ -9,89 +9,39 @@
 import type * as React from 'react';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import type { Message } from '@ag-ui/core';
+import type { UnifiedAgentState } from '../components/graph-state/types';
 import { applyPatch, type Operation } from 'fast-json-patch';
 import { API_CONFIG } from '../constants';
-
-const SCROLL_CONTAINER_SELECTOR = '.copilotKitMessagesContainer';
-
-/** CopilotKit messages wrapper - has overflow-y: auto in CSS */
-const SCROLL_CONTAINER_MESSAGES = '.copilotKitMessages';
-
-/** Content div we mark explicitly (excludes loading indicator). Has overflow-y: auto via CSS. */
-const SCROLL_CONTAINER_FALLBACK = '[data-load-more-scroll]';
-
-/** CopilotKit may use overflow-y-auto on a wrapper */
-const SCROLL_CONTAINER_OVERFLOW = '.overflow-y-auto';
 
 /** Root runs loaded per "load more" request. */
 export const LOAD_MORE_RUNS_LIMIT = 5;
 
-/** Scroll distance from top (px) that triggers auto load more - triggers when scroll bar is close to top */
-const SCROLL_TOP_THRESHOLD = 150;
+/** Scroll distance from top (px) that triggers auto load more.
+ *  Higher value = trigger earlier (before reaching the very top = smoother experience). */
+const SCROLL_TOP_THRESHOLD = 1200;
 
-function isScrollable(el: HTMLElement): boolean {
-  const { scrollHeight, clientHeight } = el;
-  return scrollHeight > clientHeight;
-}
-
-/** Find the element that actually scrolls (scrollHeight > clientHeight). May search within a candidate. */
-function findScrollableWithin(root: HTMLElement): HTMLElement | null {
-  const style = getComputedStyle(root);
-  if (style.overflowY !== 'auto' && style.overflowY !== 'scroll') return null;
-  if (isScrollable(root)) return root;
-  for (const child of Array.from(root.children)) {
-    if (!(child instanceof HTMLElement)) continue;
-    const found = findScrollableWithin(child);
-    if (found) return found;
-  }
-  return null;
-}
-
-/** Collect all elements that could be scroll containers (overflow-y). Deduped. */
-function collectScrollCandidates(container: HTMLElement | null): HTMLElement[] {
-  const candidates: HTMLElement[] = [];
-  const seen = new Set<HTMLElement>();
-
-  const add = (el: HTMLElement | null) => {
-    if (el instanceof HTMLElement && !seen.has(el)) {
-      seen.add(el);
-      candidates.push(el);
-    }
-  };
-
-  const collect = (root: HTMLElement) => {
-    const els = [
-      root.querySelector(SCROLL_CONTAINER_SELECTOR),
-      root.querySelector(SCROLL_CONTAINER_MESSAGES),
-      root.querySelector(SCROLL_CONTAINER_FALLBACK),
-      root.querySelector(SCROLL_CONTAINER_OVERFLOW),
-    ];
-    for (const el of els) add(el as HTMLElement | null);
-    // Walk for any overflow-y
-    const walk = (node: Element) => {
-      if (!(node instanceof HTMLElement)) return;
-      const style = getComputedStyle(node);
-      if (style.overflowY === 'auto' || style.overflowY === 'scroll') add(node);
-      for (const child of Array.from(node.children)) walk(child);
-    };
-    walk(root);
-  };
-
-  if (container) collect(container);
-  const chatRoot = document.querySelector('.copilot-chat-container');
-  if (chatRoot instanceof HTMLElement) collect(chatRoot);
-
-  return candidates;
-}
-
+/**
+ * Walk down the DOM tree to find the first element that actually scrolls
+ * (overflow-y: auto|scroll AND scrollHeight > clientHeight).
+ */
 function findScrollContainer(container: HTMLElement | null): HTMLElement | null {
-  const candidates = collectScrollCandidates(container);
-  // Prefer the element that actually scrolls
-  for (const el of candidates) {
-    const scrollable = findScrollableWithin(el) ?? (isScrollable(el) ? el : null);
-    if (scrollable) return scrollable;
-  }
-  return candidates[0] ?? null;
+  if (!container) return null;
+  const walk = (node: HTMLElement): HTMLElement | null => {
+    const style = getComputedStyle(node);
+    if (
+      (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+      node.scrollHeight > node.clientHeight
+    ) {
+      return node;
+    }
+    for (const child of Array.from(node.children)) {
+      if (!(child instanceof HTMLElement)) continue;
+      const found = walk(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(container);
 }
 
 /** AG-UI event types we handle */
@@ -194,6 +144,22 @@ function applyStateEventsToAgent(
 }
 
 /**
+ * Deduplicate a message array by ID, keeping the first occurrence.
+ * Prevents duplicate messages from being sent to the LLM when load-more prepends
+ * messages that are already present via the oldest run's full input.messages history.
+ */
+function dedupeMessages(msgs: Message[]): Message[] {
+  const seen = new Set<string>();
+  return msgs.filter(msg => {
+    const id = (msg as { id?: string })?.id;
+    if (!id) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+/**
  * Convert AG-UI events to Message[] (minimal reducer for pagination)
  */
 function eventsToMessages(events: Array<Record<string, unknown>>): Message[] {
@@ -290,12 +256,8 @@ function eventsToMessages(events: Array<Record<string, unknown>>): Message[] {
   return messages;
 }
 
-/** Agent state with plans and graphs - matches UnifiedAgentState */
-type AgentStateWithPlans = {
-  sessionId?: string;
-  plans?: Record<string, unknown>;
-  graphs?: Record<string, unknown>;
-};
+/** Use UnifiedAgentState directly to avoid type drift */
+type AgentStateWithPlans = UnifiedAgentState;
 
 export interface UseLoadMoreHistoryOptions {
   threadId: string | null;
@@ -330,7 +292,6 @@ export function useLoadMoreHistory({
   const [isLoading, setIsLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const scrollRestoreRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const afterRunIdRef = useRef<string | null>(null);
   const prependedCountRef = useRef(0);
   /** When true, load only child runs (exclude root) so Review is loaded last. When false, include root. */
@@ -480,11 +441,7 @@ export function useLoadMoreHistory({
             }
             const runMessages = eventsToMessages(runEvents);
             if (runMessages.length > 0) {
-              const scrollEl = findScrollContainer(scrollContainerRef?.current ?? null);
-              if (scrollEl && scrollEl instanceof HTMLElement) {
-                scrollRestoreRef.current = { scrollHeight: scrollEl.scrollHeight, scrollTop: scrollEl.scrollTop };
-              }
-              setMessages([...runMessages, ...messages]);
+              setMessages(dedupeMessages([...runMessages, ...messages]));
               prependedCountRef.current += runMessages.length;
             }
             return;
@@ -518,14 +475,7 @@ export function useLoadMoreHistory({
             setHasMore(false);
             return;
           }
-          const scrollEl = findScrollContainer(scrollContainerRef?.current ?? null);
-          if (scrollEl && scrollEl instanceof HTMLElement) {
-            scrollRestoreRef.current = {
-              scrollHeight: scrollEl.scrollHeight,
-              scrollTop: scrollEl.scrollTop,
-            };
-          }
-          setMessages([...retryMessages, ...messages]);
+          setMessages(dedupeMessages([...retryMessages, ...messages]));
           prependedCountRef.current += retryMessages.length;
         } else if (!nextAfter) {
           setHasMore(false);
@@ -539,26 +489,16 @@ export function useLoadMoreHistory({
         return;
       }
 
-      if (!useAfter) {
-        const scrollEl = findScrollContainer(scrollContainerRef?.current ?? null);
-        if (scrollEl && scrollEl instanceof HTMLElement) {
-          scrollRestoreRef.current = {
-            scrollHeight: scrollEl.scrollHeight,
-            scrollTop: scrollEl.scrollTop,
-          };
-        }
-      }
-
       if (useAfter) {
         const insertAt = prependedCountRef.current;
-        setMessages([
+        setMessages(dedupeMessages([
           ...messages.slice(0, insertAt),
           ...newMessages,
           ...messages.slice(insertAt),
-        ]);
+        ]));
         prependedCountRef.current += newMessages.length;
       } else {
-        setMessages([...newMessages, ...messages]);
+        setMessages(dedupeMessages([...newMessages, ...messages]));
         prependedCountRef.current += newMessages.length;
       }
     } catch (err) {
@@ -570,92 +510,57 @@ export function useLoadMoreHistory({
     }
   }, [threadId, messages, setMessages, enabled, isLoading, hasMore, scrollContainerRef, setAgentState]);
 
-  // Restore scroll position after React commits the prepended messages
-  useEffect(() => {
-    if (!scrollRestoreRef.current || !scrollContainerRef?.current) return;
-    const scrollEl = findScrollContainer(scrollContainerRef.current);
-    if (!(scrollEl instanceof HTMLElement)) return;
-    const { scrollHeight, scrollTop } = scrollRestoreRef.current;
-    scrollRestoreRef.current = null;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const added = scrollEl.scrollHeight - scrollHeight;
-        scrollEl.scrollTop = scrollTop + added;
-      });
-    });
-  }, [messages, scrollContainerRef]);
-
   // Auto-trigger load more when user scrolls near the top.
-  // Only trigger when user scrolls FROM below threshold TO at top (not on initial load when already at top).
+  // Attaches to a single scroll container found by walking down from scrollContainerRef.
+  // No direction check — fire whenever scrollTop <= threshold. Grace period + throttle
+  // prevent spurious triggers on attach and rapid re-triggers.
   const lastLoadMoreRef = useRef(0);
+  const LOAD_MORE_THROTTLE_MS = 1000;
+  const GRACE_PERIOD_MS = 800;
   const attachTimeRef = useRef(0);
-  const prevScrollTopByEl = useRef<WeakMap<HTMLElement, number>>(new WeakMap());
-  const LOAD_MORE_THROTTLE_MS = 400;
-  const GRACE_PERIOD_MS = 800; // Ignore scroll events shortly after attach (layout/initial paint)
 
   useEffect(() => {
     const container = scrollContainerRef?.current;
-    const root = container ?? document.querySelector('.copilot-chat-container');
-    if (!(root instanceof HTMLElement)) return;
+    if (!(container instanceof HTMLElement)) return;
 
-    const handleScroll = (el: HTMLElement) => {
-      const now = Date.now();
-      if (now - attachTimeRef.current < GRACE_PERIOD_MS) return; // Ignore initial layout scrolls
-      const { scrollTop } = el;
-      const prev = prevScrollTopByEl.current.get(el);
-      prevScrollTopByEl.current.set(el, scrollTop);
-      // Only trigger when THIS element scrolled from below threshold to at top (not on initial render)
-      if (scrollTop > SCROLL_TOP_THRESHOLD) return;
-      if (prev === undefined || prev <= SCROLL_TOP_THRESHOLD) return; // first event or was already at top
-      if (now - lastLoadMoreRef.current < LOAD_MORE_THROTTLE_MS) return;
-      lastLoadMoreRef.current = now;
-      loadMore();
-    };
-
-    const attachToAll = (candidates: HTMLElement[]) => {
+    const attach = (scrollEl: HTMLElement) => {
       attachTimeRef.current = Date.now();
-      const cleanups: (() => void)[] = [];
-      for (const el of candidates) {
-        prevScrollTopByEl.current.set(el, el.scrollTop); // Initialize with current position
-        const handler = () => handleScroll(el);
-        el.addEventListener('scroll', handler, { passive: true });
-        cleanups.push(() => el.removeEventListener('scroll', handler));
-      }
-      return () => cleanups.forEach((c) => c());
+
+      const handleScroll = () => {
+        const now = Date.now();
+        if (now - attachTimeRef.current < GRACE_PERIOD_MS) return;
+        if (scrollEl.scrollTop > SCROLL_TOP_THRESHOLD) return;
+        if (now - lastLoadMoreRef.current < LOAD_MORE_THROTTLE_MS) return;
+        lastLoadMoreRef.current = now;
+        loadMore();
+      };
+
+      scrollEl.addEventListener('scroll', handleScroll, { passive: true });
+      return () => scrollEl.removeEventListener('scroll', handleScroll);
     };
 
-    const run = () => {
-      const candidates = collectScrollCandidates(container ?? null);
-      if (candidates.length > 0) {
-        return attachToAll(candidates);
-      }
-      return undefined;
-    };
+    const scrollEl = findScrollContainer(container);
+    if (scrollEl) return attach(scrollEl);
 
-    let cleanup = run();
-    if (cleanup) return cleanup;
-
-    // Wait for scroll containers to appear (CopilotChat renders async)
+    // CopilotChat renders async — wait for scroll container to appear
+    let detach: (() => void) | undefined;
     let timeoutId: ReturnType<typeof setTimeout>;
-    let timeoutId2: ReturnType<typeof setTimeout>;
     const tryAttach = () => {
-      if (cleanup) return;
-      cleanup = run();
-      if (cleanup) {
+      if (detach) return;
+      const el = findScrollContainer(container);
+      if (el) {
+        detach = attach(el);
         observer.disconnect();
         clearTimeout(timeoutId);
-        clearTimeout(timeoutId2);
       }
     };
     const observer = new MutationObserver(tryAttach);
-    observer.observe(root, { childList: true, subtree: true });
-    timeoutId = setTimeout(tryAttach, 400);
-    timeoutId2 = setTimeout(tryAttach, 1200);
+    observer.observe(container, { childList: true, subtree: true });
+    timeoutId = setTimeout(tryAttach, 800);
     return () => {
       observer.disconnect();
       clearTimeout(timeoutId);
-      clearTimeout(timeoutId2);
-      cleanup?.();
+      detach?.();
     };
   }, [scrollContainerRef, loadMore, messages.length]);
 

@@ -215,6 +215,8 @@ copilot-runtime-server/
 │   └── add_parent_run_id.sql
 │
 ├── scripts/                     # Utility scripts
+│   ├── load-history.js          # Debug history loading
+│   └── debug-load-history-order.js  # Debug message ordering (event sequence, message order)
 │
 └── public/                      # Static files
 ```

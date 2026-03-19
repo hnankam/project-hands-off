@@ -623,6 +623,7 @@ const AuxAgentMessageCard: React.FC<{
                   fontSize: '13px',
                   color: textColor,
                   lineHeight: 1.6,
+                  fontFamily: "Menlo, Monaco, Consolas, 'Courier New', monospace",
                 }}
               >
                 {renderedContent}

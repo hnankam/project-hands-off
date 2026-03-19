@@ -37,7 +37,8 @@ export type CustomScrollToBottomButtonProps = React.ButtonHTMLAttributes<HTMLBut
  * CustomScrollToBottomButton - Themed scroll-to-bottom button
  */
 export const CustomScrollToBottomButton: React.FC<CustomScrollToBottomButtonProps> = (props) => {
-  const { className, style, children: _children, onClick, ...rest } = props;
+  const { className, style, children: _children, onClick: _onClick, ...rest } = props;
+  void _onClick;
 
   // Note: We intentionally ignore children passed by CopilotKit to use our custom icon design
   void _children;
@@ -49,20 +50,11 @@ export const CustomScrollToBottomButton: React.FC<CustomScrollToBottomButtonProp
 
   const [isHovered, setIsHovered] = useState(false);
 
-  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    const ts = Date.now();
-    const hasRestOnClick = 'onClick' in rest;
-    console.log('[ScrollToBottom] button clicked', {
-      ts,
-      hasScrollToBottom: !!scrollToBottom,
-      hasRestOnClick,
-      restKeys: Object.keys(rest),
-    });
+  const handleClick = (_e: React.MouseEvent<HTMLButtonElement>) => {
     if (scrollToBottom) {
       scrollToBottom(true);
-    } else if (onClick) {
-      onClick(e);
     }
+    // Do NOT fall back to CopilotKit's onClick — it uses smooth scroll
   };
 
   return (

@@ -133,6 +133,22 @@ export const useProgressCardCollapse = (): void => {
     // Run initially to process any existing cards
     updateProgressCards();
 
+    // Smart interval: only run when cards exist, and only start after first card appears
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const startIntervalIfNeeded = () => {
+      if (intervalId !== null) return;
+      const hasCards = document.querySelector(SELECTOR_PROGRESS_CARD) !== null;
+      if (hasCards) {
+        intervalId = setInterval(() => {
+          const allCards = document.querySelectorAll(SELECTOR_PROGRESS_CARD);
+          if (allCards.length > 0) {
+            updateProgressCards();
+          }
+        }, 500);
+      }
+    };
+    startIntervalIfNeeded();
+
     // Find the chat container to scope the observer
     const chatContainer = document.querySelector(CHAT_CONTAINER_SELECTOR);
     const observerTarget = chatContainer || document.body;
@@ -143,10 +159,11 @@ export const useProgressCardCollapse = (): void => {
       if (debounceTimer) {
         clearTimeout(debounceTimer);
       }
-      
+
       // Debounce: Wait for mutations to settle before updating
       debounceTimer = setTimeout(() => {
         updateProgressCards();
+        startIntervalIfNeeded(); // Start interval once first card appears
       }, MUTATION_DEBOUNCE_MS);
     });
 
@@ -155,14 +172,6 @@ export const useProgressCardCollapse = (): void => {
       childList: true,
       subtree: true,
     });
-
-    // Smart interval: only run when cards exist
-    const intervalId = setInterval(() => {
-      const allCards = document.querySelectorAll(SELECTOR_PROGRESS_CARD);
-      if (allCards.length > 0) {
-        updateProgressCards();
-      }
-    }, 500); // Check every 500ms (reduced from 100ms for better performance)
 
     // Cleanup interval for orphaned card references
     const cleanupIntervalId = setInterval(() => {
@@ -175,7 +184,7 @@ export const useProgressCardCollapse = (): void => {
         clearTimeout(debounceTimer);
       }
       observer.disconnect();
-      clearInterval(intervalId);
+      if (intervalId !== null) clearInterval(intervalId);
       clearInterval(cleanupIntervalId);
     };
   }, []); // Empty deps - run once on mount

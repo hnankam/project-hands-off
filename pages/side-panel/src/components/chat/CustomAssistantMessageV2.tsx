@@ -7,7 +7,8 @@
 import * as React from 'react';
 import { useMemo, useCallback, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { CopilotChatAssistantMessage, useCopilotChat, deleteMessagesFromBackend } from '../../hooks/copilotkit';
+import { CopilotChatAssistantMessage, deleteMessagesFromBackend } from '../../hooks/copilotkit';
+import { useMessageOperations } from '../../context/MessageOperationsContext';
 import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
 import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';
 import { 
@@ -19,8 +20,12 @@ import {
   CustomReadAloudButton,
 } from './slots/CustomAssistantMessageButtons';
 import { ExploreAccordionToolCallsView } from './ExploreAccordionToolCallsView';
-import { useStorage } from '@extension/shared';
+import { useStorage, debug } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
+
+// [FREEZE-DEBUG] module-level render counter shared across all instances
+let _assistantMsgRenderCount = 0;
+let _assistantMsgFirstRenderTime = 0;
 
 type AssistantMessageProps = React.ComponentProps<typeof CopilotChatAssistantMessage>;
 
@@ -85,8 +90,24 @@ type AssistantMessageProps = React.ComponentProps<typeof CopilotChatAssistantMes
  * - ... (all other standard HTML div attributes)
  */
 const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (props) => {
+  // [FREEZE-DEBUG] per-instance render counter
+  const instanceRenderRef = React.useRef(0);
+  instanceRenderRef.current += 1;
+  _assistantMsgRenderCount += 1;
+  if (_assistantMsgFirstRenderTime === 0) _assistantMsgFirstRenderTime = performance.now();
+  if (_assistantMsgRenderCount % 500 === 0) {
+    debug.log(
+      `[FREEZE-DEBUG] CustomAssistantMessageV2 total renders: ${_assistantMsgRenderCount}`,
+      `| this instance renders: ${instanceRenderRef.current}`,
+      `| msg id: ${(props.message as any)?.id?.slice(0, 8)}`,
+      `| elapsed: ${(performance.now() - _assistantMsgFirstRenderTime).toFixed(0)}ms`,
+    );
+  }
+
   const [copied, setCopied] = useState(false);
-  const { reloadMessages, setMessages } = useCopilotChat();
+  // Use context instead of useCopilotChat() — avoids subscribing every message component
+  // to the global messages state (which causes all 200 components to re-render per SSE event).
+  const { getMessages, setMessages, reloadMessages } = useMessageOperations();
   const sessionId = useChatSessionIdSafe();
   const [isHovered, setIsHovered] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -132,7 +153,10 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
     return textContent.trim();
   }, []);
 
-  // Determine if this message is the last in its assistant series
+  // Determine if this message is the last in its assistant series.
+  // Deps use message?.id and messages?.length (not the full messages reference) so this
+  // only recomputes when messages are structurally added/removed — NOT on every streaming
+  // content delta that creates a new array reference but doesn't change message count.
   const { isLastInSeries, assistantSeries } = useMemo(() => {
     if (!message || !messages || messages.length === 0) {
       return { isLastInSeries: true, assistantSeries: [message] };
@@ -191,7 +215,8 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
       isLastInSeries: isLast,
       assistantSeries: assistantGroup,
     };
-  }, [message, messages, isRunning]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message?.id, messages?.length, isRunning]);
 
   // Aggregate content from all assistant messages in the series
   const aggregatedSeriesContent = useMemo(() => {
@@ -238,52 +263,47 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
 
   // Custom regenerate handler that filters messages correctly (deletes and retries)
   const handleRegenerate = useCallback(() => {
-    if (!message?.id || !messages) return;
-    
-    // For assistant messages: find the user message that triggered this assistant response
-    // Then reload from that user message (which will exclude this assistant response and subsequent messages)
-    const messageIndex = messages.findIndex((m: any) => m.id === message.id);
+    if (!message?.id) return;
+    const currentMessages = getMessages();
+    if (!currentMessages.length) return;
+
+    const messageIndex = currentMessages.findIndex((m: any) => m.id === message.id);
     if (messageIndex === -1) return;
-    
-    // Find the previous user message before this assistant message
+
     let userMessageIndex = -1;
     for (let i = messageIndex - 1; i >= 0; i--) {
-      const role = (messages[i] as any)?.role;
-      if (role === 'user') {
+      if ((currentMessages[i] as any)?.role === 'user') {
         userMessageIndex = i;
         break;
       }
     }
-    
+
     if (userMessageIndex !== -1) {
-      const userMessage = messages[userMessageIndex];
+      const userMessage = currentMessages[userMessageIndex];
       if (userMessage?.id) {
         reloadMessages(userMessage.id);
       }
     } else {
-      // Fallback: reload from this assistant message (will find user message in reloadMessages)
       reloadMessages(message.id);
     }
-  }, [message, messages, reloadMessages]);
+  }, [message?.id, getMessages, reloadMessages]);
 
   // Delete this assistant message
   const handleDelete = useCallback(async () => {
     setContextMenu(null);
-    if (!message?.id || !messages) return;
-    const currentMessages = messages as any[];
+    if (!message?.id) return;
+    const currentMessages = getMessages() as any[];
     const messageIndex = currentMessages.findIndex((m: any) => m.id === message.id);
     if (messageIndex === -1) return;
-    const messageIdsToDelete = [message.id];
     try {
       if (sessionId) {
-        await deleteMessagesFromBackend(sessionId, messageIdsToDelete);
+        await deleteMessagesFromBackend(sessionId, [message.id]);
       }
-      const updatedMessages = currentMessages.filter((_, i) => i !== messageIndex);
-      setMessages(updatedMessages);
+      setMessages(currentMessages.filter((_, i) => i !== messageIndex));
     } catch (error) {
       console.error('[CustomAssistantMessageV2] Error deleting message:', error);
     }
-  }, [message, messages, setMessages, sessionId]);
+  }, [message?.id, getMessages, setMessages, sessionId]);
 
   // Close context menu when clicking outside the dropdown
   useEffect(() => {

@@ -170,7 +170,7 @@ async def load_mcp_server_tools(server_id: str, request: LoadToolsRequest):
         try:
             tools_result = await asyncio.wait_for(
                 mcp_server.list_tools(),
-                timeout=10.0
+                timeout=30.0
             )
                         
             # Handle both list and object with tools attribute

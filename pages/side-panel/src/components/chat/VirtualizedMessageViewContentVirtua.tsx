@@ -21,24 +21,23 @@ import { CustomCursor } from './slots';
 /** Px to render before/after viewport. Higher = more prerender for smoother scroll; Virtua default 200. */
 const BUFFER_SIZE = 2000;
 
-/** Item size hint for unmeasured items. Omit for auto-estimation, or set for stability. */
-const ITEM_SIZE_HINT: number | undefined = 50;
+/** Item size hint for unmeasured items. Omit for auto-estimation (recommended for dynamic content). */
+const ITEM_SIZE_HINT: number | undefined = undefined;
 
 /** Number of recent messages to keep mounted when off-screen (avoids unmount during scroll). */
-const KEEP_MOUNTED_COUNT = 250;
+const KEEP_MOUNTED_COUNT = 1000;
 
 /** First N indices to always keep mounted - prevents Virtua from truncating scroll range at top. */
 const KEEP_MOUNTED_FIRST = 5;
 
-/** Px from bottom above which we use instant scroll (avoids slow animation + blank during long smooth scroll). */
-const SMOOTH_SCROLL_MAX_DISTANCE_PX = 600;
 
 /**
  * Find the scroll container that actually contains our list.
  * Walk UP from our element to find the nearest ancestor with overflow-y that scrolls.
  */
 function findScrollAncestor(element: HTMLElement | null): HTMLElement | null {
-  let el: HTMLElement | null = element;
+  // Start from parentElement — skip the element itself (it has overflow-y:visible, not the scroll container)
+  let el: HTMLElement | null = element?.parentElement ?? null;
   while (el) {
     const style = getComputedStyle(el);
     if (
@@ -81,27 +80,40 @@ export function VirtualizedMessageViewContentVirtua({
 
   const registerScrollToBottom = useRegisterScrollToBottom();
   React.useEffect(() => {
-    if (!scrollElement) return;
-    const scrollToBottom = (smooth = true) => {
+    const scrollToBottom = () => {
       const lastIndex = messageCountRef.current - 1;
       if (lastIndex < 0) return;
-      const el = scrollElementRef.current;
-      const distanceToBottom = el
-        ? el.scrollHeight - el.clientHeight - el.scrollTop
-        : Infinity;
-      // For long distances, use instant scroll - smooth scroll from top causes slow animation
-      // and blank/rendering lag as Virtua struggles to render during the scroll.
-      const useSmooth =
-        smooth && distanceToBottom <= SMOOTH_SCROLL_MAX_DISTANCE_PX;
       const v = virtualizerRef.current;
+      const el = scrollElementRef.current;
       if (v) {
-        v.scrollToIndex(lastIndex, { smooth: useSmooth });
+        v.scrollToIndex(lastIndex, { smooth: false });
       } else if (el) {
-        el.scrollTo({ top: el.scrollHeight, behavior: useSmooth ? 'smooth' : 'auto' });
+        el.scrollTo({ top: el.scrollHeight, behavior: 'auto' });
       }
     };
     return registerScrollToBottom(scrollToBottom);
-  }, [scrollElement, registerScrollToBottom]);
+  }, [registerScrollToBottom]);
+
+  // When messages are prepended (load-more history), scroll to restore position.
+  // Strategy: track first-message-ID to detect prepend, and use ELEMENT count delta
+  // as the scrollToIndex target — element indices map 1:1 to Virtua's rendered list.
+  // Deps use [firstMessageId, messageElements.length] so this only fires on structural
+  // changes, not on every streaming render.
+  const prevFirstMsgIdRef = React.useRef<string | undefined>(undefined);
+  const prevElementCountRef = React.useRef(0);
+  const firstMessageId = messages[0]?.id;
+  React.useLayoutEffect(() => {
+    const prevFirstId = prevFirstMsgIdRef.current;
+    const prevCount = prevElementCountRef.current;
+    prevFirstMsgIdRef.current = firstMessageId;
+    prevElementCountRef.current = messageElements.length;
+    if (prevFirstId === undefined || prevFirstId === firstMessageId) return;
+    // First message changed → messages were prepended
+    const addedElements = messageElements.length - prevCount;
+    if (addedElements > 0) {
+      virtualizerRef.current?.scrollToIndex(addedElements, { smooth: false });
+    }
+  }, [firstMessageId, messageElements.length]);
 
   const showCursor = isRunning && messages[messages.length - 1]?.role !== 'reasoning';
 
@@ -126,6 +138,7 @@ export function VirtualizedMessageViewContentVirtua({
       <div
         ref={listContainerRef}
         className="copilotKitMessages cpk:flex cpk:flex-col"
+        style={{ overflowY: 'visible' }}
         data-testid="copilot-message-list-virtua-fallback"
       >
         {messageElements.map((el, i) => (
@@ -145,6 +158,7 @@ export function VirtualizedMessageViewContentVirtua({
     <div
       ref={listContainerRef}
       className="copilotKitMessages cpk:flex cpk:flex-col"
+      style={{ overflowY: 'visible' }}
       data-testid="copilot-message-list-virtua"
     >
       <Virtualizer
@@ -152,9 +166,9 @@ export function VirtualizedMessageViewContentVirtua({
         data={messageElements}
         scrollRef={scrollElementRef as React.RefObject<HTMLElement | null>}
         bufferSize={BUFFER_SIZE}
-        itemSize={ITEM_SIZE_HINT}
+        {...(ITEM_SIZE_HINT !== undefined && { itemSize: ITEM_SIZE_HINT })}
         keepMounted={keepMounted}
-        shift={true}
+        shift={false}
       >
         {(el: React.ReactElement, i: number) => (
           <div key={el?.key ?? i} data-index={i}>

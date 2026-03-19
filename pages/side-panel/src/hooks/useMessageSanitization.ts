@@ -2,6 +2,10 @@ import { useRef, useMemo, useCallback, useEffect } from 'react';
 import { computeMessagesSignature } from '../utils/sanitizationHelper';
 import { debug } from '@extension/shared';
 
+// [FREEZE-DEBUG] module-level counters (survive re-renders without ref)
+let _saveRefEffectCount = 0;
+let _restoreRefEffectCount = 0;
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -260,24 +264,40 @@ export const useMessageSanitization = (
    * Thinking messages contain <think> or <thinking> tags.
    * Caches results to avoid redundant filtering on reference-only changes.
    */
+  // [FREEZE-DEBUG] filteredMessages memo call counter
+  const filterMemoCallRef = useRef(0);
+  const filterCacheHitRef = useRef(0);
+
   const filteredMessages = useMemo(() => {
+    filterMemoCallRef.current += 1;
+    const callNum = filterMemoCallRef.current;
+
     if (!messages || messages.length === 0) {
       previousMessagesRef.current = [];
       cachedFilteredRef.current = { messages: [], filtered: [] };
       return [];
     }
 
-    // If only reference changed but content identical, return cached
-    if (previousMessagesRef.current !== messages && 
+    // If only reference changed but elements are identical objects, return cached
+    if (previousMessagesRef.current !== messages &&
         cachedFilteredRef.current.messages.length === messages.length) {
       const contentUnchanged = messages.every((msg, idx) => {
         const cachedMsg = cachedFilteredRef.current.messages[idx];
-        return msg === cachedMsg || 
-               (msg?.id === cachedMsg?.id && 
-                JSON.stringify(msg?.content) === JSON.stringify(cachedMsg?.content));
+        // Use reference equality first (fast path), then fall back to ID comparison.
+        // Avoid JSON.stringify here — it's O(content_size) per message and runs on
+        // every streaming update, causing hundreds of expensive serializations per load.
+        return msg === cachedMsg || msg?.id === cachedMsg?.id;
       });
 
       if (contentUnchanged) {
+        filterCacheHitRef.current += 1;
+        if (callNum % 200 === 0) {
+          debug.log(
+            `[FREEZE-DEBUG] filteredMessages memo call #${callNum}`,
+            `| CACHE HIT (${filterCacheHitRef.current} total hits)`,
+            `| msgs: ${messages.length}`,
+          );
+        }
         previousMessagesRef.current = messages;
         return cachedFilteredRef.current.filtered;
       }
@@ -287,7 +307,18 @@ export const useMessageSanitization = (
     const filtered = messages.filter(message => {
       const { content } = message;
       
-      if (content === undefined || content === null) return false;
+      if (content === undefined || content === null) {
+        // Allow tool-call-only assistant messages (null content but has toolCalls) so
+        // their tool call cards are rendered between user messages instead of being invisible.
+        if (
+          message.role === 'assistant' &&
+          Array.isArray((message as any).toolCalls) &&
+          (message as any).toolCalls.length > 0
+        ) {
+          return true;
+        }
+        return false;
+      }
       
       if (typeof content === 'string') {
         // Filter out empty strings
@@ -309,21 +340,10 @@ export const useMessageSanitization = (
       }
       
       if (typeof content === 'object' && content !== null) {
-        try {
-          const contentStr = JSON.stringify(content);
-          // Similar logic for object content
-          const hasThinkTag = contentStr.includes('<think>') || contentStr.includes('<thinking>');
-          if (hasThinkTag) {
-            const withoutThinking = contentStr
-              .replace(/<think>[\s\S]*?<\/think>/gi, '')
-              .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
-              .trim();
-            return withoutThinking.length > 2; // Account for "{}"
-          }
-          return true;
-        } catch {
-          return false; // Can't stringify, filter out
-        }
+        // Object content (multimodal arrays, tool results) never contains raw thinking
+        // block tags — those only appear in assistant string messages. Skip the expensive
+        // JSON.stringify check here; it was serializing entire tool results on every render.
+        return true;
       }
       
       return true;
@@ -522,16 +542,20 @@ export const useMessageSanitization = (
    * PERFORMANCE: Only updates if counts actually changed
    */
   useEffect(() => {
-    // Count messages by role (only user and assistant)
-    const userCount = filteredMessages.filter(msg => msg?.role === 'user').length;
-    const assistantCount = filteredMessages.filter(msg => msg?.role === 'assistant').length;
-    
+    let userCount = 0;
+    let assistantCount = 0;
+    for (const msg of filteredMessages) {
+      if (!msg) continue;
+      if (msg.role === 'user') userCount++;
+      else if (msg.role === 'assistant') assistantCount++;
+    }
+
     if (userCount !== previousUserCountRef.current || assistantCount !== previousAssistantCountRef.current) {
       setMessageCounts({ userCount, assistantCount });
       previousUserCountRef.current = userCount;
       previousAssistantCountRef.current = assistantCount;
     }
-  }, [filteredMessages, setMessageCounts, messages]);
+  }, [filteredMessages, setMessageCounts]);
 
   return {
     filteredMessages,

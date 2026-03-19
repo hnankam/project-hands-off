@@ -669,29 +669,50 @@ async def sanitize_tool_message_alignment(
             pass
         sanitized_messages.append(msg)
 
-    # --- Re-validate tool_use/tool_result pairs after skipping empty messages ---
-    # Now that we have the actual message list (with empty messages skipped),
-    # we need to validate that each tool_use has a tool_result immediately after
-    # using the NEW indices
-    
-    # Rebuild tool_return_occurrences with correct indices
-    tool_return_occurrences_reindexed: dict[str, list[int]] = defaultdict(list)
-    for _idx, _msg in enumerate(sanitized_messages):
-        for part in getattr(_msg, 'parts', []) or []:
-            if _is_tool_result_part(part):
-                tool_call_id = _get_tool_return_id(part)
-                if tool_call_id:
-                    tool_return_occurrences_reindexed[tool_call_id].append(_idx)
-    
-    # Validate tool_use blocks have tool_result immediately after
+    # --- Reorder tool_use/tool_result pairs so results always immediately follow calls ---
+    # Anthropic requires tool_use blocks to have tool_result blocks immediately after.
+    # Instead of dropping out-of-order pairs, we reorder messages to satisfy this constraint.
+    # Only truly orphaned tool_use blocks (with no result anywhere) are dropped.
+
+    reordered: list[ModelMessage] = list(sanitized_messages)
+    i = 0
+    while i < len(reordered) - 1:
+        msg = reordered[i]
+        call_ids = _iter_tool_call_ids(msg)
+        if not call_ids:
+            i += 1
+            continue
+
+        call_id_set = set(call_ids)
+        # Find the result message: first message after i that contains a result for any call id
+        result_pos: int | None = None
+        for j in range(i + 1, len(reordered)):
+            m = reordered[j]
+            for part in getattr(m, 'parts', []) or []:
+                if _is_tool_result_part(part):
+                    cid = _get_tool_return_id(part)
+                    if cid in call_id_set:
+                        result_pos = j
+                        break
+            if result_pos is not None:
+                break
+
+        if result_pos is not None and result_pos != i + 1:
+            logger.info(
+                f"Reordering: moving tool result message from position {result_pos} to {i + 1} "
+                f"(tool call ids: {call_ids})"
+            )
+            result_msg = reordered.pop(result_pos)
+            reordered.insert(i + 1, result_msg)
+        i += 1
+
+    # Drop any remaining orphaned tool_use blocks (no result at next position after reordering)
     revalidated_messages: list[ModelMessage] = []
-    for idx, msg in enumerate(sanitized_messages):
+    for idx, msg in enumerate(reordered):
         try:
             original_parts = (getattr(msg, 'parts', []) or [])
             filtered_parts: list[Any] = []
-            
             for part in original_parts:
-                # Check tool_use blocks
                 if isinstance(part, ToolCallPart):
                     cid = None
                     try:
@@ -700,44 +721,27 @@ async def sanitize_tool_message_alignment(
                             cid = str(cid)
                     except Exception:
                         pass
-                    
                     if cid is not None:
-                        # CRITICAL: Every tool_use must have tool_result immediately after
-                        occurrences = tool_return_occurrences_reindexed.get(cid, [])
-                        immediate_next_idx = idx + 1
-                        
-                        if not occurrences:
-                            # Only drop if we're NOT in the last message
-                            # (last message may be mid-execution, waiting for tool result)
-                            if idx < len(sanitized_messages) - 1:
+                        # Only validate for non-last messages (last may be mid-execution)
+                        if idx < len(reordered) - 1:
+                            next_msg = reordered[idx + 1]
+                            next_result_ids = {
+                                _get_tool_return_id(p)
+                                for p in (getattr(next_msg, 'parts', []) or [])
+                                if _is_tool_result_part(p)
+                            }
+                            if cid not in next_result_ids:
                                 logger.warning(
                                     f"Dropping orphaned tool_use with id={cid} at message {idx} "
-                                    "(no corresponding tool_result found)"
+                                    "(no corresponding tool_result found after reordering)"
                                 )
                                 continue
-                        elif immediate_next_idx not in occurrences:
-                            # Only drop if we're NOT in the last message
-                            if idx < len(sanitized_messages) - 1:
-                                next_occurrence = next((pos for pos in occurrences if pos > idx), None)
-                                if next_occurrence is None:
-                                    logger.warning(
-                                        f"Dropping tool_use with id={cid} at message {idx} "
-                                        "(tool_result missing after this call)"
-                                    )
-                                else:
-                                    logger.warning(
-                                        f"Dropping tool_use with id={cid} at message {idx} "
-                                        f"(tool_result appears at message {next_occurrence}, not immediately after)"
-                                    )
-                                continue
-                
                 filtered_parts.append(part)
-            
-            # Skip messages that have no parts after revalidation
+
             if not filtered_parts:
                 logger.warning(f"Skipping message {idx} - all parts removed during revalidation")
                 continue
-            
+
             if hasattr(msg, 'parts'):
                 try:
                     msg.parts = filtered_parts
@@ -745,9 +749,9 @@ async def sanitize_tool_message_alignment(
                     pass
         except Exception as e:
             logger.warning(f"Error revalidating message {idx}: {e}")
-        
+
         revalidated_messages.append(msg)
-    
+
     sanitized_messages = revalidated_messages
 
     # Continue with compaction on sanitized list

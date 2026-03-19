@@ -1,0 +1,27 @@
+{
+  "version": "0.1",
+  "configurations": [
+    {
+      "name": "Copilot Runtime Server (dev)",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--watch", "server.js"],
+      "cwd": "copilot-runtime-server",
+      "env": { "NODE_ENV": "development" },
+      "port": 3001
+    },
+    {
+      "name": "Pydantic AI Agent Server",
+      "runtimeExecutable": "uvicorn",
+      "runtimeArgs": ["main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"],
+      "cwd": "copilotkit-pydantic",
+      "port": 8001
+    },
+    {
+      "name": "Chrome Extension (all pages, turbo watch)",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["base-dev"],
+      "cwd": ".",
+      "port": null
+    }
+  ]
+}

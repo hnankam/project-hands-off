@@ -19,7 +19,8 @@
 
 import * as React from 'react';
 import { useMemo, useState, useCallback } from 'react';
-import { CopilotChatUserMessage, useCopilotChat, deleteMessagesFromBackend } from '../../hooks/copilotkit';
+import { CopilotChatUserMessage, deleteMessagesFromBackend } from '../../hooks/copilotkit';
+import { useMessageOperations } from '../../context/MessageOperationsContext';
 import { useStorage, persistenceLock } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
@@ -125,8 +126,13 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState('');
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
-  const { messages, setMessages, reloadMessages } = useCopilotChat();
+  // Use context instead of useCopilotChat() — avoids subscribing every message component
+  // to the global messages state (which causes all 200 components to re-render per SSE event).
+  const { getMessages, setMessages, reloadMessages } = useMessageOperations();
   const sessionId = useChatSessionIdSafe();
+  // Read messages lazily (only at interaction time) via getMessages() to avoid subscriptions.
+  // For render-time index tracking we keep the existing ref-based caching pattern below.
+  const messages = getMessages();
   
   // Stabilize message content for memoization dependencies
   const messageContentId = useMemo(() => {
@@ -615,7 +621,7 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
         // editButton and copyButton intentionally excluded - they change every render
         
         return (
-          <CopilotChatUserMessage.Container 
+          <CopilotChatUserMessage.Container
             className={containerClassName}
             style={containerStyles}
             onMouseEnter={() => setIsHovered(true)}
