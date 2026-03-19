@@ -1,6 +1,6 @@
 import type { FC, CSSProperties } from 'react';
 import * as React from 'react';
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState, useCallback, useEffect } from 'react';
 import { cn, Button, DropdownMenu, DropdownMenuItem, DropdownMenuSeparator, DropdownAccordion } from '@extension/ui';
 import { UsageDisplay } from '../menus/UsageDisplay';
 import type { CumulativeUsage, UsageData } from '../../hooks/useUsageStream';
@@ -101,6 +101,20 @@ export const StatusBar: FC<StatusBarProps> = memo(({
   configPanelOpen = false,
   moreOptionsMenu,
 }) => {
+  // Local copy feedback so icon updates immediately (avoids parent re-render delay)
+  const [showCopyFeedback, setShowCopyFeedback] = useState(false);
+  const handleCopySessionIdClick = useCallback((e: React.MouseEvent) => {
+    if (moreOptionsMenu) {
+      moreOptionsMenu.onCopySessionId(e);
+      setShowCopyFeedback(true);
+    }
+  }, [moreOptionsMenu]);
+  useEffect(() => {
+    if (!showCopyFeedback) return;
+    const t = setTimeout(() => setShowCopyFeedback(false), 2000);
+    return () => clearTimeout(t);
+  }, [showCopyFeedback]);
+
   // Get the current page URL from available sources
   const currentUrl = useMemo(() => {
     return contentState.current?.url || contentState.current?.pageURL || currentPageUrl || null;
@@ -399,30 +413,35 @@ export const StatusBar: FC<StatusBarProps> = memo(({
               </DropdownMenuItem>
             </DropdownAccordion>
             <DropdownMenuItem
-              onClick={moreOptionsMenu.onCopySessionId}
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleCopySessionIdClick(e);
+              }}
               isLight={moreOptionsMenu.isLight}
               className={cn(
                 'transition-all duration-200',
-                moreOptionsMenu.copiedSessionId && (moreOptionsMenu.isLight ? 'bg-green-50' : 'bg-green-900/20')
+                showCopyFeedback && (moreOptionsMenu.isLight ? 'bg-green-50' : 'bg-green-900/20')
               )}
             >
               <div className="flex items-center gap-2 w-full">
-                {moreOptionsMenu.copiedSessionId ? (
+                {showCopyFeedback ? (
                   <svg
-                    className={cn('h-3 w-3 flex-shrink-0 transition-all duration-200', moreOptionsMenu.isLight ? 'text-green-600' : 'text-green-400')}
+                    className={cn('h-4 w-4 flex-shrink-0 transition-all duration-200', moreOptionsMenu.isLight ? 'text-green-600' : 'text-green-400')}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
-                    strokeWidth={2.5}
+                    strokeWidth={2}
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     style={{ animation: 'scale-in 0.2s ease-out' }}
                   >
-                    <path d="M5 13l4 4L19 7" />
+                    <polyline points="20 6 9 17 4 12" />
                   </svg>
                 ) : (
                   <svg
-                    className={cn('h-3 w-3 flex-shrink-0 opacity-60', moreOptionsMenu.isLight ? 'text-gray-500' : 'text-gray-400')}
+                    className={cn('h-4 w-4 flex-shrink-0 opacity-60 transition-all duration-200', moreOptionsMenu.isLight ? 'text-gray-500' : 'text-gray-400')}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -436,9 +455,9 @@ export const StatusBar: FC<StatusBarProps> = memo(({
                 )}
                 <span className={cn(
                   'flex-1 transition-colors duration-200',
-                  moreOptionsMenu.copiedSessionId && (moreOptionsMenu.isLight ? 'text-green-700' : 'text-green-400')
+                  showCopyFeedback && (moreOptionsMenu.isLight ? 'text-green-700' : 'text-green-400')
                 )}>
-                  {moreOptionsMenu.copiedSessionId ? 'Session ID Copied!' : 'Copy Session ID'}
+                  {showCopyFeedback ? 'Session ID Copied!' : 'Copy Session ID'}
                 </span>
               </div>
             </DropdownMenuItem>

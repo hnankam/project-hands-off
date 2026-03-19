@@ -84,7 +84,7 @@ export function useSessionActions(
       try {
         await navigator.clipboard.writeText(currentSessionId);
         setCopiedSessionId(true);
-        setTimeout(() => setCopiedSessionId(false), 1500);
+        setTimeout(() => setCopiedSessionId(false), 2000);
       } catch (error) {
         console.error('[SessionActions] Failed to copy session ID:', error);
       }
