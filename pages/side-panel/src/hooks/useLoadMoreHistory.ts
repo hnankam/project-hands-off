@@ -180,9 +180,31 @@ function eventsToMessages(events: Array<Record<string, unknown>>): Message[] {
       const inputMessages = input?.messages ?? [];
       for (const msg of inputMessages) {
         if (msg?.id && !messageMap.has(msg.id)) {
+          // Skip activity messages (role: 'activity') — these are CopilotKit's rendered
+          // plan/graph card messages that were in the UI at run-start time.  Re-adding
+          // them from input.messages places them at the wrong position (end of chat) in
+          // load-more batches.  Activity messages must only be created by CopilotKit
+          // when it processes ACTIVITY_SNAPSHOT events via the live loadAndStreamHistory
+          // stream; they are handled separately below.
+          const role = (msg as { role?: string })?.role;
+          if (role === 'activity') continue;
           messageMap.set(msg.id, msg as Message);
           messages.push(msg as Message);
         }
+      }
+      continue;
+    }
+
+    // ACTIVITY_SNAPSHOT: create the activity message at the correct position within the
+    // batch so plan/graph cards from older runs appear in the right place when prepended.
+    if (type === 'ACTIVITY_SNAPSHOT') {
+      const messageId = event.messageId as string | undefined;
+      const activityType = event.activityType as string | undefined;
+      const content = event.content as Record<string, unknown> | undefined;
+      if (messageId && activityType && content && !messageMap.has(messageId)) {
+        const msg = { id: messageId, role: 'activity' as Message['role'], activityType, content } as Message;
+        messageMap.set(messageId, msg);
+        messages.push(msg);
       }
       continue;
     }

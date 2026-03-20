@@ -1610,15 +1610,18 @@ export class PostgresAgentRunner extends AgentRunner {
         }
 
         // ── Plan-card repositioning ───────────────────────────────────────────
-        // The agent emits the task_progress ACTIVITY_SNAPSHOT late (after several
-        // Databricks queries / text messages that follow create_plan). During history
-        // replay this causes the plan card to appear at the bottom of the run instead
-        // of right after the "Create Plan complete" tool call block.
+        // The agent emits task_progress ACTIVITY_SNAPSHOTs late — after text messages
+        // that follow create_plan, or in subsequent runs that merely report on plans
+        // created earlier. During history replay this causes plan cards to appear at
+        // the bottom of the run instead of before the run's text block.
         //
-        // Fix: find the last create_plan / update_plan_steps TOOL_CALL_START in the
-        // *original* run events, then find the first TEXT_MESSAGE_START that comes
-        // after it. Move the first task_progress ACTIVITY_SNAPSHOT (if any) to just
-        // before that text message in the *filtered* event array.
+        // Strategy:
+        // 1. If the run has a create_plan / update_plan_steps tool call, anchor the
+        //    insert point at the first TEXT_MESSAGE_START AFTER that tool call.
+        // 2. Otherwise (run only reports on older plans), anchor at the very first
+        //    TEXT_MESSAGE_START in the run.
+        // 3. Move ALL task_progress ACTIVITY_SNAPSHOTs that currently sit at or after
+        //    that anchor to just before it — preserving their relative order.
         const PLAN_CREATION_TOOLS = new Set(['create_plan', 'update_plan_steps']);
         let lastPlanCreationOriginalIdx = -1;
         for (let i = 0; i < runEvents.length; i++) {
@@ -1631,10 +1634,12 @@ export class PostgresAgentRunner extends AgentRunner {
           }
         }
 
-        if (lastPlanCreationOriginalIdx >= 0) {
-          // Find the messageId of the first TEXT_MESSAGE_START after plan creation
+        {
+          // Determine the anchor: first TEXT_MESSAGE_START after plan creation (if any),
+          // or simply the first TEXT_MESSAGE_START in the run.
           let insertBeforeMessageId = null;
-          for (let i = lastPlanCreationOriginalIdx + 1; i < runEvents.length; i++) {
+          const searchFrom = lastPlanCreationOriginalIdx >= 0 ? lastPlanCreationOriginalIdx + 1 : 0;
+          for (let i = searchFrom; i < runEvents.length; i++) {
             const e = runEvents[i];
             if (e.type === 'TEXT_MESSAGE_START' || e.type === EventType.TEXT_MESSAGE_START) {
               insertBeforeMessageId = e.messageId;
@@ -1643,24 +1648,35 @@ export class PostgresAgentRunner extends AgentRunner {
           }
 
           if (insertBeforeMessageId) {
-            const firstTaskProgressIdx = filtered.findIndex(
+            const insertBeforeIdx = filtered.findIndex(
               e =>
-                (e.type === 'ACTIVITY_SNAPSHOT' || e.type === EventType.ACTIVITY_SNAPSHOT) &&
-                e.activityType === 'task_progress'
+                (e.type === 'TEXT_MESSAGE_START' || e.type === EventType.TEXT_MESSAGE_START) &&
+                e.messageId === insertBeforeMessageId
             );
-            if (firstTaskProgressIdx >= 0) {
-              const insertBeforeIdx = filtered.findIndex(
-                e =>
-                  (e.type === 'TEXT_MESSAGE_START' || e.type === EventType.TEXT_MESSAGE_START) &&
-                  e.messageId === insertBeforeMessageId
-              );
-              if (insertBeforeIdx >= 0 && insertBeforeIdx < firstTaskProgressIdx) {
-                // Splice the snapshot out of its original position and inject it earlier
-                const snapshot = filtered[firstTaskProgressIdx];
+
+            if (insertBeforeIdx >= 0) {
+              // Collect ALL task_progress snapshots that currently sit AFTER the anchor
+              const snapshotsToMove = [];
+              const keptIndices = new Set();
+              for (let i = 0; i < filtered.length; i++) {
+                const e = filtered[i];
+                if (
+                  i >= insertBeforeIdx &&
+                  (e.type === 'ACTIVITY_SNAPSHOT' || e.type === EventType.ACTIVITY_SNAPSHOT) &&
+                  e.activityType === 'task_progress'
+                ) {
+                  snapshotsToMove.push(e);
+                  keptIndices.add(i); // mark for removal from original slot
+                }
+              }
+
+              if (snapshotsToMove.length > 0) {
                 const reordered = [];
                 for (let i = 0; i < filtered.length; i++) {
-                  if (i === firstTaskProgressIdx) continue; // skip original slot
-                  if (i === insertBeforeIdx) reordered.push(snapshot); // inject early
+                  if (keptIndices.has(i)) continue; // skip — will be injected earlier
+                  if (i === insertBeforeIdx) {
+                    for (const snap of snapshotsToMove) reordered.push(snap);
+                  }
                   reordered.push(filtered[i]);
                 }
                 return reorderToolCallResults(reordered);
