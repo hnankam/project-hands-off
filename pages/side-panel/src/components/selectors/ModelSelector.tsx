@@ -10,6 +10,8 @@ interface ModelSelectorProps {
   selectedAgent?: string;
   isLoadingSession?: boolean;
   agents?: Array<{ id: string; allowedModels?: string[] | null }>;
+  /** Match ContextSelector compact + add chip contrast in CustomInputV2 */
+  inlineInput?: boolean;
 }
 
 interface Model {
@@ -19,7 +21,15 @@ interface Model {
   enabled?: boolean;
 }
 
-export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedModel, onModelChange, selectedAgent, isLoadingSession = false, agents }) => {
+export const ModelSelector: React.FC<ModelSelectorProps> = ({
+  isLight,
+  selectedModel,
+  onModelChange,
+  selectedAgent,
+  isLoadingSession = false,
+  agents,
+  inlineInput = false,
+}) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const [models, setModels] = React.useState<Model[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -226,7 +236,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
   // Show loading state
   if (loading) {
     return (
-      <div className="flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs opacity-50">
+      <div
+        className={cn(
+          'flex min-w-0 items-center gap-1.5 px-2 opacity-50',
+          inlineInput
+            ? 'mt-[3px] h-[22px] rounded-xl py-0 text-[12px] leading-tight'
+            : 'h-[26px] rounded-md py-1 text-xs',
+        )}>
         <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
           <path d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
         </svg>
@@ -241,7 +257,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
     const message = hasTeam ? 'Team has no models configured' : 'Select a team to load models';
     
     return (
-      <div className="flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs opacity-50">
+      <div
+        className={cn(
+          'flex min-w-0 items-center gap-1.5 px-2 opacity-50',
+          inlineInput
+            ? 'mt-[3px] h-[22px] rounded-xl py-0 text-[12px] leading-tight'
+            : 'h-[26px] rounded-md py-1 text-xs',
+        )}>
         <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
           <path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
@@ -251,14 +273,31 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
   }
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="relative chat-bar-agent-model-selector" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          'flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs',
-          isLight 
-            ? selectedModelData ? 'text-gray-600' : 'text-gray-500'
-            : selectedModelData ? 'text-gray-500' : 'text-gray-400',
+          'flex min-w-0 items-center gap-1.5 px-2',
+          inlineInput && 'group',
+          inlineInput
+            ? 'mt-[3px] h-[22px] py-0 text-[12px] leading-tight [&_svg]:h-3 [&_svg]:w-3 [&_svg]:shrink-0'
+            : 'h-[26px] py-1 text-xs',
+          inlineInput ? 'rounded-xl transition-all' : 'rounded-md',
+          inlineInput
+            ? isLight
+              ? selectedModelData
+                ? 'bg-transparent text-gray-700 hover:bg-gray-900/[0.06]'
+                : 'bg-transparent text-gray-500 hover:bg-gray-900/[0.06]'
+              : selectedModelData
+                ? 'bg-transparent text-gray-300 hover:bg-white/[0.06]'
+                : 'bg-transparent text-gray-500 hover:bg-white/[0.06]'
+            : isLight
+              ? selectedModelData
+                ? 'text-gray-600'
+                : 'text-gray-500'
+              : selectedModelData
+                ? 'text-gray-500'
+                : 'text-gray-400',
         )}>
         <svg
           width="12"
@@ -279,10 +318,14 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
           {isTruncated && (
             <span
               className={cn(
-                'pointer-events-none absolute bottom-0 right-0 top-0 w-8',
+                'pointer-events-none absolute top-0 right-0 bottom-0 w-8 transition-[background-image] duration-150',
                 isLight
-                  ? 'bg-gradient-to-l from-gray-50 via-gray-50/80 to-transparent'
-                  : 'bg-gradient-to-l from-[#151C24] via-[#151C24]/80 to-transparent',
+                  ? inlineInput
+                    ? 'bg-gradient-to-l from-[#f9fafb] via-[#f9fafb]/85 to-transparent group-hover:from-[#ebecf0] group-hover:via-[#ebecf0]/85'
+                    : 'bg-gradient-to-l from-gray-50 via-gray-50/80 to-transparent'
+                  : inlineInput
+                    ? 'bg-gradient-to-l from-[#151C24] via-[#151C24]/85 to-transparent group-hover:from-[#232a31] group-hover:via-[#232a31]/85'
+                    : 'bg-gradient-to-l from-[#151C24] via-[#151C24]/80 to-transparent',
               )}
             />
           )}
@@ -301,13 +344,20 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
         </svg>
       </button>
 
-      {/* Dropdown - Always mounted, visibility controlled with CSS */}
+      {/* Dropdown: animated outer + inner scroller; avoid flex-1 on inner (collapses when parent height is intrinsic). */}
       <div
         className={cn(
-          'absolute bottom-full left-0 z-[9999] mb-1 max-h-64 w-full min-w-[200px] overflow-y-auto rounded-md border shadow-lg',
+          'absolute bottom-full left-0 z-[9999] mb-1 max-h-64 min-w-full w-max max-w-[min(100vw-1.5rem,36rem)] overflow-hidden rounded-md border shadow-lg',
           isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
           isOpen ? 'pointer-events-auto model-selector-dropdown' : 'opacity-0 pointer-events-none'
         )}>
+        <div
+          className="recent-sessions-scroll max-h-64 overflow-y-auto overscroll-contain"
+          style={
+            {
+              '--table-scroll-bg': isLight ? '#f9fafb' : '#151C24',
+            } as React.CSSProperties
+          }>
         {models
           .filter(model => {
             if (model.enabled === false) return false;
@@ -323,7 +373,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
                 setIsOpen(false);
               }}
               className={cn(
-                'flex w-full flex-col items-start px-2.5 py-1.5 text-xs transition-colors',
+                'flex w-full min-w-0 flex-col items-start whitespace-normal px-2.5 py-1.5 text-left text-xs transition-colors',
                 selectedModel === model.id
                   ? isLight
                     ? 'bg-blue-50 text-blue-700'
@@ -332,10 +382,23 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
                     ? 'text-gray-600 hover:bg-gray-100'
                     : 'text-gray-500 hover:bg-gray-700',
               )}>
-              <div className="flex w-full items-center justify-between">
-                <span className={cn(selectedModel === model.id && 'font-medium')}>{model.label}</span>
+              <div className="flex w-full min-w-0 items-center justify-between gap-2">
+                <span
+                  className={cn(
+                    'min-w-0 flex-1 truncate whitespace-nowrap',
+                    selectedModel === model.id && 'font-medium',
+                  )}
+                >
+                  {model.label}
+                </span>
                 {selectedModel === model.id && (
-                  <svg width="12" height="12" fill="currentColor" viewBox="0 0 20 20">
+                  <svg
+                    className="flex-shrink-0"
+                    width="12"
+                    height="12"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
                     <path
                       fillRule="evenodd"
                       d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -344,10 +407,18 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
                   </svg>
                 )}
               </div>
-              <span className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>{model.provider}</span>
+              <span
+                className={cn(
+                  'whitespace-nowrap text-xs',
+                  isLight ? 'text-gray-500' : 'text-gray-400',
+                )}
+              >
+                {model.provider}
+              </span>
             </button>
           );
         })}
+        </div>
       </div>
     </div>
   );

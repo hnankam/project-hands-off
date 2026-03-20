@@ -7,7 +7,7 @@
 
 import type { FC } from 'react';
 import * as React from 'react';
-import { useState, useRef, memo } from 'react';
+import { useState, useRef, memo, useCallback, useEffect } from 'react';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 
 interface InlineThinkingBlockProps {
@@ -25,8 +25,32 @@ export const InlineThinkingBlock: FC<InlineThinkingBlockProps> = memo(({
 }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [isHovered, setIsHovered] = useState(false);
+  const [showTopFeather, setShowTopFeather] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
-  
+
+  const syncTopFeather = useCallback(() => {
+    const el = contentRef.current;
+    if (!el) {
+      setShowTopFeather(false);
+      return;
+    }
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    if (scrollHeight <= clientHeight + 1) {
+      setShowTopFeather(false);
+    } else {
+      setShowTopFeather(scrollTop > 2);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setShowTopFeather(false);
+      return;
+    }
+    const id = requestAnimationFrame(() => syncTopFeather());
+    return () => cancelAnimationFrame(id);
+  }, [isOpen, content, isComplete, syncTopFeather]);
+
   if (!content) return null;
   
   return (
@@ -122,6 +146,7 @@ export const InlineThinkingBlock: FC<InlineThinkingBlockProps> = memo(({
           <div style={{ position: 'relative' }}>
             <div
               ref={contentRef}
+              onScroll={syncTopFeather}
               className={`mb-4 text-xs opacity-80 recent-sessions-scroll ${
                 isComplete
                   ? 'max-h-80 overflow-y-auto overscroll-contain'
@@ -134,19 +159,18 @@ export const InlineThinkingBlock: FC<InlineThinkingBlockProps> = memo(({
               </div>
             </div>
             {isOpen && (
-              <div
-                className="thinking-block-feather"
-                style={{
-                  position: 'absolute',
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  height: 8,
-                  pointerEvents: 'none',
-                  zIndex: 10,
-                }}
-                aria-hidden
-              />
+              <>
+                <div
+                  className={`thinking-block-feather-top pointer-events-none absolute left-0 right-0 top-0 z-10 h-2 transition-opacity duration-150 ${
+                    showTopFeather ? 'opacity-100' : 'opacity-0'
+                  }`}
+                  aria-hidden
+                />
+                <div
+                  className="thinking-block-feather pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-2"
+                  aria-hidden
+                />
+              </>
             )}
           </div>
         </div>

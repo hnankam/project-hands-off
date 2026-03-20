@@ -143,9 +143,13 @@
 }
 
 /* ==========================================================
-   THINKING BLOCK FEATHER
-   Bottom gradient fade (scrollbar uses recent-sessions-scroll)
+   THINKING BLOCK FEATHERS
+   Match sessions panel archived / open list (scrollbar: recent-sessions-scroll)
    ========================================================== */
+
+.thinking-block-feather-top {
+  background: linear-gradient(to bottom, var(--thinking-block-feather-bg) 0%, var(--thinking-block-feather-bg) 20%, transparent 100%);
+}
 
 .thinking-block-feather {
   background: linear-gradient(to bottom, transparent 0%, var(--thinking-block-feather-bg) 80%, var(--thinking-block-feather-bg) 100%);

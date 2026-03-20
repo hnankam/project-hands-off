@@ -8,6 +8,8 @@ interface AgentSelectorProps {
   selectedAgent: string;
   isLoadingSession?: boolean;
   onAgentChange: (agent: string) => void;
+  /** Match ContextSelector compact + add chip contrast in CustomInputV2 */
+  inlineInput?: boolean;
 }
 
 interface Agent {
@@ -77,6 +79,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   selectedAgent,
   isLoadingSession = false,
   onAgentChange,
+  inlineInput = false,
 }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const [agents, setAgents] = React.useState<Agent[]>([]);
@@ -245,7 +248,13 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   // Show loading state
   if (loading) {
     return (
-      <div className="flex items-center gap-1.5 px-2 py-1 text-xs rounded-md h-[26px] opacity-50">
+      <div
+        className={cn(
+          'flex items-center gap-1.5 px-2 opacity-50',
+          inlineInput
+            ? 'mt-[3px] h-[22px] rounded-xl py-0 text-[12px] leading-tight'
+            : 'h-[26px] rounded-md py-1 text-xs',
+        )}>
         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
           <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
         </svg>
@@ -260,7 +269,13 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     const message = hasTeam ? 'Team has no agents configured' : 'Select a team to load agents';
     
     return (
-      <div className="flex items-center gap-1.5 px-2 py-1 text-xs rounded-md h-[26px] opacity-50">
+      <div
+        className={cn(
+          'flex items-center gap-1.5 px-2 opacity-50',
+          inlineInput
+            ? 'mt-[3px] h-[22px] rounded-xl py-0 text-[12px] leading-tight'
+            : 'h-[26px] rounded-md py-1 text-xs',
+        )}>
         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
           <path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
@@ -270,14 +285,31 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   }
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="relative chat-bar-agent-model-selector" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          'flex items-center gap-1.5 px-2 py-1 text-xs rounded-md h-[26px] min-w-0',
-          isLight
-            ? selectedAgentData ? 'text-gray-600' : 'text-gray-500'
-            : selectedAgentData ? 'text-gray-500' : 'text-gray-400'
+          'flex min-w-0 items-center gap-1.5 px-2',
+          inlineInput && 'group',
+          inlineInput
+            ? 'mt-[3px] h-[22px] py-0 text-[12px] leading-tight [&_svg]:h-3 [&_svg]:w-3 [&_svg]:shrink-0'
+            : 'h-[26px] py-1 text-xs',
+          inlineInput ? 'rounded-xl transition-all' : 'rounded-md',
+          inlineInput
+            ? isLight
+              ? selectedAgentData
+                ? 'bg-transparent text-gray-700 hover:bg-gray-900/[0.06]'
+                : 'bg-transparent text-gray-500 hover:bg-gray-900/[0.06]'
+              : selectedAgentData
+                ? 'bg-transparent text-gray-300 hover:bg-white/[0.06]'
+                : 'bg-transparent text-gray-500 hover:bg-white/[0.06]'
+            : isLight
+              ? selectedAgentData
+                ? 'text-gray-600'
+                : 'text-gray-500'
+              : selectedAgentData
+                ? 'text-gray-500'
+                : 'text-gray-400',
         )}
       >
         <span className="flex-shrink-0">
@@ -294,10 +326,14 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
           {isTruncated && (
             <span 
               className={cn(
-                'absolute right-0 top-0 bottom-0 w-8 pointer-events-none',
+                'pointer-events-none absolute top-0 right-0 bottom-0 w-8 transition-[background-image] duration-150',
                 isLight
-                  ? 'bg-gradient-to-l from-gray-50 via-gray-50/80 to-transparent'
-                  : 'bg-gradient-to-l from-[#151C24] via-[#151C24]/80 to-transparent'
+                  ? inlineInput
+                    ? 'bg-gradient-to-l from-[#f9fafb] via-[#f9fafb]/85 to-transparent group-hover:from-[#ebecf0] group-hover:via-[#ebecf0]/85'
+                    : 'bg-gradient-to-l from-gray-50 via-gray-50/80 to-transparent'
+                  : inlineInput
+                    ? 'bg-gradient-to-l from-[#151C24] via-[#151C24]/85 to-transparent group-hover:from-[#232a31] group-hover:via-[#232a31]/85'
+                    : 'bg-gradient-to-l from-[#151C24] via-[#151C24]/80 to-transparent',
               )}
             />
           )}
@@ -320,16 +356,24 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
         </svg>
       </button>
 
-      {/* Dropdown - Always mounted, visibility controlled with CSS */}
+      {/* Dropdown: animated outer + inner .recent-sessions-scroll (see ModelSelector). */}
       <div
         className={cn(
-          'absolute bottom-full left-0 mb-1 w-full min-w-[180px] rounded-md border shadow-lg z-[9999]',
+          'absolute bottom-full left-0 z-[9999] mb-1 max-h-64 min-w-full w-max max-w-[min(100vw-1.5rem,36rem)] overflow-hidden rounded-md border shadow-lg',
           isLight
             ? 'bg-gray-50 border-gray-200'
             : 'bg-[#151C24] border-gray-700',
           isOpen ? 'pointer-events-auto agent-selector-dropdown' : 'opacity-0 pointer-events-none'
         )}
       >
+        <div
+          className="recent-sessions-scroll max-h-64 overflow-y-auto overscroll-contain"
+          style={
+            {
+              '--table-scroll-bg': isLight ? '#f9fafb' : '#151C24',
+            } as React.CSSProperties
+          }
+        >
         {agents.map(agent => (
             <button
               key={agent.id}
@@ -341,7 +385,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
               }}
               disabled={agent.enabled === false}
               className={cn(
-                'flex items-center gap-1.5 w-full px-2.5 py-1.5 text-xs transition-colors',
+                'flex w-full min-w-0 items-center gap-1.5 whitespace-nowrap px-2.5 py-1.5 text-left text-xs transition-colors',
                 agent.enabled === false
                   ? 'opacity-50 cursor-not-allowed'
                   : selectedAgent === agent.id
@@ -353,8 +397,8 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                   : 'text-gray-500 hover:bg-gray-700'
               )}
             >
-              {agent.icon}
-              <span>{agent.label}</span>
+              <span className="flex-shrink-0">{agent.icon}</span>
+              <span className="whitespace-nowrap">{agent.label}</span>
               {selectedAgent === agent.id && agent.enabled !== false && (
                 <svg
                   className="ml-auto"
@@ -372,6 +416,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
               )}
             </button>
           ))}
+        </div>
       </div>
     </div>
   );

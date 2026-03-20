@@ -4,7 +4,8 @@ import { createPortal } from 'react-dom';
 import { cn } from '@extension/ui';
 import { sessionStorageDBWrapper } from '@extension/shared';
 import type { SessionMetadata } from '@extension/shared';
-import type { SessionUsageStats } from '@extension/shared';
+import { API_CONFIG } from '../../constants';
+import { fetchSessionUsageSummary, type SessionUsageSummary } from '../../lib/sessionUsageApi';
 
 interface SessionsPanelProps {
   isLight: boolean;
@@ -243,17 +244,47 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
   const editInputRef = useRef<HTMLInputElement>(null);
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
   const [hoverRect, setHoverRect] = useState<{ left: number; top: number } | null>(null);
-  const [hoverUsageStats, setHoverUsageStats] = useState<SessionUsageStats | null | 'loading'>('loading');
+  const [hoverUsageStats, setHoverUsageStats] = useState<SessionUsageSummary | null | 'loading'>('loading');
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoverFetchSessionRef = useRef<string | null>(null);
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(initialWidth);
 
-  const openSessions = sessions.filter((s) => s.isOpen);
+  /** Top scroll feather overlays content; hide at scrollTop 0 so the first row is not dimmed */
+  const [showOpenListTopFeather, setShowOpenListTopFeather] = useState(false);
+  const [showArchivedListTopFeather, setShowArchivedListTopFeather] = useState(false);
+
+  const handleOpenSessionsScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setShowOpenListTopFeather(e.currentTarget.scrollTop > 2);
+  }, []);
+
+  const handleArchivedSessionsScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setShowArchivedListTopFeather(e.currentTarget.scrollTop > 2);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      setShowOpenListTopFeather(false);
+      setShowArchivedListTopFeather(false);
+    }
+  }, [isOpen]);
+
+  const openSessions = React.useMemo(
+    () => [...sessions.filter((s) => s.isOpen)].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
+    [sessions],
+  );
   const archivedSessions = React.useMemo(
     () => [...sessions.filter((s) => !s.isOpen)].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
-    [sessions]
+    [sessions],
   );
+
+  useEffect(() => {
+    setShowOpenListTopFeather(false);
+  }, [openSessions]);
+
+  useEffect(() => {
+    setShowArchivedListTopFeather(false);
+  }, [archivedSessions, isArchivedExpanded]);
 
   // Opening animation: slide in from left
   useEffect(() => {
@@ -378,7 +409,8 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
       setHoverUsageStats('loading');
       hoverFetchSessionRef.current = sessionId;
       try {
-        const stats = await sessionStorageDBWrapper.getUsageStatsAsync(sessionId);
+        const baseUrl = apiBaseUrl ?? API_CONFIG.BASE_URL;
+        const stats = await fetchSessionUsageSummary(baseUrl, sessionId);
         if (hoverFetchSessionRef.current === sessionId) {
           setHoverUsageStats(stats);
         }
@@ -388,7 +420,7 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
         }
       }
     }, 150);
-  }, [editingSessionId]);
+  }, [editingSessionId, apiBaseUrl]);
 
   const handleSessionMouseLeave = useCallback(() => {
     if (hoverTimeoutRef.current) {
@@ -466,13 +498,13 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
           )}
         />
 
-        {/* Add Chat button + Session list */}
-        <div className="flex-1 overflow-y-auto py-2 px-2">
+        {/* Add Chat button + open list (scroll + bottom feather) + archived */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto py-2 px-2">
           {onNewSession && (
             <button
               onClick={onNewSession}
               className={cn(
-                'flex w-full items-center gap-2 px-3 py-3 mb-3 mt-3 rounded text-md font-bold uppercase transition-colors',
+                'flex w-full flex-shrink-0 items-center gap-2 px-3 py-3 mb-3 mt-3 rounded text-md font-bold uppercase transition-colors',
                 isLight
                   ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700',
@@ -488,7 +520,7 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
           {openSessions.length === 0 ? (
             <div
               className={cn(
-                'text-center py-8 text-sm px-4',
+                'flex-shrink-0 text-center py-8 text-sm px-4',
                 isLight ? 'text-gray-500' : 'text-gray-400'
               )}
             >
@@ -498,37 +530,40 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
               </p>
             </div>
           ) : (
-            <div className="space-y-0 sessions-panel-list">
-              {openSessions.map((session) => (
-                <div
-                  key={session.id}
-                  data-session-id={session.id}
-                  onClick={() => handleSessionClick(session.id)}
-                  onMouseEnter={(e) => handleSessionMouseEnter(session.id, e.currentTarget, e)}
-                  onMouseLeave={handleSessionMouseLeave}
-                  className={cn(
-                    'group flex items-center px-3 py-2 text-xs cursor-pointer transition-colors rounded relative',
-                    session.id === currentSessionId
-                      ? isLight
-                        ? 'bg-gray-200 text-gray-900'
-                        : 'bg-gray-800/60 text-gray-100'
-                      : isLight
-                        ? 'text-gray-600 hover:bg-gray-100'
-                        : 'text-gray-500 hover:bg-gray-700/50'
-                  )}
-                  style={{
-                    ...(session.id !== currentSessionId
-                      ? { color: isLight ? '#4b5563' : '#6b7280' }
-                      : {}),
-                    '--close-feather-bg': session.id === currentSessionId
-                      ? (isLight ? '#e5e7eb' : '#181f2a')
-                      : (isLight ? '#ffffff' : '#0D1117'),
-                    '--close-feather-hover-bg': session.id === currentSessionId
-                      ? (isLight ? '#e5e7eb' : '#181f2a')
-                      : (isLight ? '#f3f4f6' : '#1f2937'),
-                  } as React.CSSProperties}
-                >
-                  <div className="flex-1 min-w-0 relative">
+            <div
+              className="sessions-panel-open-wrapper relative flex flex-col"
+              style={{
+                '--archived-feather-bg': isLight ? '#ffffff' : '#0D1117',
+              } as React.CSSProperties}
+            >
+              {/* Capped height: do not flex-grow or archived section is pushed below the fold */}
+              <div
+                className="sessions-panel-list max-h-[min(50vh,20rem)] space-y-0 overflow-y-auto pb-2 recent-sessions-scroll"
+                onScroll={handleOpenSessionsScroll}
+              >
+                {openSessions.map((session) => (
+                  <div
+                    key={session.id}
+                    data-session-id={session.id}
+                    onClick={() => handleSessionClick(session.id)}
+                    onMouseEnter={(e) => handleSessionMouseEnter(session.id, e.currentTarget, e)}
+                    onMouseLeave={handleSessionMouseLeave}
+                    className={cn(
+                      'group relative flex cursor-pointer items-center rounded px-3 py-2 text-xs transition-colors',
+                      session.id === currentSessionId
+                        ? isLight
+                          ? 'bg-gray-200 font-semibold text-gray-600'
+                          : 'bg-gray-800/60 font-semibold text-gray-400'
+                        : isLight
+                          ? 'text-gray-600 hover:bg-gray-100'
+                          : 'text-gray-500 hover:bg-gray-700/50'
+                    )}
+                    style={{
+                      '--close-feather-hover-bg': session.id === currentSessionId
+                        ? (isLight ? '#e5e7eb' : '#181f2a')
+                        : (isLight ? '#f3f4f6' : '#1f2937'),
+                    } as React.CSSProperties}
+                  >
                     {editingSessionId === session.id ? (
                       <input
                         ref={editInputRef}
@@ -539,33 +574,30 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                         onKeyDown={handleEditKeyDown}
                         onClick={(e) => e.stopPropagation()}
                         className={cn(
-                          'bg-transparent border-none outline-none text-xs py-0 px-1 min-w-0 w-full',
+                          'min-w-0 flex-1 border-none bg-transparent px-1 py-0 text-xs outline-none',
                           isLight ? 'text-gray-900' : 'text-gray-100'
                         )}
                       />
                     ) : (
-                      <div
-                        className={cn(
-                          'truncate pr-1 transition-colors',
-                          session.id !== currentSessionId && (isLight ? 'text-gray-600' : 'text-gray-500')
-                        )}
-                        style={
-                          session.id !== currentSessionId
-                            ? { color: isLight ? '#4b5563' : '#6b7280' }
-                            : undefined
-                        }
-                      >
-                        {session.title}
-                      </div>
-                    )}
-                    {editingSessionId !== session.id && (
-                      <div
-                        className="sessions-panel-item-feather absolute right-0 top-0 bottom-0 flex items-center justify-end pl-16 pr-0 gap-1 pointer-events-none group-hover:pointer-events-auto min-w-[100px]"
-                        style={{ paddingRight: '2px', marginRight: '-5px' }}
-                      >
+                      <>
+                        {/* Title - fills available space, truncated */}
+                        <div
+                          className={cn(
+                            'min-w-0 flex-1 truncate transition-colors',
+                            session.id !== currentSessionId && (isLight ? 'text-gray-600' : 'text-gray-500')
+                          )}
+                          style={
+                            session.id !== currentSessionId
+                              ? { color: isLight ? '#4b5563' : '#6b7280' }
+                              : undefined
+                          }
+                        >
+                          {session.title}
+                        </div>
+                        {/* Timestamp - always visible at rest */}
                         <span
                           className={cn(
-                            'text-xs flex-shrink-0 mr-1',
+                            'ml-2 flex-shrink-0 text-xs',
                             isLight ? 'text-gray-500' : 'text-gray-400'
                           )}
                           data-tooltip-exclude
@@ -573,64 +605,83 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                         >
                           {formatTimestamp(session.timestamp)}
                         </span>
-                        <button
-                          type="button"
-                          data-tooltip-exclude
-                          onMouseEnter={handleTooltipExcludeMouseEnter}
-                          onClick={(e) => handleEditClick(session.id, session.title, e)}
+                        {/* Floating feather overlay - opacity-transitioned for smooth hover */}
+                        <div
                           className={cn(
-                            'opacity-0 group-hover:opacity-100 p-1 rounded transition-all flex items-center justify-center flex-shrink-0',
-                            isLight
-                              ? 'text-gray-400 hover:text-gray-700'
-                              : 'text-gray-500 hover:text-gray-200'
+                            'sessions-panel-close-feather absolute right-0 top-0 bottom-0 flex items-center justify-end rounded-r pl-12 pr-1 pointer-events-none group-hover:pointer-events-auto',
+                            openMoreMenuSessionId === session.id && 'is-open pointer-events-auto'
                           )}
-                          title="Edit chat title"
                         >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                          </svg>
-                        </button>
-                        {(onOpenSession || onCloneSession || onArchiveSession || onDeleteSession) && (
-                          <div
-                            className="pointer-events-auto flex-shrink-0"
+                          <button
+                            type="button"
                             data-tooltip-exclude
                             onMouseEnter={handleTooltipExcludeMouseEnter}
+                            onClick={(e) => handleEditClick(session.id, session.title, e)}
+                            className={cn(
+                              'flex flex-shrink-0 items-center justify-center rounded p-1 transition-colors',
+                              isLight
+                                ? 'text-gray-500 hover:text-gray-800'
+                                : 'text-gray-400 hover:text-gray-100'
+                            )}
+                            title="Edit chat title"
                           >
-                            <SessionMoreOptionsButton
-                              session={session}
-                              isLight={isLight}
-                              isOpen={openMoreMenuSessionId === session.id}
-                              onToggle={() => setOpenMoreMenuSessionId(openMoreMenuSessionId === session.id ? null : session.id)}
-                              onOpen={() => {
-                                setOpenMoreMenuSessionId(null);
-                                onOpenSession?.(session.id);
-                              }}
-                              onClone={() => {
-                                setOpenMoreMenuSessionId(null);
-                                onCloneSession?.(session.id);
-                              }}
-                              onArchive={() => {
-                                setOpenMoreMenuSessionId(null);
-                                onArchiveSession?.(session.id);
-                              }}
-                              onDelete={() => {
-                                setOpenMoreMenuSessionId(null);
-                                onDeleteSession?.(session.id);
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
+                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                          {(onOpenSession || onCloneSession || onArchiveSession || onDeleteSession) && (
+                            <div
+                              className="pointer-events-auto flex-shrink-0"
+                              data-tooltip-exclude
+                              onMouseEnter={handleTooltipExcludeMouseEnter}
+                            >
+                              <SessionMoreOptionsButton
+                                session={session}
+                                isLight={isLight}
+                                isOpen={openMoreMenuSessionId === session.id}
+                                onToggle={() => setOpenMoreMenuSessionId(openMoreMenuSessionId === session.id ? null : session.id)}
+                                onOpen={() => {
+                                  setOpenMoreMenuSessionId(null);
+                                  onOpenSession?.(session.id);
+                                }}
+                                onClone={() => {
+                                  setOpenMoreMenuSessionId(null);
+                                  onCloneSession?.(session.id);
+                                }}
+                                onArchive={() => {
+                                  setOpenMoreMenuSessionId(null);
+                                  onArchiveSession?.(session.id);
+                                }}
+                                onDelete={() => {
+                                  setOpenMoreMenuSessionId(null);
+                                  onDeleteSession?.(session.id);
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </>
                     )}
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <div
+                className={cn(
+                  'sessions-panel-scroll-feather-top pointer-events-none absolute left-0 right-0 top-0 z-10 h-2 transition-opacity duration-150',
+                  showOpenListTopFeather ? 'opacity-100' : 'opacity-0',
+                )}
+                aria-hidden
+              />
+              <div
+                className="sessions-panel-archived-feather pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-2"
+                aria-hidden
+              />
             </div>
           )}
 
           {/* Archived Chats accordion */}
           {archivedSessions.length > 0 && (
-            <div className={cn('mt-16 pt-5 border-t', isLight ? 'border-gray-200' : 'border-gray-700')}>
+            <div className={cn('mt-8 flex-shrink-0 border-t pt-5', isLight ? 'border-gray-200' : 'border-gray-700')}>
               <button
                 onClick={() => setIsArchivedExpanded(!isArchivedExpanded)}
                 className={cn(
@@ -651,7 +702,7 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                   </svg>
                 </span>
                 {/* Spacer to align count with chat list timestamps (matches more-options button width) */}
-                <span className="w-2 flex-shrink-0" aria-hidden />
+                {/* <span className="w-2 flex-shrink-0" aria-hidden /> */}
               </button>
               {isArchivedExpanded && (
                 <div
@@ -660,7 +711,10 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                     '--archived-feather-bg': isLight ? '#ffffff' : '#0D1117',
                   } as React.CSSProperties}
                 >
-                  <div className="space-y-0 max-h-[200px] overflow-y-auto recent-sessions-scroll sessions-panel-list pb-2">
+                  <div
+                    className="space-y-0 max-h-[200px] overflow-y-auto recent-sessions-scroll sessions-panel-list pb-2"
+                    onScroll={handleArchivedSessionsScroll}
+                  >
                   {archivedSessions.map((session) => (
                     <div
                       key={session.id}
@@ -673,66 +727,67 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                         isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-500 hover:bg-gray-700/50'
                       )}
                       style={{
-                        color: isLight ? '#4b5563' : '#6b7280',
-                        '--close-feather-bg': isLight ? '#ffffff' : '#0D1117',
                         '--close-feather-hover-bg': isLight ? '#f3f4f6' : '#1f2937',
                       } as React.CSSProperties}
                     >
-                      <div className="flex-1 min-w-0 relative">
-                        {editingSessionId === session.id ? (
-                          <input
-                            ref={editInputRef}
-                            type="text"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={handleEditSubmit}
-                            onKeyDown={handleEditKeyDown}
-                            onClick={(e) => e.stopPropagation()}
-                            className={cn(
-                              'bg-transparent border-none outline-none text-xs py-0 px-1 min-w-0 w-full',
-                              isLight ? 'text-gray-900' : 'text-gray-100'
-                            )}
-                          />
-                        ) : (
+                      {editingSessionId === session.id ? (
+                        <input
+                          ref={editInputRef}
+                          type="text"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={handleEditSubmit}
+                          onKeyDown={handleEditKeyDown}
+                          onClick={(e) => e.stopPropagation()}
+                          className={cn(
+                            'flex-1 bg-transparent border-none outline-none text-xs py-0 px-1 min-w-0',
+                            isLight ? 'text-gray-900' : 'text-gray-100'
+                          )}
+                        />
+                      ) : (
+                        <>
+                          {/* Title */}
                           <div
-                            className="truncate pr-1"
+                            className="flex-1 min-w-0 truncate"
                             style={{ color: isLight ? '#4b5563' : '#6b7280' }}
                           >
                             {session.title}
                           </div>
-                        )}
-                        {editingSessionId !== session.id && (
-                          <div
-                            className="sessions-panel-item-feather absolute right-0 top-0 bottom-0 flex items-center justify-end pl-16 pr-0 gap-1 pointer-events-none group-hover:pointer-events-auto min-w-[100px]"
-                            style={{ paddingRight: '2px' }}
+                          {/* Timestamp - always visible at rest */}
+                          <span
+                            className={cn('flex-shrink-0 ml-2 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}
+                            data-tooltip-exclude
+                            onMouseEnter={handleTooltipExcludeMouseEnter}
                           >
-                            <span
-                              className={cn('text-xs flex-shrink-0 mr-3', isLight ? 'text-gray-500' : 'text-gray-400')}
-                              data-tooltip-exclude
-                              onMouseEnter={handleTooltipExcludeMouseEnter}
-                            >
-                              {formatTimestamp(session.timestamp)}
-                            </span>
+                            {formatTimestamp(session.timestamp)}
+                          </span>
+                          {/* Floating feather overlay - opacity-transitioned for smooth hover */}
+                          <div
+                            className={cn(
+                              'sessions-panel-close-feather absolute right-0 top-0 bottom-0 flex items-center justify-end pr-1 pl-12 rounded-r pointer-events-none group-hover:pointer-events-auto',
+                              openMoreMenuSessionId === session.id && 'is-open pointer-events-auto'
+                            )}
+                          >
                             <button
                               type="button"
                               data-tooltip-exclude
                               onMouseEnter={handleTooltipExcludeMouseEnter}
                               onClick={(e) => handleEditClick(session.id, session.title, e)}
                               className={cn(
-                                'opacity-0 group-hover:opacity-100 p-1 rounded transition-all flex items-center justify-center flex-shrink-0',
+                                'p-1 rounded transition-colors flex items-center justify-center flex-shrink-0',
                                 isLight
-                                  ? 'text-gray-400 hover:text-gray-700'
-                                  : 'text-gray-500 hover:text-gray-200'
+                                  ? 'text-gray-500 hover:text-gray-800'
+                                  : 'text-gray-400 hover:text-gray-100'
                               )}
                               title="Edit chat title"
                             >
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                               </svg>
                             </button>
                             {(onOpenSession || onCloneSession || onDeleteSession) && (
                               <div
-                                className="pointer-events-auto flex-shrink-0"
+                                className="flex-shrink-0 pointer-events-auto"
                                 data-tooltip-exclude
                                 onMouseEnter={handleTooltipExcludeMouseEnter}
                               >
@@ -762,14 +817,20 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                               </div>
                             )}
                           </div>
-                        )}
-                      </div>
+                        </>
+                      )}
                     </div>
                   ))}
                   </div>
-                  {/* Bottom feather - soft fade when scrolling archived list */}
                   <div
-                    className="sessions-panel-archived-feather absolute bottom-0 left-0 right-0 h-2 pointer-events-none z-10"
+                    className={cn(
+                      'sessions-panel-scroll-feather-top pointer-events-none absolute left-0 right-0 top-0 z-10 h-2 transition-opacity duration-150',
+                      showArchivedListTopFeather ? 'opacity-100' : 'opacity-0',
+                    )}
+                    aria-hidden
+                  />
+                  <div
+                    className="sessions-panel-archived-feather pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-2"
                     aria-hidden
                   />
                 </div>

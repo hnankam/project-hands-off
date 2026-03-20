@@ -9,7 +9,7 @@
 
 import type { FC } from 'react';
 import * as React from 'react';
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { CopilotChatReasoningMessage } from '@copilotkitnext/react';
@@ -121,6 +121,28 @@ const ReasoningMessageContent: FC<
   }
 > = ({ isStreaming, hasContent, children, ...props }) => {
   const { isLight } = useStorage(themeStorage);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [showTopFeather, setShowTopFeather] = useState(false);
+
+  const syncTopFeather = useCallback(() => {
+    const el = contentRef.current;
+    if (!el) {
+      setShowTopFeather(false);
+      return;
+    }
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    if (scrollHeight <= clientHeight + 1) {
+      setShowTopFeather(false);
+    } else {
+      setShowTopFeather(scrollTop > 2);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasContent && !isStreaming) return;
+    const id = requestAnimationFrame(() => syncTopFeather());
+    return () => cancelAnimationFrame(id);
+  }, [hasContent, isStreaming, children, syncTopFeather]);
 
   if (!hasContent && !isStreaming) return null;
 
@@ -137,6 +159,8 @@ const ReasoningMessageContent: FC<
     >
       <div style={{ position: 'relative' }}>
         <div
+          ref={contentRef}
+          onScroll={syncTopFeather}
           className={`mb-4 text-xs opacity-80 recent-sessions-scroll ${
             isStreaming
               ? 'max-h-[75vh] overflow-y-auto overscroll-contain'
@@ -159,16 +183,13 @@ const ReasoningMessageContent: FC<
           </div>
         </div>
         <div
-          className="thinking-block-feather"
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: 8,
-            pointerEvents: 'none',
-            zIndex: 10,
-          }}
+          className={`thinking-block-feather-top pointer-events-none absolute left-0 right-0 top-0 z-10 h-2 transition-opacity duration-150 ${
+            showTopFeather ? 'opacity-100' : 'opacity-0'
+          }`}
+          aria-hidden
+        />
+        <div
+          className="thinking-block-feather pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-2"
           aria-hidden
         />
       </div>

@@ -79,6 +79,40 @@ function filterTruncatedPlaceholderToolCallsFromMessages(messages) {
 }
 
 /**
+ * Apply restored args to messages: replace truncated placeholder args with real args from
+ * the provided map. Falls back to removing the tool call (+ its tool result) for any
+ * toolCallId whose args couldn't be fetched.
+ *
+ * @param {Array} messages - Messages array (mutated in place)
+ * @param {Map<string, string>} truncatedArgsMap - toolCallId -> original args string
+ */
+function applyRestoredArgsToMessages(messages, truncatedArgsMap) {
+  if (!Array.isArray(messages)) return;
+
+  for (const msg of messages) {
+    if (msg?.role !== 'assistant' || !Array.isArray(msg.toolCalls)) continue;
+    for (const tc of msg.toolCalls) {
+      if (!isTruncatedPlaceholderArgs(tc?.function?.arguments)) continue;
+      let toolCallId;
+      try {
+        toolCallId = JSON.parse(tc.function.arguments).toolCallId;
+      } catch { /* skip malformed */ }
+
+      if (toolCallId && truncatedArgsMap.has(toolCallId)) {
+        // Restore the real args — no longer matches isTruncatedPlaceholderArgs after this
+        tc.function.arguments = truncatedArgsMap.get(toolCallId);
+      }
+      // If not in map, leave the placeholder in place;
+      // filterTruncatedPlaceholderToolCallsFromMessages below will remove it
+    }
+  }
+
+  // Remove any tool calls whose args still contain the truncated placeholder
+  // (i.e. those we couldn't restore from DB)
+  filterTruncatedPlaceholderToolCallsFromMessages(messages);
+}
+
+/**
  * Aggressive event compaction for history storage
  * 
  * Extends the basic compactEvents from @ag-ui/client to also compact:
@@ -741,7 +775,11 @@ export class PostgresAgentRunner extends AgentRunner {
         }
       }
       const toolCallIdsToFilter = new Set([...deletedToolCallIds, ...truncatedToolCallIds]);
-      
+
+      // Pre-fetch original args for truncated placeholder tool calls so we can restore
+      // them in input.messages rather than stripping the whole tool call exchange.
+      const truncatedArgsMap = await this._fetchTruncatedArgsMap(completeRuns, threadId);
+
       if (this.debug && toolCallIdToMessageId.size > 0) {
         console.log(`[PostgresAgentRunner] Tool call to message ID mapping (executeRun, ${toolCallIdToMessageId.size} entries):`);
         for (const [toolCallId, messageId] of toolCallIdToMessageId.entries()) {
@@ -779,9 +817,10 @@ export class PostgresAgentRunner extends AgentRunner {
               return true;
             });
             
-            // Filter truncated placeholder tool calls (no real tool uses this arg format)
-            filterTruncatedPlaceholderToolCallsFromMessages(event.input.messages);
-            
+            // Restore truncated placeholder tool call args from DB, falling back to
+            // removing any that can't be recovered.
+            applyRestoredArgsToMessages(event.input.messages, truncatedArgsMap);
+
             if (event.input.messages.length !== originalLength && this.debug) {
               console.log(`[PostgresAgentRunner] Filtered ${originalLength - event.input.messages.length} messages from RUN_STARTED input in executeRun`);
             }
@@ -1419,7 +1458,11 @@ export class PostgresAgentRunner extends AgentRunner {
         }
       }
       const toolCallIdsToFilter = new Set([...deletedToolCallIds, ...truncatedToolCallIds]);
-      
+
+      // Pre-fetch original args for truncated placeholder tool calls so we can restore
+      // them in input.messages rather than stripping the whole tool call exchange.
+      const truncatedArgsMap = await this._fetchTruncatedArgsMap(completeRuns, threadId);
+
       // Filter events to exclude ONLY the specific deleted messages and their associated tool calls
       // IMPORTANT: Do NOT filter based on chronological position - only filter by specific message/tool IDs
       // This ensures new messages created after deletions are NOT filtered (they have new IDs)
@@ -1456,8 +1499,9 @@ export class PostgresAgentRunner extends AgentRunner {
               return true;
             });
             
-            // Filter truncated placeholder tool calls (no real tool uses this arg format)
-            filterTruncatedPlaceholderToolCallsFromMessages(event.input.messages);
+            // Restore truncated placeholder tool call args from DB, falling back to
+            // removing any that can't be recovered.
+            applyRestoredArgsToMessages(event.input.messages, truncatedArgsMap);
 
             if (event.input.messages.length !== originalLength && this.debug) {
               console.log(`[PostgresAgentRunner] Filtered ${originalLength - event.input.messages.length} messages from RUN_STARTED input`);
@@ -1954,18 +1998,129 @@ export class PostgresAgentRunner extends AgentRunner {
   }
 
   /**
+   * Pre-fetch original args for every truncated placeholder tool call found across
+   * completeRuns' RUN_STARTED input.messages.  Because the DB stores events BEFORE
+   * truncation, querying agent_runs returns the full untruncated content.
+   *
+   * Returns a Map<toolCallId, argsString> consumed by applyRestoredArgsToMessages.
+   * For tool calls whose runId is null (old data), falls back to a full thread scan.
+   *
+   * @private
+   * @param {Array} completeRuns - Processed runs array (from filterAndCompleteRuns)
+   * @param {string} threadId    - Thread ID used for the null-runId fallback query
+   * @returns {Promise<Map<string, string>>}
+   */
+  async _fetchTruncatedArgsMap(completeRuns, threadId) {
+    // Collect every unique (runId, toolCallId) pair from truncated placeholder tool calls
+    const needed = new Map(); // toolCallId -> { runId }
+    for (const run of completeRuns) {
+      for (const event of run.events || []) {
+        if (event.type !== EventType.RUN_STARTED && event.type !== 'RUN_STARTED') continue;
+        if (!Array.isArray(event.input?.messages)) continue;
+        for (const msg of event.input.messages) {
+          if (msg?.role !== 'assistant' || !Array.isArray(msg.toolCalls)) continue;
+          for (const tc of msg.toolCalls) {
+            if (!isTruncatedPlaceholderArgs(tc?.function?.arguments)) continue;
+            try {
+              const meta = JSON.parse(tc.function.arguments);
+              if (!needed.has(meta.toolCallId)) {
+                needed.set(meta.toolCallId, { runId: meta.runId || null });
+              }
+            } catch { /* skip malformed */ }
+          }
+        }
+      }
+    }
+
+    if (needed.size === 0) return new Map();
+
+    const result = new Map(); // toolCallId -> argsString
+
+    // Group by runId for batched DB queries
+    const byRunId = new Map(); // runId -> Set<toolCallId>
+    const nullRunIds = [];
+    for (const [toolCallId, { runId }] of needed.entries()) {
+      if (runId) {
+        if (!byRunId.has(runId)) byRunId.set(runId, new Set());
+        byRunId.get(runId).add(toolCallId);
+      } else {
+        nullRunIds.push(toolCallId);
+      }
+    }
+
+    // Fetch by known runId (DB stores untruncated events, so we get full args here)
+    for (const [runId, toolCallIds] of byRunId.entries()) {
+      try {
+        const dbResult = await this.pool.query(
+          `SELECT events FROM agent_runs WHERE run_id = $1`,
+          [runId]
+        );
+        const events = dbResult.rows[0]?.events || [];
+        for (const toolCallId of toolCallIds) {
+          const ev = events.find(e =>
+            e.toolCallId === toolCallId &&
+            (e.type === 'TOOL_CALL_ARGS' || e.type === EventType.TOOL_CALL_ARGS)
+          );
+          if (ev) {
+            const content = ev.args !== undefined ? ev.args : ev.delta;
+            if (content != null) {
+              result.set(toolCallId, typeof content === 'string' ? content : JSON.stringify(content));
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`[PostgresAgentRunner] _fetchTruncatedArgsMap: failed for run ${runId}:`, err.message);
+      }
+    }
+
+    // Fallback: search all thread runs for tool calls whose runId was null
+    if (nullRunIds.length > 0 && threadId) {
+      try {
+        const dbResult = await this.pool.query(
+          `SELECT events FROM agent_runs WHERE thread_id = $1 ORDER BY created_at DESC`,
+          [threadId]
+        );
+        for (const toolCallId of nullRunIds) {
+          if (result.has(toolCallId)) continue;
+          for (const row of dbResult.rows) {
+            const ev = (row.events || []).find(e =>
+              e.toolCallId === toolCallId &&
+              (e.type === 'TOOL_CALL_ARGS' || e.type === EventType.TOOL_CALL_ARGS)
+            );
+            if (ev) {
+              const content = ev.args !== undefined ? ev.args : ev.delta;
+              if (content != null) {
+                result.set(toolCallId, typeof content === 'string' ? content : JSON.stringify(content));
+                break;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`[PostgresAgentRunner] _fetchTruncatedArgsMap: thread scan failed for ${threadId}:`, err.message);
+      }
+    }
+
+    if (this.debug && result.size > 0) {
+      console.log(`[PostgresAgentRunner] _fetchTruncatedArgsMap: restored ${result.size}/${needed.size} truncated tool call args`);
+    }
+
+    return result;
+  }
+
+  /**
    * Truncate TOOL_CALL_RESULT and TOOL_CALL_ARGS events with large content for lazy loading
    * Replaces content > 1200 characters with JSON containing toolCallId, runId, and instructions
    * This allows:
    * - Frontend: Click "Load full content" button to fetch via API
    * - Agents: Use load_full_tool_result tool to retrieve complete data
-   * 
+   *
    * The truncated content includes:
    * - toolCallId: For database lookup
    * - runId: For database lookup
    * - eventType: TOOL_CALL_RESULT or TOOL_CALL_ARGS
    * - message: Instructions for agents on how to load full content
-   * 
+   *
    * @param {Array} events - Array of events to process
    * @param {string} [explicitRunId] - Optional explicit runId to use (for real-time events)
    * @returns {Array} Array of events with truncated content
@@ -1975,16 +2130,28 @@ export class PostgresAgentRunner extends AgentRunner {
     const TRUNCATE_THRESHOLD = maxLength;
     let truncatedResultCount = 0;
     let truncatedArgsCount = 0;
-    
+
+    // compactEvents() from @ag-ui/client merges TOOL_CALL_ARGS deltas into one event
+    // but drops runId on the merged result. TOOL_CALL_START events retain runId, so
+    // build a toolCallId → runId map here to recover the correct runId for truncation
+    // metadata (used by the frontend "Load full content" endpoint).
+    const toolCallRunIdMap = new Map();
+    for (const event of events) {
+      const isStart = event.type === EventType.TOOL_CALL_START || event.type === 'TOOL_CALL_START';
+      if (isStart && event.toolCallId && event.runId) {
+        toolCallRunIdMap.set(event.toolCallId, event.runId);
+      }
+    }
+
     const truncated = events.map(event => {
       // Only process TOOL_CALL_RESULT and TOOL_CALL_ARGS events
       const isResult = event.type === EventType.TOOL_CALL_RESULT || event.type === 'TOOL_CALL_RESULT';
       const isArgs = event.type === EventType.TOOL_CALL_ARGS || event.type === 'TOOL_CALL_ARGS';
-      
+
       if (!isResult && !isArgs) {
         return event;
       }
-      
+
       const toolCallId = event.toolCallId || 'unknown';
       
       // Check if event has data to truncate
@@ -2042,7 +2209,10 @@ export class PostgresAgentRunner extends AgentRunner {
         const truncatedContentObj = {
           truncated: true,
           toolCallId: toolCallId,
-          runId: explicitRunId || event.runId || null,
+          // Prefer explicitRunId (real-time path), then event.runId (historic path),
+          // then the TOOL_CALL_START runId recovered from the map (compactEvents drops
+          // runId from merged TOOL_CALL_ARGS, so the map is the reliable fallback).
+          runId: explicitRunId || event.runId || toolCallRunIdMap.get(toolCallId) || null,
           originalLength: contentStr.length,
           eventType: isResult ? 'TOOL_CALL_RESULT' : 'TOOL_CALL_ARGS',
           message: `Use load_full_tool_result tool with run_id, tool_call_id, and event_type to retrieve the complete untruncated data.`
@@ -2606,6 +2776,10 @@ export class PostgresAgentRunner extends AgentRunner {
     }
     const toolCallIdsToFilter = new Set([...deletedToolCallIds, ...truncatedToolCallIds]);
 
+    // Pre-fetch original args for truncated placeholder tool calls so we can restore
+    // them in input.messages rather than stripping the whole tool call exchange.
+    const truncatedArgsMap = await this._fetchTruncatedArgsMap(completeRuns, threadId);
+
     const filteredEvents = completeRuns.flatMap(run => {
       const runEvents = run.events || [];
       const runStateCounts = runEvents.reduce((acc, e) => {
@@ -2622,7 +2796,7 @@ export class PostgresAgentRunner extends AgentRunner {
         if (!event.threadId) event.threadId = threadId;
         if (event.type === EventType.RUN_STARTED && event.input?.messages) {
           event.input.messages = event.input.messages.filter(msg => !deletedMessageIds.has(msg.id));
-          filterTruncatedPlaceholderToolCallsFromMessages(event.input.messages);
+          applyRestoredArgsToMessages(event.input.messages, truncatedArgsMap);
           // Strip ALL runs to only the triggering (last) message.
           // The initial loadAndStreamHistory already established the full message history via
           // the oldest run's full input.messages. Load-more batches only contribute new triggering
@@ -2962,6 +3136,11 @@ export class PostgresAgentRunner extends AgentRunner {
       }
     }
     const toolCallIdsToFilter = new Set([...deletedToolCallIds, ...truncatedToolCallIds]);
+
+    // Pre-fetch original args for truncated placeholder tool calls so we can restore
+    // them in input.messages rather than stripping the whole tool call exchange.
+    const truncatedArgsMap = await this._fetchTruncatedArgsMap(completeRuns, threadId);
+
     const filteredEvents = completeRuns.flatMap(run => {
       const runEvents = run.events || [];
       const filtered = [];
@@ -2970,7 +3149,7 @@ export class PostgresAgentRunner extends AgentRunner {
         if (!event.threadId) event.threadId = threadId;
         if (event.type === EventType.RUN_STARTED && event.input?.messages) {
           event.input.messages = event.input.messages.filter(msg => !deletedMessageIds.has(msg.id));
-          filterTruncatedPlaceholderToolCallsFromMessages(event.input.messages);
+          applyRestoredArgsToMessages(event.input.messages, truncatedArgsMap);
           filtered.push(event);
           continue;
         }

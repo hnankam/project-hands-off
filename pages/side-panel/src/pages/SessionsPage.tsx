@@ -399,28 +399,31 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       />
 
       {/* Session Content Area - with optional left SessionsPanel and right ConfigPanel (same parent) */}
-      <div ref={contentAreaRef} className="relative flex-1 flex flex-col min-h-0 overflow-hidden">
+      <div ref={contentAreaRef} className="relative z-10 flex flex-1 flex-col min-h-0 overflow-hidden">
+        {/* z-[55] wrappers sit above the chat column (z-50) so small-view backdrops paint on top */}
         {showSessionsPanel && (
-          <SessionsPanel
-            isLight={isLight}
-            isOpen={showSessionsPanel}
-            onClose={() => setShowSessionsPanel(false)}
-            sessions={sessions}
-            currentSessionId={currentSessionId}
-            onNewSession={handleNewSession}
-            onOpenSession={(id) => sessionStorageDBWrapper.setActiveSession(id)}
-            onCloneSession={(id) => sessionStorageDBWrapper.cloneSession(id, API_CONFIG.BASE_URL)}
-            onArchiveSession={(id) => sessionStorageDBWrapper.closeSession(id)}
-            onDeleteSession={handleDeleteSessionFromPanel}
-            onWidthChange={setSessionsPanelWidth}
-            initialWidth={sessionsPanelWidth}
-            isSmallView={isSessionsPanelSmallView}
-            apiBaseUrl={API_CONFIG.BASE_URL}
-          />
+          <div className="pointer-events-none absolute inset-0 z-[55]">
+            <SessionsPanel
+              isLight={isLight}
+              isOpen={showSessionsPanel}
+              onClose={() => setShowSessionsPanel(false)}
+              sessions={sessions}
+              currentSessionId={currentSessionId}
+              onNewSession={handleNewSession}
+              onOpenSession={(id) => sessionStorageDBWrapper.setActiveSession(id)}
+              onCloneSession={(id) => sessionStorageDBWrapper.cloneSession(id, API_CONFIG.BASE_URL)}
+              onArchiveSession={(id) => sessionStorageDBWrapper.closeSession(id)}
+              onDeleteSession={handleDeleteSessionFromPanel}
+              onWidthChange={setSessionsPanelWidth}
+              initialWidth={sessionsPanelWidth}
+              isSmallView={isSessionsPanelSmallView}
+              apiBaseUrl={API_CONFIG.BASE_URL}
+            />
+          </div>
         )}
-        {/* Portal target for ConfigPanel - sibling of content column so layout matches SessionsPanel */}
-        <div ref={configPanelPortalRef} className="absolute inset-0 pointer-events-none" aria-hidden />
-        {/* Content column: relative z-50 so modals (z-10000+) render above SessionsPanel (z-40) */}
+        {/* Portal target for ConfigPanel — z-[55] above chat (z-50) so overlay + backdrop stack correctly */}
+        <div ref={configPanelPortalRef} className="pointer-events-none absolute inset-0 z-[55]" aria-hidden />
+        {/* Content column: z-50 — in-panel UI; side/config overlays use z-[55] siblings */}
         <div
           className="relative z-50 flex flex-1 flex-col min-h-0 overflow-hidden min-w-0"
           style={{
@@ -549,14 +552,16 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         )}
       </div>
 
-      {/* Session List - Fixed at bottom (pushed by content column marginRight when config panel open) */}
-      <div
-        className={cn(
-          'flex-shrink-0 border-t px-3',
-          isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
-        )}>
-        <SessionList isLight={isLight} viewMode={viewMode} />
-      </div>
+      {/* Past Chats bar — hidden when sessions panel is open (same as session tabs in header) */}
+      {!showSessionsPanel && (
+        <div
+          className={cn(
+            'flex-shrink-0 border-t px-3',
+            isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
+          )}>
+          <SessionList isLight={isLight} viewMode={viewMode} />
+        </div>
+      )}
         </div>
       </div>
 

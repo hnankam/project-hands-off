@@ -23,6 +23,7 @@
 div.custom-input-v2-container {
   border: 1px solid #e5e7eb !important; /* gray-200 */
   color: #374151 !important; /* gray-700 - matches message text and buttons */
+  overflow: visible !important; /* agent/model menus open above the field */
 }
 
 /* Dark mode border and text color */
@@ -30,6 +31,7 @@ div.custom-input-v2-container {
 .dark .custom-input-v2-container {
   border: 1px solid #374151 !important; /* gray-700 */
   color: #d1d5db !important; /* gray-300 - matches message text and buttons */
+  overflow: visible !important;
 }
 
 /* Override disabled appearance for buttons in custom input container */
@@ -42,19 +44,20 @@ div.custom-input-v2-container {
 }
 
 /* Hover styles - over DropdownMenu wrapper (.relative), style the button inside */
+/* Exclude .chat-bar-agent-model-selector (agent/model pickers in chat input — same components as SelectorsBar) */
 /* Light mode */
-.copilot-chat-container:not(.dark) .custom-input-v2-container .relative button[disabled],
-:not(.dark) .custom-input-v2-container .relative button:disabled,
-.copilot-chat-container:not(.dark) .custom-input-v2-container div[class*="relative"] button[disabled],
-:not(.dark) .custom-input-v2-container div[class*="relative"] button:disabled {
+.copilot-chat-container:not(.dark) .custom-input-v2-container .relative:not(.chat-bar-agent-model-selector) button[disabled],
+:not(.dark) .custom-input-v2-container .relative:not(.chat-bar-agent-model-selector) button:disabled,
+.copilot-chat-container:not(.dark) .custom-input-v2-container div[class*="relative"]:not(.chat-bar-agent-model-selector) button[disabled],
+:not(.dark) .custom-input-v2-container div[class*="relative"]:not(.chat-bar-agent-model-selector) button:disabled {
   background-color: rgba(229, 231, 235, 0.8) !important; /* gray-200/80 */
 }
 
 /* Dark mode */
-.dark .custom-input-v2-container .relative button[disabled],
-.copilot-chat-container.dark .custom-input-v2-container .relative button:disabled,
-.dark .custom-input-v2-container div[class*="relative"] button[disabled],
-.copilot-chat-container.dark .custom-input-v2-container div[class*="relative"] button:disabled {
+.dark .custom-input-v2-container .relative:not(.chat-bar-agent-model-selector) button[disabled],
+.copilot-chat-container.dark .custom-input-v2-container .relative:not(.chat-bar-agent-model-selector) button:disabled,
+.dark .custom-input-v2-container div[class*="relative"]:not(.chat-bar-agent-model-selector) button[disabled],
+.copilot-chat-container.dark .custom-input-v2-container div[class*="relative"]:not(.chat-bar-agent-model-selector) button:disabled {
   background-color: rgba(55, 65, 81, 0.6) !important; /* gray-700/60 */
 }
 
@@ -67,16 +70,16 @@ div.custom-input-v2-container {
 /* Match PagesSelector compact button height (22px) */
 /* Remove right margin and set SVG size to 16x16 */
 /* Keep pointer-events: none so clicks pass through to DropdownMenu wrapper */
-/* Exclude PagesSelector button using :not([data-pages-selector-trigger]) */
-.custom-input-v2-container .relative button:not([data-pages-selector-trigger]),
-.custom-input-v2-container .relative button[disabled]:not([data-pages-selector-trigger]),
-.custom-input-v2-container .relative button:disabled:not([data-pages-selector-trigger]),
-.custom-input-v2-container div.relative button:not([data-pages-selector-trigger]),
-.custom-input-v2-container div.relative button[disabled]:not([data-pages-selector-trigger]),
-.custom-input-v2-container div.relative button:disabled:not([data-pages-selector-trigger]),
-.custom-input-v2-container div[class*="relative"] button:not([data-pages-selector-trigger]),
-.custom-input-v2-container div[class*="relative"] button[disabled]:not([data-pages-selector-trigger]),
-.custom-input-v2-container div[class*="relative"] button:disabled:not([data-pages-selector-trigger]) {
+/* Exclude PagesSelector; exclude agent/model selectors (.chat-bar-agent-model-selector) */
+.custom-input-v2-container .relative:not(.chat-bar-agent-model-selector) button:not([data-pages-selector-trigger]),
+.custom-input-v2-container .relative:not(.chat-bar-agent-model-selector) button[disabled]:not([data-pages-selector-trigger]),
+.custom-input-v2-container .relative:not(.chat-bar-agent-model-selector) button:disabled:not([data-pages-selector-trigger]),
+.custom-input-v2-container div.relative:not(.chat-bar-agent-model-selector) button:not([data-pages-selector-trigger]),
+.custom-input-v2-container div.relative:not(.chat-bar-agent-model-selector) button[disabled]:not([data-pages-selector-trigger]),
+.custom-input-v2-container div.relative:not(.chat-bar-agent-model-selector) button:disabled:not([data-pages-selector-trigger]),
+.custom-input-v2-container div[class*="relative"]:not(.chat-bar-agent-model-selector) button:not([data-pages-selector-trigger]),
+.custom-input-v2-container div[class*="relative"]:not(.chat-bar-agent-model-selector) button[disabled]:not([data-pages-selector-trigger]),
+.custom-input-v2-container div[class*="relative"]:not(.chat-bar-agent-model-selector) button:disabled:not([data-pages-selector-trigger]) {
   height: 22px !important; /* Match ContextSelector compact button height */
   min-height: 22px !important;
   max-height: 22px !important;
@@ -92,15 +95,35 @@ div.custom-input-v2-container {
 }
 
 /* Set SVG size to 16x16 for AddMenuButton */
-.custom-input-v2-container .relative button:not([data-pages-selector-trigger]) svg,
-.custom-input-v2-container div.relative button:not([data-pages-selector-trigger]) svg,
-.custom-input-v2-container div[class*="relative"] button:not([data-pages-selector-trigger]) svg {
+.custom-input-v2-container .relative:not(.chat-bar-agent-model-selector) button:not([data-pages-selector-trigger]) svg,
+.custom-input-v2-container div.relative:not(.chat-bar-agent-model-selector) button:not([data-pages-selector-trigger]) svg,
+.custom-input-v2-container div[class*="relative"]:not(.chat-bar-agent-model-selector) button:not([data-pages-selector-trigger]) svg {
   width: 16px !important;
   height: 16px !important;
   min-width: 16px !important;
   min-height: 16px !important;
   max-width: 16px !important;
   max-height: 16px !important;
+}
+
+/* Agent/model dropdowns open upward; don’t clip inside the rounded input */
+.custom-input-v2-container .chat-bar-agent-model-selector {
+  overflow: visible !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Inline input row: hug chips toward send (default width:100% would stretch across the grid cell) */
+.custom-input-v2-container .chat-bar-selectors-cluster .chat-bar-agent-model-selector {
+  width: auto !important;
+  max-width: 100% !important;
+}
+
+/* Keep trigger pills inside the flex cell so labels truncate instead of overlapping send */
+.custom-input-v2-container .chat-bar-agent-model-selector > button {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
 }
 
 

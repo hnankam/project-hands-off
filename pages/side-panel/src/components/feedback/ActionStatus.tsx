@@ -97,10 +97,15 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
   const outputScrollRef = useRef<HTMLElement>(null);
   const errorScrollRef = useRef<HTMLElement>(null);
   
-  // State for loading full truncated content
+  // State for loading full truncated output content
   const [fullContent, setFullContent] = useState<any>(null);
   const [isLoadingContent, setIsLoadingContent] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // State for loading full truncated input (args) content
+  const [fullInputContent, setFullInputContent] = useState<any>(null);
+  const [isLoadingInputContent, setIsLoadingInputContent] = useState(false);
+  const [inputLoadError, setInputLoadError] = useState<string | null>(null);
   
   // Auto-expand when in progress or executing (unless user manually closed it)
   useEffect(() => {
@@ -266,7 +271,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
       if (trimmed.startsWith('{') && trimmed.includes('"truncated"')) {
         try {
           const parsed = JSON.parse(trimmed);
-          if (parsed.truncated === true && parsed.toolCallId && parsed.runId) {
+          if (parsed.truncated === true && parsed.toolCallId) {
             return { isTruncated: true, metadata: parsed };
           }
         } catch {
@@ -277,7 +282,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
     
     // Check if data is already a parsed object with truncated flag
     if (typeof data === 'object' && data !== null && data.truncated === true) {
-      if (data.toolCallId && data.runId) {
+      if (data.toolCallId) {
         return { isTruncated: true, metadata: data };
       }
     }
@@ -315,6 +320,37 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
       setLoadError(error instanceof Error ? error.message : 'Failed to load content');
     } finally {
       setIsLoadingContent(false);
+    }
+  }, []);
+
+  // Load full input (args) content from backend
+  const loadFullInputContent = useCallback(async (metadata: any) => {
+    setIsLoadingInputContent(true);
+    setInputLoadError(null);
+
+    try {
+      const { toolCallId, runId, eventType } = metadata;
+      const response = await fetch(
+        `${API_CONFIG.BASE_URL}/api/runs/${runId}/tool-result/${toolCallId}?eventType=${eventType}`,
+        { credentials: 'include' }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to load content: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      if (data.found && data.content !== undefined) {
+        setFullInputContent(data.content);
+      } else {
+        throw new Error('Content not found in response');
+      }
+    } catch (error) {
+      console.error('Error loading full input content:', error);
+      setInputLoadError(error instanceof Error ? error.message : 'Failed to load content');
+    } finally {
+      setIsLoadingInputContent(false);
     }
   }, []);
 
@@ -431,7 +467,9 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
           >
           {/* Input Arguments */}
           {args && (() => {
-            const { content, isMarkdown, language } = formatData(args, true);
+            const { isTruncated: argsIsTruncated, metadata: argsMetadata } = isTruncated(args);
+            const displayArgs = fullInputContent !== null ? fullInputContent : args;
+            const { content, isMarkdown, language } = formatData(displayArgs, true);
             return (
               <div style={{ marginBottom: 8 }}>
                 <div
@@ -440,10 +478,75 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
                     fontWeight: 600,
                     color: isLight ? '#6b7280' : '#9ca3af',
                     marginBottom: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    minWidth: 0,
+                    width: '100%',
+                    paddingRight: 6,
                   }}
                 >
-                  Input:
+                  <span>Input:</span>
+                  {argsIsTruncated && fullInputContent === null && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        loadFullInputContent(argsMetadata);
+                      }}
+                      disabled={isLoadingInputContent}
+                      style={{
+                        fontSize: 10,
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        border: isLight ? '1px solid #d1d5db' : '1px solid #4b5563',
+                        background: isLight ? '#ffffff' : '#1f2937',
+                        color: isLight ? '#374151' : '#d1d5db',
+                        cursor: isLoadingInputContent ? 'wait' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        flexShrink: 0,
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isLoadingInputContent) {
+                          e.currentTarget.style.background = isLight ? '#f3f4f6' : '#374151';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = isLight ? '#ffffff' : '#1f2937';
+                      }}
+                    >
+                      {isLoadingInputContent ? (
+                        <>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
+                            <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                            <path d="M12 2a10 10 0 0 1 10 10" strokeOpacity="0.75" />
+                          </svg>
+                          Loading...
+                        </>
+                      ) : (
+                        <>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                          Load full content ({argsMetadata?.originalLength?.toLocaleString()} chars)
+                        </>
+                      )}
+                    </button>
+                  )}
+                  {fullInputContent !== null && (
+                    <span style={{ fontSize: 10, color: isLight ? '#10b981' : '#34d399' }}>
+                      ✓ Full content loaded
+                    </span>
+                  )}
                 </div>
+                {inputLoadError && (
+                  <div style={{ fontSize: 10, color: '#ef4444', marginBottom: 4, padding: 4, background: isLight ? '#fee2e2' : '#7f1d1d', borderRadius: 4 }}>
+                    Error: {inputLoadError}
+                  </div>
+                )}
                 <div className="action-status-section-scroll" style={{ position: 'relative', minWidth: 0, width: '100%' }}>
                   {isMarkdown ? (
                     <div

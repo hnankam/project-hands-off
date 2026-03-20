@@ -836,7 +836,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
       {/* Home Page Header */}
       <div
         className={cn(
-          'flex flex-shrink-0 items-center justify-between border-b px-2 py-[0.4em]',
+          'relative z-20 flex flex-shrink-0 items-center justify-between border-b px-2 py-[0.4em]',
           isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
         )}>
         <div className="mr-2 flex min-w-0 flex-1 items-center overflow-hidden">
@@ -888,7 +888,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
       )}
 
       {/* Home Page Content */}
-      <div className={cn('flex-1 min-h-0 overflow-hidden', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
+      <div className={cn('relative z-10 flex-1 min-h-0 overflow-hidden', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
         <div className="h-full min-h-0 overflow-y-auto home-page-scroll">
           <div className="px-3 py-4 space-y-4">
             {/* Hero */}

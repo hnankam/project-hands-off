@@ -197,6 +197,22 @@
   order: 1 !important;
 }
 
+/*
+ * Inline agent/model menus (CustomInputV2) use position absolute + bottom-full. The selector bar
+ * sits outside this tree; the chat path stacks many overflow:hidden wrappers (session shell,
+ * copilot-chat-container, ChatInner, data-load-more-scroll) which clip the panel to a hairline.
+ * Footer override alone is not enough — open the chain only when the V2 custom input mounts.
+ */
+.copilot-chat-container:has(.custom-input-v2-container),
+.copilot-chat-container:has(.custom-input-v2-container) > div,
+.copilotKitChat:has(.custom-input-v2-container),
+[data-load-more-scroll]:has(.custom-input-v2-container),
+.copilot-chat-wrapper:has(.custom-input-v2-container),
+div.flex.h-full.flex-col.overflow-hidden:has(.custom-input-v2-container),
+div.flex.flex-1.flex-col.overflow-hidden:has(.custom-input-v2-container) {
+  overflow: visible !important;
+}
+
 /* ==========================================================
    CHAT WRAPPER
    ========================================================== */

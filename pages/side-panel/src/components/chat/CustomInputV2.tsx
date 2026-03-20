@@ -25,6 +25,9 @@ import { useCopilotChatContext } from '../../hooks/copilotkit';
 import { useStorage, debug } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { ContextSelector } from '../selectors/ContextSelector';
+import { AgentSelector } from '../selectors/AgentSelector';
+import { ModelSelector } from '../selectors/ModelSelector';
+import { useAgentsConfigForModelSelector } from '../../hooks/useAgentsConfigForModelSelector';
 import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
 import { useAuth } from '../../context/AuthContext';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator, cn } from '@extension/ui';
@@ -55,6 +58,12 @@ interface PageSelectorContextValue {
   // Initial workspace item IDs for restoring session state
   initialSelectedNoteIds?: string[];
   initialSelectedCredentialIds?: string[];
+  /** When set with handlers, Agent + Model selectors render left of send (same components as SelectorsBar) */
+  selectedAgent?: string;
+  selectedModel?: string;
+  onAgentChange?: (agent: string) => void;
+  onModelChange?: (model: string) => void;
+  isLoadingSessionForSelectors?: boolean;
 }
 
 export const PageSelectorContext = createContext<PageSelectorContextValue | null>(null);
@@ -198,7 +207,13 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   
   // Get page selector context from parent (ChatInner)
   const pageSelectorCtx = usePageSelectorContext();
-  
+
+  const showChatAgentModelSelectors = !!(
+    pageSelectorCtx?.onAgentChange &&
+    pageSelectorCtx?.onModelChange
+  );
+  const agentsForModelSelector = useAgentsConfigForModelSelector(showChatAgentModelSelectors);
+
   // Pages selector state - use context if available, otherwise local state
   const [localSelectedPageURLs, setLocalSelectedPageURLs] = useState<string[]>([]);
   const selectedPageURLs = pageSelectorCtx?.selectedPageURLs ?? localSelectedPageURLs;
@@ -1871,6 +1886,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                 boxShadow: 'none',
                 WebkitBoxShadow: 'none',
                 position: 'relative',
+                overflow: 'visible',
               }}
             >
               {/* Drag & drop overlay */}
@@ -2098,18 +2114,27 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                 </div>
               )}
               
-              {/* Row 2: All buttons */}
+              {/* Row 2: 3-col grid — left controls | flexible gap | agent+model+send (always right) */}
               <div
                 style={{
-                  display: 'flex',
+                  display: 'grid',
+                  gridTemplateColumns: 'auto minmax(0, 1fr) minmax(0, auto)',
                   alignItems: 'center',
-                  gap: '0rem',
+                  columnGap: 8,
                   paddingBottom: '2.5px',
-                  justifyContent: 'space-between',
+                  overflow: 'visible',
+                  width: '100%',
                 }}
               >
-                  {/* Left side buttons */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.05rem', marginLeft: '6px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.05rem',
+                      marginLeft: '6px',
+                      minWidth: 0,
+                    }}
+                  >
                     {/* Upload dropdown menu - using CopilotKit's addMenuButton as trigger */}
                     <DropdownMenu
                       trigger={enabledAddMenuButton}
@@ -2199,14 +2224,62 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                       onCredentialsWithMetadataChange={setSelectedCredentials} // ✅ SECURITY: Changed from onCredentialsWithSecretsChange
                     />
                   </div>
-                
-                {/* Right side: Send button */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  {/* {audioRecorder}
-                  <div className="custom-input-hover-button">{cancelTranscribeButton}</div>
-                  <div className="custom-input-hover-button">{finishTranscribeButton}</div>
-                  <div className="custom-input-hover-button">{startTranscribeButton}</div> */}
-                  {styledSendButton}
+
+                {/* Middle: absorbs space between left cluster and right group */}
+                <div style={{ minWidth: 0 }} aria-hidden />
+
+                {/* Right: agent + model + send — justify-end packs all items to the row’s right (send stays rightmost) */}
+                <div
+                  className="flex min-w-0 items-center justify-end"
+                  style={{
+                    gap: 0,
+                    marginRight: '0px',
+                    minWidth: 0,
+                  }}
+                >
+                  {showChatAgentModelSelectors && pageSelectorCtx && (
+                    <div
+                      className="chat-bar-selectors-cluster ml-auto flex min-w-0 max-w-[22rem] items-center justify-end gap-1"
+                      style={{
+                        flex: '0 0 auto',
+                        paddingRight: 0,
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      <div className="min-w-0 max-w-[min(11rem,48%)] shrink">
+                        <AgentSelector
+                          isLight={isLight}
+                          selectedAgent={pageSelectorCtx.selectedAgent ?? ''}
+                          isLoadingSession={pageSelectorCtx.isLoadingSessionForSelectors}
+                          onAgentChange={pageSelectorCtx.onAgentChange!}
+                          inlineInput
+                        />
+                      </div>
+                      <div className="min-w-0 max-w-[min(13rem,52%)] shrink">
+                          <ModelSelector
+                            isLight={isLight}
+                            selectedModel={pageSelectorCtx.selectedModel ?? ''}
+                            isLoadingSession={pageSelectorCtx.isLoadingSessionForSelectors}
+                            onModelChange={pageSelectorCtx.onModelChange!}
+                            selectedAgent={pageSelectorCtx.selectedAgent ?? ''}
+                            agents={agentsForModelSelector}
+                            inlineInput
+                          />
+                      </div>
+                    </div>
+                  )}
+                  <span
+                    className="shrink-0"
+                    style={{
+                      flexShrink: 0,
+                      position: 'relative',
+                      zIndex: 2,
+                      paddingLeft: 2,
+                      marginLeft: 2,
+                    }}
+                  >
+                    {styledSendButton}
+                  </span>
                 </div>
               </div>
             </div>

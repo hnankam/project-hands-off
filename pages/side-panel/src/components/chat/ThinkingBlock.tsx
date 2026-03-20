@@ -62,6 +62,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
   const prevCompleteRef = useRef<boolean>(false);
   const myIdRef = useRef<number>(0);
   const [isLatest, setIsLatest] = useState(false);
+  const [showTopFeather, setShowTopFeather] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Manual scroll-up support: when user scrolls up during streaming, pause auto-scroll
@@ -80,9 +81,29 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
     return scrollHeight - scrollTop - clientHeight <= SCROLL_UP_THRESHOLD;
   }, []);
 
+  const syncTopFeather = useCallback(() => {
+    const el = contentRef.current;
+    if (!el) {
+      setShowTopFeather(false);
+      return;
+    }
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    if (scrollHeight <= clientHeight + 1) {
+      setShowTopFeather(false);
+    } else {
+      setShowTopFeather(scrollTop > 2);
+    }
+  }, []);
+
   const handleScroll = useCallback(() => {
     const element = contentRef.current;
-    if (!element || !isStreaming) return;
+    if (!element) return;
+
+    if (!isAutoScrolling.current) {
+      syncTopFeather();
+    }
+
+    if (!isStreaming) return;
     if (isAutoScrolling.current) return;
 
     const currentScrollTop = element.scrollTop;
@@ -97,7 +118,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
     } else if (nearBottom) {
       isUserScrolledUp.current = false;
     }
-  }, [isNearBottom, isStreaming]);
+  }, [isNearBottom, isStreaming, syncTopFeather]);
 
   // Sync open state to cache whenever it changes
   useEffect(() => {
@@ -198,6 +219,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
         scrollRafRef.current = requestAnimationFrame(() => {
           if (element) {
             element.scrollTop = element.scrollHeight - element.clientHeight;
+            syncTopFeather();
           }
           isAutoScrolling.current = false;
           scrollRafRef.current = null;
@@ -223,7 +245,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
         cancelAnimationFrame(scrollRafRef.current);
       }
     };
-  }, [isComplete, isOpen]);
+  }, [isComplete, isOpen, syncTopFeather]);
 
   const toggleAccordion = () => {
     setIsOpen(!isOpen);
@@ -270,6 +292,15 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
     // Otherwise, render React nodes as-is
     return sanitizeContent;
   }, [sanitizeContent, isLight]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setShowTopFeather(false);
+      return;
+    }
+    const id = requestAnimationFrame(() => syncTopFeather());
+    return () => cancelAnimationFrame(id);
+  }, [isOpen, sanitizeContent, isComplete, syncTopFeather]);
 
   return (
     <div
@@ -372,19 +403,18 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
               <div className="thinking-block-content">{renderedContent}</div>
             </div>
             {isOpen && (
-              <div
-                className="thinking-block-feather"
-                style={{
-                  position: 'absolute',
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  height: 8,
-                  pointerEvents: 'none',
-                  zIndex: 10,
-                }}
-                aria-hidden
-              />
+              <>
+                <div
+                  className={`thinking-block-feather-top pointer-events-none absolute left-0 right-0 top-0 z-10 h-2 transition-opacity duration-150 ${
+                    showTopFeather ? 'opacity-100' : 'opacity-0'
+                  }`}
+                  aria-hidden
+                />
+                <div
+                  className="thinking-block-feather pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-2"
+                  aria-hidden
+                />
+              </>
             )}
           </div>
         </div>

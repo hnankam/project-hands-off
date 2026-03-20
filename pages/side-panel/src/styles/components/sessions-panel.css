@@ -4,20 +4,26 @@
    and actions are readable over long chat titles
    ============================================================================= */
 
-/* Feather gradient - fades title into background so timestamp/actions are readable */
-/* Match panel background exactly for seamless blend (dark: #0D1117, light: #ffffff) */
-.sessions-panel-list [data-session-id] .sessions-panel-item-feather {
-  background: linear-gradient(to right, transparent 0%, transparent 25%, var(--close-feather-bg) 60%, var(--close-feather-bg) 100%) !important;
+/* Floating action feather - always has gradient, fades in via opacity for smooth transition */
+.sessions-panel-list [data-session-id] .sessions-panel-close-feather {
+  background: linear-gradient(to right, transparent 0%, var(--close-feather-hover-bg) 50%, var(--close-feather-hover-bg) 100%);
+  opacity: 0;
+  transition: opacity 100ms ease;
 }
 
-.sessions-panel-list [data-session-id].group:hover .sessions-panel-item-feather {
-  background: linear-gradient(to right, transparent 0%, transparent 25%, var(--close-feather-hover-bg) 60%, var(--close-feather-hover-bg) 100%) !important;
+.sessions-panel-list [data-session-id].group:hover .sessions-panel-close-feather,
+.sessions-panel-list [data-session-id] .sessions-panel-close-feather.is-open {
+  opacity: 1;
 }
 
 /* =============================================================================
-   ARCHIVED CHATS - Bottom feather
-   Soft fade at bottom when scrolling (matches chat input v2 suggestions footer)
+   Open chats + Archived lists — top / bottom scroll feathers
+   Set --archived-feather-bg on the relative wrapper (panel background)
    ============================================================================= */
+
+.sessions-panel-scroll-feather-top {
+  background: linear-gradient(to bottom, var(--archived-feather-bg) 0%, var(--archived-feather-bg) 20%, transparent 100%);
+}
 
 .sessions-panel-archived-feather {
   background: linear-gradient(to bottom, transparent 0%, var(--archived-feather-bg) 80%, var(--archived-feather-bg) 100%);

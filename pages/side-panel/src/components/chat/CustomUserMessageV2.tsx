@@ -32,6 +32,7 @@ import {
   CustomUndoButton,
   CustomMoreOptionsButton,
 } from './slots/CustomUserMessageButtons';
+import { DEBUG_USER_MESSAGE_SCROLL } from '../../debug/user-message-scroll';
 
 // Type for the component props - derived from CopilotChatUserMessage
 type UserMessageProps = React.ComponentProps<typeof CopilotChatUserMessage>;
@@ -125,7 +126,15 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
   const [editHistory, setEditHistory] = useState<string[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState('');
+  /** Increment when opening edit so uncontrolled textarea remounts with correct defaultValue */
+  const [editFieldMountKey, setEditFieldMountKey] = useState(0);
+  const editedContentRef = React.useRef(editedContent);
+  /** Latest isEditing for messageRenderer callback — avoid putting isEditing in useCallback deps (remounts slot). */
+  const isEditingForMessageRendererRef = React.useRef(isEditing);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  // Survive textarea remounts — saved in onChange, restored synchronously in useLayoutEffect on each new mount
+  const savedScrollTopRef = React.useRef<number>(0);
+  const savedCursorRef = React.useRef<number>(0);
   // Use context instead of useCopilotChat() — avoids subscribing every message component
   // to the global messages state (which causes all 200 components to re-render per SSE event).
   const { getMessages, setMessages, reloadMessages } = useMessageOperations();
@@ -150,6 +159,9 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
   const attachments = useMemo(() => {
     return extractAttachments(message?.content);
   }, [messageContentId]);
+
+  const attachmentsForMessageRendererRef = React.useRef(attachments);
+  attachmentsForMessageRendererRef.current = attachments;
   
   const textContent = useMemo(() => {
     return extractTextContent(message?.content);
@@ -346,12 +358,13 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
     
     // Save current content to edit history before editing
     setEditHistory(prev => [...prev, currentText]);
+    editedContentRef.current = currentText;
     setEditedContent(currentText);
+    setEditFieldMountKey((k) => k + 1);
     setIsEditing(true);
   }, [setEditHistory, setEditedContent, setIsEditing]);
   
   // Handle save edit - use refs to stabilize callback
-  const editedContentRef = React.useRef(editedContent);
   const restPropsRef = React.useRef(restProps);
   const setMessagesRef = React.useRef(setMessages);
   const setIsEditingRef = React.useRef(setIsEditing);
@@ -430,6 +443,15 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
   // Focus textarea when entering edit mode
   React.useEffect(() => {
     if (isEditing && textareaRef.current) {
+      if (DEBUG_USER_MESSAGE_SCROLL) {
+        // eslint-disable-next-line no-console
+        console.log('[user-msg-scroll] enter edit focus+selectionEnd', {
+          messageId: message.id,
+          len: textareaRef.current.value.length,
+          scrollTop: textareaRef.current.scrollTop,
+          t: performance.now(),
+        });
+      }
       textareaRef.current.focus();
       textareaRef.current.setSelectionRange(
         textareaRef.current.value.length,
@@ -437,6 +459,7 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
       );
     }
   }, [isEditing]);
+
   
   // Handle keyboard shortcuts - stable callback
   const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -499,72 +522,93 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
   // This prevents duplicate buttons since we're manually reordering
   const additionalToolbarItems = null;
   
-  // Custom message renderer callback
-  // Include editedContent in deps so renderer receives updated props
-  // Use stable key to prevent unmounting, and restore focus if lost
+  // Store cursor position when restoring focus after a remount (draft is local; no per-keypress parent state).
+  const cursorPositionRef = React.useRef<number | null>(null);
+
+  /** Keeps save/cancel in sync without setState on every keystroke (draft lives in UserMessageEditField). */
+  const mirrorEditedDraftToRef = React.useCallback((content: string) => {
+    editedContentRef.current = content;
+  }, []);
+
+  // Refs must be current before Copilot invokes messageRenderer during this render.
+  isEditingForMessageRendererRef.current = isEditing;
+
+  // Keep `editedContent` off deps (use ref) so the callback identity stays stable while typing — avoids slot remounts.
+  // Include `isEditing` in deps so CopilotChatUserMessage (often memoized) sees a prop change and re-renders when entering/leaving edit.
   const MessageRendererWithEdit = React.useCallback((rendererProps: { content: string; className?: string }) => {
-    if (isEditing) {
+    if (isEditingForMessageRendererRef.current) {
       return (
-        <CustomUserMessageRenderer 
-          key={`edit-${message.id}`} // Stable key - same key prevents unmounting
+        <CustomUserMessageRenderer
+          key={`edit-${message.id}`}
           {...rendererProps}
-          isEditing={isEditing}
-          editedContent={editedContent}
-          onContentChange={handleContentChangeWithCursor}
+          isEditing
+          editedContent={editedContentRef.current}
+          onContentChange={mirrorEditedDraftToRef}
           onSave={handleSaveEdit}
           onCancel={handleCancelEdit}
           textareaRef={textareaRef}
           onKeyDown={handleKeyDown}
-          attachments={attachments}
-          isFirstMessage={isFirstMessage}
+          attachments={attachmentsForMessageRendererRef.current}
+          isFirstMessage={isFirstMessageRef.current}
+          savedScrollTopRef={savedScrollTopRef}
+          savedCursorRef={savedCursorRef}
+          editFieldMountKey={editFieldMountKey}
         />
       );
     }
     return (
-      <CustomUserMessageRenderer 
+      <CustomUserMessageRenderer
         key={`view-${message.id}`}
         {...rendererProps}
-        attachments={attachments}
-        isFirstMessage={isFirstMessage}
+        attachments={attachmentsForMessageRendererRef.current}
+        isFirstMessage={isFirstMessageRef.current}
       />
     );
-  }, [isFirstMessage, handleSaveEdit, handleCancelEdit, handleKeyDown, isEditing, editedContent, attachments, message.id]);
+  }, [message.id, isEditing, editFieldMountKey, mirrorEditedDraftToRef, handleSaveEdit, handleCancelEdit, handleKeyDown]);
   
-  // Store cursor position to restore it after re-render
-  const cursorPositionRef = React.useRef<number | null>(null);
-  
-  // Track cursor position when typing - receives content and cursor position
-  const handleContentChangeWithCursor = React.useCallback((content: string, cursorPos?: number) => {
-    // Save cursor position if provided, otherwise try to get it from textarea
-    if (cursorPos !== undefined) {
-      cursorPositionRef.current = cursorPos;
-    } else if (textareaRef.current) {
-      cursorPositionRef.current = textareaRef.current.selectionStart;
-    }
-    setEditedContent(content);
-  }, []);
-  
-  // Restore focus and cursor position after render if it was lost
-  // This handles cases where CopilotKit re-renders and focus is lost
+  // Restore focus/cursor only when focus was stolen (e.g. CopilotKit remount).
+  // Do not call setSelectionRange on every keystroke — it resets textarea scrollTop in WebKit/Blink.
   React.useEffect(() => {
-    if (isEditing && textareaRef.current) {
-      // Use requestAnimationFrame to ensure DOM has updated
-      requestAnimationFrame(() => {
-        if (textareaRef.current) {
-          const wasFocused = document.activeElement === textareaRef.current;
-          if (!wasFocused) {
-            textareaRef.current.focus();
-          }
-          // Restore cursor position if we have one saved
-          if (cursorPositionRef.current !== null) {
-            const pos = Math.min(cursorPositionRef.current, textareaRef.current.value.length);
-            textareaRef.current.setSelectionRange(pos, pos);
-            cursorPositionRef.current = null; // Clear after restoring
-          }
+    if (!isEditing || !textareaRef.current) return;
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      const wasFocused = document.activeElement === el;
+      if (DEBUG_USER_MESSAGE_SCROLL) {
+        // eslint-disable-next-line no-console
+        console.log('[user-msg-scroll] parent rAF focus check', {
+          messageId: message.id,
+          draftLen: textareaRef.current?.value?.length,
+          wasFocused,
+          activeTag: document.activeElement?.nodeName,
+          activeIsTextarea: document.activeElement === el,
+          taScrollBefore: el.scrollTop,
+          cursorRef: cursorPositionRef.current,
+          t: performance.now(),
+        });
+      }
+      if (!wasFocused) {
+        // setSelectionRange + focus scroll the caret into view and often reset textarea scrollTop to 0.
+        // savedScrollTopRef is updated in onChange before setState and survives remounts.
+        const savedTaScroll = savedScrollTopRef.current;
+        el.focus({ preventScroll: true });
+        if (cursorPositionRef.current !== null) {
+          const pos = Math.min(cursorPositionRef.current, el.value.length);
+          el.setSelectionRange(pos, pos);
         }
-      });
-    }
-  }, [isEditing, editedContent]); // Re-run when content changes to restore focus
+        el.scrollTop = savedTaScroll;
+        if (DEBUG_USER_MESSAGE_SCROLL) {
+          // eslint-disable-next-line no-console
+          console.log('[user-msg-scroll] parent restored focus/selection', {
+            messageId: message.id,
+            taScrollAfter: el.scrollTop,
+            reappliedFromRef: savedTaScroll,
+          });
+        }
+      }
+      cursorPositionRef.current = null;
+    });
+  }, [isEditing, message.id]);
   
   // Custom edit button that triggers edit mode
   const CustomEditButtonWithHandler = useCallback((buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>) => {

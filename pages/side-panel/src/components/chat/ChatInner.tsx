@@ -233,6 +233,12 @@ export interface ChatInnerProps {
   // Initial workspace item IDs for restoring session state
   initialSelectedNoteIds?: string[];
   initialSelectedCredentialIds?: string[];
+  /** Agent/model for inline chat input selectors (same UI as SelectorsBar) */
+  selectedAgent?: string;
+  selectedModel?: string;
+  onAgentChange?: (agent: string) => void;
+  onModelChange?: (model: string) => void;
+  isLoadingSessionSelectors?: boolean;
 }
 
 // ================================================================================
@@ -274,6 +280,11 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   onFilesChange,
   initialSelectedNoteIds = [],
   initialSelectedCredentialIds = [],
+  selectedAgent,
+  selectedModel,
+  onAgentChange,
+  onModelChange,
+  isLoadingSessionSelectors,
 }) => {
   // ================================================================================
   // THEME & STORAGE
@@ -984,6 +995,11 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         onFilesChange,
         initialSelectedNoteIds,
         initialSelectedCredentialIds,
+        selectedAgent,
+        selectedModel,
+        onAgentChange,
+        onModelChange,
+        isLoadingSessionForSelectors: isLoadingSessionSelectors,
   }), [
     selectedPageURLs,
     onPagesChange,
@@ -998,6 +1014,11 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     onFilesChange,
     initialSelectedNoteIds,
     initialSelectedCredentialIds,
+    selectedAgent,
+    selectedModel,
+    onAgentChange,
+    onModelChange,
+    isLoadingSessionSelectors,
   ]);
 
   return (

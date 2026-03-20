@@ -1644,6 +1644,11 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           onCredentialsChange={setSelectedCredentials}
           initialSelectedNoteIds={initialSelectedNoteIds}
           initialSelectedCredentialIds={initialSelectedCredentialIds}
+          selectedAgent={selectedAgent}
+          selectedModel={selectedModel}
+          onAgentChange={handleAgentChange}
+          onModelChange={handleModelChange}
+          isLoadingSessionSelectors={isLoadingMetadata || isLoadingFromDB}
         />
         );
       },
@@ -1653,10 +1658,14 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         activeTeam,
         contextMenuMessage,
         currentAgentStepState,
+        handleAgentChange,
+        handleModelChange,
         handleAgentStepStateChange,
         currentPageContent,
         dbTotals,
         enabledFrontendTools,
+        isLoadingFromDB,
+        isLoadingMetadata,
         organization?.id,
         selectedAgent,
         selectedModel,

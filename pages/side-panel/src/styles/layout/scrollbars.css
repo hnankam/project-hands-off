@@ -270,3 +270,55 @@
   background-size: 8px 8px;
   background-position: right 2px bottom 2px;
 }
+
+/* ==========================================================
+   CHAT INPUT (Tiptap / ProseMirror) + USER MESSAGE EDIT
+   3px thin scrollbar — same pattern as .recent-sessions-scroll
+   ========================================================== */
+.tiptap-editor::-webkit-scrollbar,
+.ProseMirror::-webkit-scrollbar,
+.user-message-edit-textarea::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+
+.tiptap-editor::-webkit-scrollbar-track,
+.ProseMirror::-webkit-scrollbar-track,
+.user-message-edit-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tiptap-editor::-webkit-scrollbar-thumb,
+.ProseMirror::-webkit-scrollbar-thumb,
+.user-message-edit-textarea::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 2px;
+}
+
+.tiptap-editor::-webkit-scrollbar-thumb:hover,
+.ProseMirror::-webkit-scrollbar-thumb:hover,
+.user-message-edit-textarea::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+.dark .tiptap-editor::-webkit-scrollbar-track,
+.dark .ProseMirror::-webkit-scrollbar-track,
+.dark .user-message-edit-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dark .tiptap-editor::-webkit-scrollbar-thumb,
+.dark .ProseMirror::-webkit-scrollbar-thumb,
+.dark .user-message-edit-textarea::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3);
+}
+
+.dark .tiptap-editor::-webkit-scrollbar-thumb:hover,
+.dark .ProseMirror::-webkit-scrollbar-thumb:hover,
+.dark .user-message-edit-textarea::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5);
+}
+
+/* Agent/model selector menus: thin scrollbar via inner .recent-sessions-scroll (see ModelSelector /
+   AgentSelector). Animation lives on outer .agent-selector-dropdown / .model-selector-dropdown only —
+   combining transform animation + overflow on one element breaks WebKit custom scrollbar width. */

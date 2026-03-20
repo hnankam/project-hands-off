@@ -112,6 +112,21 @@ footer.copilotKitMessagesFooter,
   box-sizing: border-box !important;
 }
 
+/*
+ * SelectorsBar sits outside the chat footer (see ChatSessionContainer). Inline agent/model
+ * pickers use the same components inside CustomInputV2, but the footer uses overflow:hidden
+ * for suggestions — that clips bottom-full dropdowns and their scrollbars. Allow paint
+ * outside the footer only when the V2 custom input (with those menus) is mounted.
+ */
+.copilotKitMessagesFooter:has(.custom-input-v2-container),
+footer.copilotKitMessagesFooter:has(.custom-input-v2-container),
+.copilotKitChat > footer:has(.custom-input-v2-container),
+[class*="MessagesFooter"]:has(.custom-input-v2-container),
+.copilot-chat-container footer:has(.custom-input-v2-container) {
+  overflow: visible !important;
+  contain: none !important;
+}
+
 /* Hide scrollbar on footer */
 .copilotKitMessagesFooter::-webkit-scrollbar,
 footer.copilotKitMessagesFooter::-webkit-scrollbar {

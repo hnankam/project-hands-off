@@ -165,11 +165,17 @@ function dedupeMessages(msgs: Message[]): Message[] {
 function eventsToMessages(events: Array<Record<string, unknown>>): Message[] {
   const messages: Message[] = [];
   const messageMap = new Map<string, Message>();
+  // Track the most-recently-seen runId so truncation metadata can use it as a
+  // fallback when the backend emits truncated events with runId: null.
+  let currentRunId: string | null = null;
 
   for (const event of events) {
     const type = event.type as string;
 
     if (type === EventType.RUN_STARTED) {
+      if (typeof event.runId === 'string' && event.runId) {
+        currentRunId = event.runId;
+      }
       const input = event.input as { messages?: Message[] } | undefined;
       const inputMessages = input?.messages ?? [];
       for (const msg of inputMessages) {
@@ -225,6 +231,32 @@ function eventsToMessages(events: Array<Record<string, unknown>>): Message[] {
 
     if (type === EventType.TOOL_CALL_ARGS) {
       const toolCallId = event.toolCallId as string;
+      // Truncated event: backend replaced the args payload with a small metadata object.
+      // Store the metadata directly as the arguments so ActionStatus can detect it and
+      // show a "Load full content" button — do NOT append to any existing args string.
+      if (event.truncated === true) {
+        for (const msg of messages) {
+          const tc = (msg as { toolCalls?: Array<{ id: string; function: { arguments: string } }> }).toolCalls;
+          if (tc) {
+            const t = tc.find((c) => c.id === toolCallId);
+            if (t) {
+              // Serialise the truncation metadata as the arguments value so isTruncated()
+              // in ActionStatus can detect it via JSON.parse.
+              t.function.arguments = JSON.stringify({
+                truncated: true,
+                toolCallId: event.toolCallId,
+                // event.runId is often null; fall back to the most-recently-seen
+                // RUN_STARTED runId so the backend lookup URL is valid.
+                runId: (event.runId as string | null) ?? currentRunId,
+                originalLength: event.originalLength,
+                eventType: EventType.TOOL_CALL_ARGS,
+              });
+              break;
+            }
+          }
+        }
+        continue;
+      }
       const delta = (event.delta as string) || '';
       for (const msg of messages) {
         const tc = (msg as { toolCalls?: Array<{ id: string; function: { arguments: string } }> }).toolCalls;

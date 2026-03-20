@@ -9,6 +9,90 @@ import * as React from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { CustomMarkdownRenderer } from '../../chat/CustomMarkdownRenderer';
+import { DEBUG_USER_MESSAGE_SCROLL } from '../../../debug/user-message-scroll';
+
+const noopMirrorDraft: (value: string) => void = () => {};
+
+/** Uncontrolled textarea — keystrokes do not re-render React (only mirror ref for save). Parent sets `key` when opening edit. */
+const UserMessageEditField = React.memo(
+  function UserMessageEditField({
+    initialText,
+    textareaRef,
+    savedScrollTopRef,
+    savedCursorRef,
+    onMirrorDraft,
+    onKeyDown,
+    isLight,
+  }: {
+    initialText: string;
+    textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+    savedScrollTopRef?: React.MutableRefObject<number>;
+    savedCursorRef?: React.MutableRefObject<number>;
+    onMirrorDraft: (value: string) => void;
+    onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+    isLight: boolean;
+  }) {
+    const textareaStyle = React.useMemo(
+      () =>
+        ({
+          width: '100%',
+          minHeight: '80px',
+          maxHeight: '200px',
+          overflowY: 'auto' as const,
+          padding: '0.5rem',
+          borderRadius: '6px',
+          border: 'none',
+          backgroundColor: isLight ? '#ffffff' : '#0C1117',
+          color: isLight ? '#374151' : '#d1d5db',
+          fontSize: '13px',
+          lineHeight: '1.4',
+          fontFamily: 'inherit',
+          resize: 'none' as const,
+          outline: 'none',
+          marginBottom: '0.5rem',
+        }) satisfies React.CSSProperties,
+      [isLight],
+    );
+
+    return (
+      <textarea
+        ref={textareaRef}
+        className="user-message-edit-textarea"
+        defaultValue={initialText}
+        onChange={(e) => {
+          const el = e.target;
+          // Save both scroll and cursor BEFORE the state update that triggers a remount
+          if (savedScrollTopRef) savedScrollTopRef.current = el.scrollTop;
+          if (savedCursorRef) savedCursorRef.current = el.selectionStart ?? 0;
+          onMirrorDraft(el.value);
+        }}
+        onKeyDown={onKeyDown}
+        style={textareaStyle}
+      />
+    );
+  },
+);
+
+function logScrollAncestors(label: string, from: HTMLElement | null, maxDepth = 14) {
+  if (!DEBUG_USER_MESSAGE_SCROLL || !from) return;
+  let p: HTMLElement | null = from.parentElement;
+  let depth = 0;
+  while (p && depth < maxDepth) {
+    const { overflowY } = getComputedStyle(p);
+    if (overflowY === 'auto' || overflowY === 'scroll' || p.scrollTop > 0) {
+      // eslint-disable-next-line no-console
+      console.log(`[user-msg-scroll] ${label}`, p.tagName, {
+        scrollTop: p.scrollTop,
+        scrollHeight: p.scrollHeight,
+        clientHeight: p.clientHeight,
+        overflowY,
+        class: typeof p.className === 'string' ? p.className.slice(0, 100) : '',
+      });
+    }
+    p = p.parentElement;
+    depth += 1;
+  }
+}
 
 export interface CustomUserMessageRendererProps {
   content: string;
@@ -22,6 +106,12 @@ export interface CustomUserMessageRendererProps {
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   attachments?: Array<{ filename: string; mimeType: string; url: string; }>;
   isFirstMessage?: boolean;
+  /** Ref owned by parent — survives textarea remounts — used to save/restore scrollTop */
+  savedScrollTopRef?: React.MutableRefObject<number>;
+  /** Ref owned by parent — survives textarea remounts — used to save/restore cursor position */
+  savedCursorRef?: React.MutableRefObject<number>;
+  /** Bump when opening edit so the uncontrolled textarea remounts with fresh defaultValue */
+  editFieldMountKey?: number;
 }
 
 /**
@@ -46,7 +136,11 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
   onKeyDown,
   attachments = [],
   isFirstMessage = false,
+  savedScrollTopRef,
+  savedCursorRef,
+  editFieldMountKey = 0,
 }) => {
+  const debugIdRef = React.useRef(Math.random().toString(36).slice(2, 9));
   const { isLight } = useStorage(themeStorage);
   
   // V1 styling colors
@@ -85,38 +179,71 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
     }
   }, [isLight, isFirstMessage]);
   
+  // After each remount, synchronously restore scroll + focus + cursor before the browser paints.
+  // onChange saves both refs before the state update that triggers the remount.
+  React.useLayoutEffect(() => {
+    if (!isEditing || !textareaRef?.current) return;
+    const ta = textareaRef.current;
+    // 1. Restore scroll position
+    if (savedScrollTopRef) ta.scrollTop = savedScrollTopRef.current;
+    // 2. Restore focus if not already focused (remount always drops focus)
+    if (document.activeElement !== ta) {
+      ta.focus({ preventScroll: true });
+      // 3. Restore cursor position
+      if (savedCursorRef) {
+        const pos = Math.min(savedCursorRef.current, ta.value.length);
+        ta.setSelectionRange(pos, pos);
+      }
+    }
+    if (DEBUG_USER_MESSAGE_SCROLL) {
+      // eslint-disable-next-line no-console
+      console.log('[user-msg-scroll] layoutEffect restore', {
+        id: debugIdRef.current,
+        scrollTop: ta.scrollTop,
+        cursor: savedCursorRef?.current,
+        focused: document.activeElement === ta,
+      });
+      logScrollAncestors('layoutEffect ancestors', ta);
+    }
+  }, [isEditing]);
+
+  // Log after parent rAF (e.g. CustomUserMessageV2 focus effect) — see if scroll jumps post-layout.
+  React.useEffect(() => {
+    if (!DEBUG_USER_MESSAGE_SCROLL || !isEditing || !textareaRef?.current || !savedScrollTopRef) return;
+    const ta = textareaRef.current;
+    const saved = savedScrollTopRef.current;
+    const raf = requestAnimationFrame(() => {
+      if (!textareaRef?.current) return;
+      const el = textareaRef.current;
+      // eslint-disable-next-line no-console
+      console.log('[user-msg-scroll] after rAF', {
+        id: debugIdRef.current,
+        textareaScrollTop: el.scrollTop,
+        savedRef: saved,
+        mismatch: el.scrollTop !== saved,
+      });
+      logScrollAncestors('after rAF ancestors', el);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [isEditing]);
+
   // Edit mode view
   if (isEditing) {
     return (
-      <div 
+      <div
         className={className}
         style={containerStyles}
         data-message-role="user"
       >
-        <textarea
-          ref={textareaRef}
-          value={editedContent}
-          onChange={(e) => {
-            // Pass cursor position (after the change) to preserve it
-            const cursorPos = e.target.selectionStart;
-            onContentChange?.(e.target.value, cursorPos);
-          }}
+        <UserMessageEditField
+          key={editFieldMountKey}
+          initialText={editedContent}
+          textareaRef={textareaRef as React.RefObject<HTMLTextAreaElement | null>}
+          savedScrollTopRef={savedScrollTopRef}
+          savedCursorRef={savedCursorRef}
+          onMirrorDraft={onContentChange ?? noopMirrorDraft}
           onKeyDown={onKeyDown}
-          style={{
-            width: '100%',
-            minHeight: '80px',
-            padding: '0.5rem',
-            borderRadius: '6px',
-            border: 'none',
-            backgroundColor: isLight ? '#ffffff' : '#0C1117',
-            color: isLight ? '#374151' : '#d1d5db', // Matches message text and buttons
-            fontSize: '13px',
-            lineHeight: '1.4',
-            fontFamily: 'inherit',
-            resize: 'none',
-            outline: 'none',
-            marginBottom: '0.5rem',
-          }}
+          isLight={isLight}
         />
         <div
           style={{
@@ -288,6 +415,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
     content: prevProps.content !== nextProps.content,
     isEditing: prevProps.isEditing !== nextProps.isEditing,
     editedContent: prevProps.editedContent !== nextProps.editedContent,
+    editFieldMountKey: prevProps.editFieldMountKey !== nextProps.editFieldMountKey,
     isFirstMessage: prevProps.isFirstMessage !== nextProps.isFirstMessage,
     attachments: prevProps.attachments?.length !== nextProps.attachments?.length,
   };
@@ -296,6 +424,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
     !propsChanged.content &&
     !propsChanged.isEditing &&
     !propsChanged.editedContent &&
+    !propsChanged.editFieldMountKey &&
     !propsChanged.isFirstMessage &&
     !propsChanged.attachments
   );

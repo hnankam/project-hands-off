@@ -214,9 +214,9 @@ export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisi
             className={cn(
               "group relative flex items-center px-2 py-1 pr-1 text-xs rounded cursor-pointer transition-colors whitespace-nowrap flex-shrink-0",
               session.id === currentSessionId
-                ? isLight 
-                  ? "bg-gray-200 text-gray-900" 
-                  : "bg-gray-700 text-gray-100"
+                ? isLight
+                  ? "bg-gray-200 text-gray-600 font-semibold"
+                  : "bg-gray-700 text-gray-400 font-semibold"
                 : isLight
                   ? "text-gray-600 hover:bg-gray-100"
                   : "text-gray-500 hover:bg-gray-700"
@@ -285,13 +285,13 @@ export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel', isVisi
                 }}
                 className={cn(
                   "opacity-0 group-hover:opacity-100 p-0.5 rounded transition-all flex items-center justify-center pointer-events-auto ml-auto shrink-0",
-                  isLight 
-                    ? "text-gray-400 hover:text-gray-700" 
-                    : "text-gray-500 hover:text-gray-200"
+                  isLight
+                    ? "text-gray-500 hover:text-gray-800"
+                    : "text-gray-400 hover:text-gray-100"
                 )}
                 style={{ minWidth: '16px', minHeight: '16px'}}
               >
-                <svg width="8" height="8" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <svg width="9" height="9" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
                   <path d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
