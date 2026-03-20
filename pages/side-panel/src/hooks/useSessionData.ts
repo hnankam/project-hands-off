@@ -203,9 +203,10 @@ export const useSessionData = (
   // Ref for sessionId to use in persistUsageStats callback
   const sessionIdRef = useRef(sessionId);
   
-  // Keep sessionId ref in sync
+  // Keep sessionId ref in sync and reset hydration flags on session change
   useEffect(() => {
     sessionIdRef.current = sessionId;
+    usageHydrationCompleteRef.current = false;
   }, [sessionId]);
   
   // ============================================================================
@@ -412,6 +413,10 @@ export const useSessionData = (
   // CALLBACKS
   // ============================================================================
   
+  // Track if we should skip the first persist after usage hydration completes
+  // This prevents saving loaded data back to DB when nothing has changed
+  const usageHydrationCompleteRef = useRef(false);
+
   /**
    * Persist usage statistics to IndexedDB.
    * Called from ChatSessionContainer when usage changes.
@@ -422,19 +427,23 @@ export const useSessionData = (
     lastUsageData: UsageData | null
   ) => {
     const currentSessionId = sessionIdRef.current;
-    
+
     // Don't persist during hydration
     if (!currentSessionId || isUsageHydrating) {
-      debug.log(`[useSessionData] Skipping persist: sessionId=${!!currentSessionId}, isHydrating=${isUsageHydrating}`);
       return;
     }
-    
+
+    // Skip the first persist after hydration completes (just reloaded from DB)
+    if (!usageHydrationCompleteRef.current) {
+      usageHydrationCompleteRef.current = true;
+      return;
+    }
+
     // Don't persist zeros - this prevents overwriting DB data with empty values
     // when useUsageStream hasn't loaded from DB yet
-    const hasData = cumulativeUsage.request > 0 || cumulativeUsage.response > 0 || 
+    const hasData = cumulativeUsage.request > 0 || cumulativeUsage.response > 0 ||
                     cumulativeUsage.total > 0 || cumulativeUsage.requestCount > 0;
     if (!hasData && !lastUsageData) {
-      debug.log(`[useSessionData] Skipping persist: no data to save`);
       return;
     }
 

@@ -172,12 +172,6 @@ export interface AgentEventSubscriberResult {
 }
 
 // ============================================================================
-// CONSTANTS
-// ============================================================================
-
-const LOG_PREFIX = '[AgentEventSubscriber]';
-
-// ============================================================================
 // HOOK IMPLEMENTATION
 // ============================================================================
 
@@ -304,11 +298,9 @@ export function useAgentEventSubscriber(
   // HELPERS
   // ============================================================================
 
-  const log = useCallback((...args: any[]) => {
-    // Always log to console if debug is enabled to ensure visibility
+  const log = useCallback((...args: unknown[]) => {
     if (debugEnabled) {
-      console.log(LOG_PREFIX, ...args);
-      debug.log(LOG_PREFIX, ...args);
+      debug.log(...args);
     }
   }, [debugEnabled]);
 
@@ -323,12 +315,10 @@ export function useAgentEventSubscriber(
       (lowerMsg.includes('exit cancel scope') && lowerMsg.includes('different task'));
     
     if (isAnyCancelScopeError) {
-      log('✅ FILTERED anyio cancel scope error (expected from CopilotKit cancellation):', errorMsg);
       return; // Don't propagate - this is expected behavior
     }
     
     // All other errors are logged and propagated
-    log('⚠️ Error occurred:', errorMsg, context);
     
     const agentError: AgentError = {
       error: err,
@@ -347,7 +337,6 @@ export function useAgentEventSubscriber(
   const clearError = useCallback(() => {
     setError(null);
     setLifecycle(prev => ({ ...prev, error: undefined }));
-    log('Error cleared');
   }, [log]);
 
   // ============================================================================
@@ -356,11 +345,8 @@ export function useAgentEventSubscriber(
 
   useEffect(() => {
     if (!agent) {
-      log('Agent not available, skipping subscription');
       return;
     }
-
-    log('Subscribing to agent events');
 
     const subscription = agent.subscribe({
       // ========================================================================
@@ -371,9 +357,6 @@ export function useAgentEventSubscriber(
        * Called when agent run initializes
        */
       onRunInitialized: async ({ messages, state, agent, input }: any) => {
-        console.log(`${LOG_PREFIX} 🚀 Run initialized:`, input.runId);
-        log('Run initialized:', input.runId);
-        
         setLifecycle({
           phase: 'initializing',
           runId: input.runId,
@@ -453,8 +436,6 @@ export function useAgentEventSubscriber(
        * Called when agent run starts
        */
       onRunStartedEvent: async ({ event, messages, state }: any) => {
-        log('🚀 Run started event:', event.runId);
-        
         setLifecycle({
           phase: 'running',
           runId: event.runId,
@@ -470,8 +451,6 @@ export function useAgentEventSubscriber(
        * Called when agent run finishes successfully
        */
       onRunFinishedEvent: async ({ event, messages, state, result }: any) => {
-        log('Run finished event:', event.runId, 'Result:', result);
-        
         setLifecycle(prev => ({
           ...prev,
           phase: 'completed',
@@ -498,11 +477,8 @@ export function useAgentEventSubscriber(
           (lowerMsg.includes('exit cancel scope') && lowerMsg.includes('different task'));
         
         if (isAnyCancelScopeError) {
-          log('✅ FILTERED anyio cancel scope error in onRunErrorEvent:', errorMsg);
           return; // Don't propagate - this is expected behavior
         }
-        
-        log('Run error event:', event.message, 'Code:', event.code);
         
         const error = new Error(event.message);
         error.name = event.code || 'AgentError';
@@ -532,16 +508,12 @@ export function useAgentEventSubscriber(
       // ========================================================================
 
       onStepStartedEvent: async ({ event, state }: any) => {
-        log('Step started:', event.stepName);
-        
         if (callbacksRef.current.onStepStarted) {
           callbacksRef.current.onStepStarted(event, state);
         }
       },
 
       onStepFinishedEvent: async ({ event, state }: any) => {
-        log('Step finished:', event.stepName);
-        
         if (callbacksRef.current.onStepFinished) {
           callbacksRef.current.onStepFinished(event, state);
         }
@@ -591,16 +563,12 @@ export function useAgentEventSubscriber(
       },
 
       onToolCallResultEvent: async ({ event, messages, state }: any) => {
-        log('Tool call result:', event.toolCallId);
-        
         // Check if this is a tool error
         const toolMessage = messages.find(
           (m: any) => m.role === 'tool' && (m as any).toolCallId === event.toolCallId
         );
         
         if (toolMessage && (toolMessage as any).error) {
-          log('Tool call failed:', (toolMessage as any).error);
-          
           // Update tool execution with error
           setActiveTools(prev => {
             const updated = new Map(prev);
@@ -648,22 +616,12 @@ export function useAgentEventSubscriber(
       // ========================================================================
 
       onStateChanged: async ({ messages, state }: any) => {
-        log('🔄 State changed');
-        if (debugEnabled) {
-          debug.log(LOG_PREFIX, 'New state keys:', Object.keys(state || {}));
-        }
-        
         if (callbacksRef.current.onStateChanged) {
           callbacksRef.current.onStateChanged(state, messages);
         }
       },
 
       onMessagesChanged: async ({ messages, state }: any) => {
-        log('📩 Messages changed, count:', messages.length);
-        if (debugEnabled) {
-          debug.log(LOG_PREFIX, 'Latest message:', messages[messages.length - 1]);
-        }
-        
         if (callbacksRef.current.onMessagesChanged) {
           callbacksRef.current.onMessagesChanged(messages, state);
         }
@@ -674,9 +632,6 @@ export function useAgentEventSubscriber(
       // ========================================================================
 
       onActivitySnapshotEvent: async ({ event, activityMessage, existingMessage }: any) => {
-        console.log(`${LOG_PREFIX} 📊 Activity snapshot received:`, event.messageId, event);
-        log('📊 Activity snapshot received:', event.messageId);
-        
         if (callbacksRef.current.onActivityUpdate) {
           callbacksRef.current.onActivityUpdate(event);
         }
@@ -686,23 +641,14 @@ export function useAgentEventSubscriber(
        * Called when ACTIVITY_DELTA event is received
        */
       onActivityDeltaEvent: async ({ event }: any) => {
-        console.log(`${LOG_PREFIX} 📈 Activity delta received:`, event.messageId, 'Patch ops:', event.patch?.length || 0, event);
-        log('📈 Activity delta received:', event.messageId, 'Patch ops:', event.patch?.length || 0);
-        if (debugEnabled && event.patch) {
-          debug.log(LOG_PREFIX, 'Activity delta patch:', event.patch);
-        }
-        
         if (callbacksRef.current.onActivityUpdate) {
           callbacksRef.current.onActivityUpdate(event);
         }
       },
     });
 
-    log('Agent event subscription active');
-
     // Cleanup on unmount
     return () => {
-      log('Unsubscribing from agent events');
       subscription.unsubscribe();
     };
   }, [agent, log]);
@@ -717,7 +663,6 @@ export function useAgentEventSubscriber(
     }
 
     const timer = setTimeout(() => {
-      log('Auto-dismissing error after', errorAutoDismissMs, 'ms');
       clearError();
     }, errorAutoDismissMs);
 

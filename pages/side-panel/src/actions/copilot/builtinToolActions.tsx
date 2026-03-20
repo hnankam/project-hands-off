@@ -455,14 +455,6 @@ export function createFileCreationRenderer(deps: BuiltinToolDependencies) {
       const hasError = isErrorResult(props.result);
       const error = hasError ? props.result as string : undefined;
       
-      // DEBUG: Log error detection
-      console.log('[create_text_file] Debug:', {
-        hasError,
-        resultType: typeof props.result,
-        result: props.result,
-        status,
-      });
-      
       // Extract file info - PREFER RESULT over ARGS (result is authoritative, args may be truncated)
       let fileName: string | undefined = undefined;
       let folder = undefined;
@@ -789,12 +781,6 @@ function isErrorResult(result: unknown): boolean {
   ];
   
   const isError = errorPatterns.some(pattern => pattern.test(trimmed));
-  
-  console.log('[isErrorResult] Checking:', {
-    resultPreview: trimmed.substring(0, 100),
-    isError,
-    matchedPattern: isError ? errorPatterns.find(p => p.test(trimmed))?.toString() : 'none'
-  });
   
   return isError;
 }

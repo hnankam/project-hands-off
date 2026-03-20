@@ -161,15 +161,19 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
     setIsEditWrapped(wrapped);
   }, [editValue, editingStepIndex]);
 
+  // Track if we've hydrated the expanded state for this session
+  const isExpandedHydratedRef = React.useRef(false);
+
   // Load expanded state from database on mount
   React.useEffect(() => {
     // Check in-memory cache first to avoid DB query
     const cachedExpanded = expandedStateBySession.get(sessionKey);
     if (cachedExpanded !== undefined) {
       setIsExpanded(cachedExpanded);
+      isExpandedHydratedRef.current = true;
       return;
     }
-    
+
     const loadExpandedState = async () => {
       try {
         const session = await sessionStorageDBWrapper.getSession(sessionKey);
@@ -181,20 +185,26 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
       } catch (e) {
         // Silently fail - not critical
       }
+      isExpandedHydratedRef.current = true;
     };
-    
+
     loadExpandedState();
   }, [sessionKey]);
 
   // Persist expanded state per session (in memory and database)
+  // Skip the first run after loading from DB to avoid redundant saves
   React.useEffect(() => {
+    if (!isExpandedHydratedRef.current) {
+      return;
+    }
+
     expandedStateBySession.set(sessionKey, isExpanded);
-    
+
     // Debounce database save
     const timeoutId = setTimeout(() => {
       sessionStorageDBWrapper.updateSessionPlanExpanded(sessionKey, isExpanded);
     }, 300);
-    
+
     return () => clearTimeout(timeoutId);
   }, [sessionKey, isExpanded]);
 
