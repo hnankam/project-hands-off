@@ -27,6 +27,7 @@ import { TIMING_CONSTANTS, COPIOLITKIT_CONFIG, ABLY_CONFIG } from '../../constan
 import { ts } from '../../utils/logging';
 import { useAuth } from '../../context/AuthContext';
 import { ExploreAccordionProvider } from '../../context/ExploreAccordionContext';
+import { VirtuaChatSessionVisibleProvider } from '../../context/VirtuaChatSessionVisibleContext';
 import { useMultiPageMetadata } from '../../hooks/useMultiPageMetadata';
 import { useWorkspaceContext } from '../../hooks/useWorkspaceContext';
 import { CopilotKitProvider, useCopilotChat, useCopilotAgent, SharedAgentProvider } from '../../hooks/copilotkit';
@@ -41,12 +42,18 @@ const clipText = (text: string, maxLength: number): string => {
 };
 
 /** Read config panel state from localStorage (matches SessionsPage pattern for reliable restore) */
-function getConfigPanelFromLocalStorage(sessionId: string): { open: boolean; tab: 'context' | 'plans' | 'graphs' | 'sub-agents' } | null {
+function getConfigPanelFromLocalStorage(
+  sessionId: string,
+): { open: boolean; tab: 'context' | 'plans' | 'graphs' | 'sub-agents' } | null {
   try {
     const stored = localStorage.getItem(`configPanel_${sessionId}`);
     if (!stored) return null;
     const parsed = JSON.parse(stored);
-    if (parsed && typeof parsed.open === 'boolean' && ['context', 'plans', 'graphs', 'sub-agents'].includes(parsed.tab)) {
+    if (
+      parsed &&
+      typeof parsed.open === 'boolean' &&
+      ['context', 'plans', 'graphs', 'sub-agents'].includes(parsed.tab)
+    ) {
       return { open: parsed.open, tab: parsed.tab as 'context' | 'plans' | 'graphs' | 'sub-agents' };
     }
   } catch {
@@ -129,42 +136,47 @@ const ConfigPanelWrapper: FC<{
 
   // Enhanced handlers that sync to both local state and CopilotKit agent state
   // Use plain objects instead of functional updaters to avoid DataCloneError
-  const handlePlansUpdate = useCallback((updatedPlans: Record<string, any>) => {
-    // Update local state
-    onPlansUpdate(updatedPlans);
-    
-    // Sync back to CopilotKit agent state
-    if (setAgentState) {
-      setAgentState({
-        ...(currentAgentState || {}),
-        sessionId: currentAgentState?.sessionId || sessionId,
-        plans: updatedPlans,
-        graphs: currentAgentState?.graphs || {},
-      });
-    }
-  }, [onPlansUpdate, setAgentState, currentAgentState, sessionId]);
+  const handlePlansUpdate = useCallback(
+    (updatedPlans: Record<string, any>) => {
+      // Update local state
+      onPlansUpdate(updatedPlans);
 
-  const handleGraphsUpdate = useCallback((updatedGraphs: Record<string, any>) => {
-    // Update local state
-    onGraphsUpdate(updatedGraphs);
-    
-    // Sync back to CopilotKit agent state
-    if (setAgentState) {
-      setAgentState({
-        ...(currentAgentState || {}),
-        sessionId: currentAgentState?.sessionId || sessionId,
-        plans: currentAgentState?.plans || {},
-        graphs: updatedGraphs,
-      });
-    }
-  }, [onGraphsUpdate, setAgentState, currentAgentState, sessionId]);
+      // Sync back to CopilotKit agent state
+      if (setAgentState) {
+        setAgentState({
+          ...(currentAgentState || {}),
+          sessionId: currentAgentState?.sessionId || sessionId,
+          plans: updatedPlans,
+          graphs: currentAgentState?.graphs || {},
+        });
+      }
+    },
+    [onPlansUpdate, setAgentState, currentAgentState, sessionId],
+  );
+
+  const handleGraphsUpdate = useCallback(
+    (updatedGraphs: Record<string, any>) => {
+      // Update local state
+      onGraphsUpdate(updatedGraphs);
+
+      // Sync back to CopilotKit agent state
+      if (setAgentState) {
+        setAgentState({
+          ...(currentAgentState || {}),
+          sessionId: currentAgentState?.sessionId || sessionId,
+          plans: currentAgentState?.plans || {},
+          graphs: updatedGraphs,
+        });
+      }
+    },
+    [onGraphsUpdate, setAgentState, currentAgentState, sessionId],
+  );
 
   const panelContent = (
     <div
       ref={containerRef}
-      className="absolute top-0 bottom-0 right-0 z-50"
-      style={{ pointerEvents: 'none', width: '100%', height: '100%' }}
-    >
+      className="absolute top-0 right-0 bottom-0 z-50"
+      style={{ pointerEvents: 'none', width: '100%', height: '100%' }}>
       <ConfigPanel
         isLight={isLight}
         isOpen={showConfigPanel}
@@ -211,32 +223,32 @@ const AgentStateSync: FC<{
   // Store the actual content, not just keys, to detect content changes
   const lastSyncedPlansRef = useRef<string>('');
   const lastSyncedGraphsRef = useRef<string>('');
-  
+
   // Reset synced refs when session changes
   useEffect(() => {
     lastSyncedPlansRef.current = '';
     lastSyncedGraphsRef.current = '';
   }, [sessionId]);
-  
+
   // Sync to ref whenever it changes AND notify parent
   useEffect(() => {
     if (liveAgentState) {
       const plans = liveAgentState.plans || {};
       const graphs = liveAgentState.graphs || {};
-      
+
       // Create content signatures to detect actual changes (including nested updates)
       const plansSignature = JSON.stringify(plans);
       const graphsSignature = JSON.stringify(graphs);
-      
+
       // Check if either plans or graphs actually changed
       const plansChanged = plansSignature !== lastSyncedPlansRef.current;
       const graphsChanged = graphsSignature !== lastSyncedGraphsRef.current;
-      
+
       // Only update if data actually changed
       if (!plansChanged && !graphsChanged) {
         return;
       }
-      
+
       // Update refs with new signatures
       if (plansChanged) {
         lastSyncedPlansRef.current = plansSignature;
@@ -244,7 +256,7 @@ const AgentStateSync: FC<{
       if (graphsChanged) {
         lastSyncedGraphsRef.current = graphsSignature;
       }
-      
+
       agentStateRef.current = {
         plans,
         graphs,
@@ -256,7 +268,7 @@ const AgentStateSync: FC<{
         plansCount: planIds.length,
         planIds,
       });
-      
+
       // Notify parent with the actual data to trigger re-render
       onStateChange?.(plans, graphs);
     }
@@ -277,12 +289,12 @@ const chatInnerWithSignatureSyncCompare = (prevProps: any, nextProps: any) => {
   if (prevProps.renderChatInner !== nextProps.renderChatInner) {
     return false; // false means props changed, should re-render
   }
-  
+
   // Check if sessionId changed
   if (prevProps.sessionId !== nextProps.sessionId) {
     return false;
   }
-  
+
   // For other props, use default shallow comparison
   return (
     prevProps.onSignatureChange === nextProps.onSignatureChange &&
@@ -291,7 +303,13 @@ const chatInnerWithSignatureSyncCompare = (prevProps: any, nextProps: any) => {
   );
 };
 
-const ChatInnerWithSignatureSyncComponent = ({ sessionId, onSignatureChange, onStreamingChange, renderChatInner, agentStateRef }: {
+const ChatInnerWithSignatureSyncComponent = ({
+  sessionId,
+  onSignatureChange,
+  onStreamingChange,
+  renderChatInner,
+  agentStateRef,
+}: {
   sessionId: string;
   onSignatureChange: (signature: string) => void;
   onStreamingChange: (isStreaming: boolean) => void;
@@ -327,9 +345,10 @@ const ChatInnerWithSignatureSyncComponent = ({ sessionId, onSignatureChange, onS
         messages.map(message => ({
           id: (message as any)?.id ?? null,
           role: (message as any)?.role ?? null,
-          hash: typeof (message as any)?.content === 'string' 
-            ? (message as any).content.length 
-            : JSON.stringify((message as any)?.content ?? '').length,
+          hash:
+            typeof (message as any)?.content === 'string'
+              ? (message as any).content.length
+              : JSON.stringify((message as any)?.content ?? '').length,
         })),
       );
       lastSignatureRef.current = signature;
@@ -420,11 +439,11 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     const hydrationReadyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isUsagePopupOpen, setIsUsagePopupOpen] = useState(false);
-    
+
     // Track messages signature for hydration (replaces useSessionRuntimeState)
     const [messagesSignature, setMessagesSignature] = useState<string>('');
     const messagesSignatureRef = useRef<string>('');
-    
+
     // Track streaming state from CopilotKit (synced from ChatInnerWithSignatureSync)
     const [copilotIsStreaming, setCopilotIsStreaming] = useState<boolean>(false);
 
@@ -563,12 +582,12 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     const [selectedPageURLs, setSelectedPageURLsState] = useState<string[]>(initialSelectedPageURLs);
     const selectedPageURLsRef = useRef(selectedPageURLs);
     selectedPageURLsRef.current = selectedPageURLs;
-    
+
     // Sync selectedPageURLs when session changes or initialSelectedPageURLs is loaded
     useEffect(() => {
       setSelectedPageURLsState(initialSelectedPageURLs);
     }, [sessionId, initialSelectedPageURLs]);
-    
+
     const setSelectedPageURLs = useCallback((newSelection: string[] | ((prev: string[]) => string[])) => {
       setSelectedPageURLsState(newSelection);
     }, []);
@@ -577,15 +596,15 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     const [selectedNotes, setSelectedNotesState] = useState<any[]>([]);
     const selectedNotesRef = useRef(selectedNotes);
     selectedNotesRef.current = selectedNotes;
-    
+
     const [selectedCredentials, setSelectedCredentialsState] = useState<any[]>([]);
     const selectedCredentialsRef = useRef(selectedCredentials);
     selectedCredentialsRef.current = selectedCredentials;
-    
+
     const setSelectedNotes = useCallback((newSelection: any[] | ((prev: any[]) => any[])) => {
       setSelectedNotesState(newSelection);
     }, []);
-    
+
     const setSelectedCredentials = useCallback((newSelection: any[] | ((prev: any[]) => any[])) => {
       setSelectedCredentialsState(newSelection);
     }, []);
@@ -608,7 +627,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       setShowConfigPanel(configPanelOpenOverride || (stored?.open ?? false));
       setConfigPanelTab(stored?.tab ?? 'context');
     }, [sessionId, configPanelOpenOverride]);
-    
+
     // Load persisted panel width from localStorage
     const getPersistedPanelWidth = useCallback(() => {
       try {
@@ -624,9 +643,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
       return 384; // Default width
     }, []);
-    
+
     const [panelWidth, setPanelWidth] = useState(getPersistedPanelWidth); // Track actual panel width for dynamic resizing
-    
+
     // Detect viewport size for responsive behavior (before panel margin is applied)
     const chatWrapperRef = useRef<HTMLDivElement | null>(null);
     const [isSmallChatView, setIsSmallChatView] = useState(() => {
@@ -637,14 +656,14 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       return false;
     });
     const SMALL_VIEW_THRESHOLD = 600; // Switch to overlay mode below this width
-    
+
     useEffect(() => {
       const wrapper = chatWrapperRef.current;
-      
+
       const checkSize = () => {
         // Check wrapper width first (most accurate), then parent, then window
         let width = window.innerWidth;
-        
+
         if (wrapper) {
           const wrapperWidth = wrapper.offsetWidth || wrapper.clientWidth;
           if (wrapperWidth > 0) {
@@ -660,24 +679,24 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
             }
           }
         }
-        
+
         const isSmall = width < SMALL_VIEW_THRESHOLD;
         setIsSmallChatView(isSmall);
       };
 
       // Initial check with a small delay to ensure DOM is ready
       const timeoutId = setTimeout(checkSize, 0);
-      
+
       // Use ResizeObserver for wrapper if available
       if (wrapper) {
         const resizeObserver = new ResizeObserver(() => {
           checkSize();
         });
         resizeObserver.observe(wrapper);
-        
+
         // Also listen to window resize as fallback
         window.addEventListener('resize', checkSize);
-        
+
         return () => {
           clearTimeout(timeoutId);
           resizeObserver.disconnect();
@@ -692,7 +711,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         };
       }
     }, []);
-    
+
     // Persist panel width to localStorage
     const handlePanelWidthChange = useCallback((width: number) => {
       setPanelWidth(width);
@@ -702,14 +721,14 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         console.error('[ChatSessionContainer] Failed to save panel width:', error);
       }
     }, []);
-    
+
     // Handle config panel toggle
     const handleConfigClick = useCallback((e?: React.MouseEvent) => {
       if (e) {
         e.preventDefault();
         e.stopPropagation();
       }
-      setShowConfigPanel((prev) => !prev);
+      setShowConfigPanel(prev => !prev);
     }, []);
 
     // Persist config panel state immediately on change (matches SessionsPage - no debounce)
@@ -722,22 +741,28 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       try {
         localStorage.setItem(
           `configPanel_${sessionId}`,
-          JSON.stringify({ open: showConfigPanel, tab: configPanelTab })
+          JSON.stringify({ open: showConfigPanel, tab: configPanelTab }),
         );
       } catch (e) {
         console.error('[ChatSessionContainer] Failed to persist config panel to localStorage', e);
       }
       sessionStorageDBWrapper.updateSessionConfigPanel(sessionId, showConfigPanel, configPanelTab);
     }, [showConfigPanel, configPanelTab, sessionId]);
-    useEffect(() => () => {
-      isConfigPanelHydrated.current = false;
-    }, [sessionId]);
-    
+    useEffect(
+      () => () => {
+        isConfigPanelHydrated.current = false;
+      },
+      [sessionId],
+    );
+
     // State for agent plans/graphs - must be state (not ref) so React re-renders panels when it changes
     const [agentPlans, setAgentPlans] = useState<Record<string, any>>({});
     const [agentGraphs, setAgentGraphs] = useState<Record<string, any>>({});
-    const dynamicAgentStateRef = useRef<{ plans?: Record<string, any>; graphs?: Record<string, any> }>({ plans: {}, graphs: {} });
-    
+    const dynamicAgentStateRef = useRef<{ plans?: Record<string, any>; graphs?: Record<string, any> }>({
+      plans: {},
+      graphs: {},
+    });
+
     const sessionIdRefForLog = useRef(sessionId);
     sessionIdRefForLog.current = sessionId;
     // Memoized callback to prevent infinite loops - only updates when sessionId changes
@@ -752,7 +777,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       setAgentPlans({ ...plans }); // Create new object reference
       setAgentGraphs({ ...graphs }); // Create new object reference
     }, []); // Empty deps - only create once per component mount
-
 
     // Tab management
     const [currentTabId, setCurrentTabId] = useState<number | null>(null);
@@ -874,14 +898,11 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           }, TIMING_CONSTANTS.AUTO_FOCUS_DELAY);
         }
       },
-      onPanelBlur: () => {
-      },
+      onPanelBlur: () => {},
     });
 
     // Message persistence
-    const {
-      hydrationCompleted,
-    } = useMessagePersistence({
+    const { hydrationCompleted } = useMessagePersistence({
       sessionId,
       isActive,
       isPanelVisible,
@@ -972,12 +993,12 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
 
       const signalReady = (reason: 'counter' | 'hydration') => {
-      // If session is already ready, skip the signal check
-      // This allows re-signaling when switching between mounted sessions
-      if (hasSignaledReadyRef.current && reason === 'hydration' && hasReportedInitialCountRef.current) {
-        onReady?.(sessionId);
-        return;
-      }
+        // If session is already ready, skip the signal check
+        // This allows re-signaling when switching between mounted sessions
+        if (hasSignaledReadyRef.current && reason === 'hydration' && hasReportedInitialCountRef.current) {
+          onReady?.(sessionId);
+          return;
+        }
 
         if (hasSignaledReadyRef.current) {
           return;
@@ -1045,13 +1066,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       resetCumulative,
       setCumulative,
       setLastUsage,
-    } = useUsageStream(
-      sessionId,
-      true,
-      ABLY_CONFIG.API_KEY,
-      initialUsage,
-      initialLastUsage,
-    );
+    } = useUsageStream(sessionId, true, ABLY_CONFIG.API_KEY, initialUsage, initialLastUsage);
 
     // Ref for backward compatibility
     const isUsageHydratingRef = useRef(isUsageHydrating);
@@ -1116,7 +1131,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
     }, [embeddingError]);
 
-
     // Derived state for backward compatibility (moved here to avoid "use before declaration" error)
     const currentPageContent = contentState.current || contentState.previous;
     const isContentFetching = contentState.status === 'loading' || contentState.status === 'refreshing';
@@ -1165,52 +1179,61 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     const { context: workspaceContext } = useWorkspaceContext();
 
     // Prepare shared contexts data for SettingsModal
-    const sharedContexts = useMemo(() => ({
-      multiPageMetadata,
-      userContext: user ? {
-        user: {
-          name: user.name,
-          email: user.email,
-        },
-        organization: organization ? {
-          name: organization.name,
-        } : null,
-      } : null,
-      workspaceContext: workspaceContext ? {
-        files: {
-          count: workspaceContext.file_count,
-          recent: workspaceContext.recent_files.map((f: any) => ({
-            id: f.id,
-            name: f.file_name,
-            type: f.file_type,
-          })),
-        },
-        notes: {
-          count: workspaceContext.note_count,
-          recent: workspaceContext.recent_notes.map((n: any) => ({
-            id: n.id,
-            title: n.title,
-          })),
-        },
-        storage_used: workspaceContext.total_size,
-      } : null,
-      selectedNotes,
-      selectedCredentials,
-    }), [multiPageMetadata, user, organization, member, workspaceContext, selectedNotes, selectedCredentials]);
+    const sharedContexts = useMemo(
+      () => ({
+        multiPageMetadata,
+        userContext: user
+          ? {
+              user: {
+                name: user.name,
+                email: user.email,
+              },
+              organization: organization
+                ? {
+                    name: organization.name,
+                  }
+                : null,
+            }
+          : null,
+        workspaceContext: workspaceContext
+          ? {
+              files: {
+                count: workspaceContext.file_count,
+                recent: workspaceContext.recent_files.map((f: any) => ({
+                  id: f.id,
+                  name: f.file_name,
+                  type: f.file_type,
+                })),
+              },
+              notes: {
+                count: workspaceContext.note_count,
+                recent: workspaceContext.recent_notes.map((n: any) => ({
+                  id: n.id,
+                  title: n.title,
+                })),
+              },
+              storage_used: workspaceContext.total_size,
+            }
+          : null,
+        selectedNotes,
+        selectedCredentials,
+      }),
+      [multiPageMetadata, user, organization, member, workspaceContext, selectedNotes, selectedCredentials],
+    );
 
     // Track the previous page URL to detect actual navigation changes
     const previousPageURLRef = useRef<string | null>(null);
-    
+
     // Auto-add current page to selection only when user NAVIGATES to a new page
     // (not when they manually deselect - that should be respected)
     useEffect(() => {
       const currentURL = currentPageContent?.url;
       const previousURL = previousPageURLRef.current;
-      
+
       // Only auto-add if the URL actually changed (user navigated to a new page)
       if (currentURL && currentURL !== previousURL) {
         previousPageURLRef.current = currentURL;
-        
+
         // Add the new page to selection if not already there
         if (!selectedPageURLs.includes(currentURL)) {
           setSelectedPageURLs(prev => {
@@ -1231,13 +1254,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     });
 
     // Compute mount decision once per render
-    const hasValidSelection = useMemo(() => 
-      selectedAgent && selectedModel && selectedAgent !== '' && selectedModel !== '',
-      [selectedAgent, selectedModel]
+    const hasValidSelection = useMemo(
+      () => selectedAgent && selectedModel && selectedAgent !== '' && selectedModel !== '',
+      [selectedAgent, selectedModel],
     );
-    const shouldShowLoading = useMemo(() => 
-      isLoadingMetadata || !hasValidSelection,
-      [isLoadingMetadata, hasValidSelection]
+    const shouldShowLoading = useMemo(
+      () => isLoadingMetadata || !hasValidSelection,
+      [isLoadingMetadata, hasValidSelection],
     );
 
     // Enabled frontend tools hook - fetches which frontend tools are enabled for this agent
@@ -1296,7 +1319,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         isPageURLsHydrated.current = true;
         return;
       }
-      
+
       // Debounce the save operation
       const timeoutId = setTimeout(() => {
         sessionStorageDBWrapper.updateSessionPageURLs(sessionId, selectedPageURLs);
@@ -1319,11 +1342,11 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         isWorkspaceItemsHydrated.current = true;
         return;
       }
-      
+
       // Extract IDs from full objects
       const noteIds = selectedNotes.map((note: any) => note.id).filter(Boolean);
       const credentialIds = selectedCredentials.map((cred: any) => cred.id).filter(Boolean);
-      
+
       // Debounce the save operation
       const timeoutId = setTimeout(() => {
         sessionStorageDBWrapper.updateSessionWorkspaceItems(sessionId, noteIds, credentialIds);
@@ -1453,12 +1476,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     // IMPORTANT: Only report count AFTER hydration completes to prevent flickering from transient zero counts
     // Total count (user + assistant) is reported to parent for backward compatibility
     const totalMessagesCount = userMessagesCount + assistantMessagesCount;
-    
+
     useEffect(() => {
       // Only log when there's an actual change or significant state transition
-      const shouldLog = hydrationCompleted !== (hasReportedInitialCountRef.current || false) ||
-                       totalMessagesCount !== lastReportedCountRef.current;
-      
+      const shouldLog =
+        hydrationCompleted !== (hasReportedInitialCountRef.current || false) ||
+        totalMessagesCount !== lastReportedCountRef.current;
+
       if (shouldLog) {
       }
 
@@ -1538,74 +1562,73 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     // Register config panel state so header button can toggle and footer can be pushed
     useEffect(() => {
       if (onRegisterConfigPanel) {
-        const toggle = () => setShowConfigPanel((prev) => !prev);
+        const toggle = () => setShowConfigPanel(prev => !prev);
         onRegisterConfigPanel(sessionId, { isOpen: showConfigPanel, width: panelWidth, toggle });
       }
     }, [onRegisterConfigPanel, sessionId, showConfigPanel, panelWidth]);
 
     // Callback to update message counts (user and assistant separately)
-    const handleSetMessageCounts = useCallback(
-      (counts: { userCount: number; assistantCount: number }) => {
-        setUserMessagesCount(counts.userCount);
-        setAssistantMessagesCount(counts.assistantCount);
-      },
-      [],
-    );
+    const handleSetMessageCounts = useCallback((counts: { userCount: number; assistantCount: number }) => {
+      setUserMessagesCount(counts.userCount);
+      setAssistantMessagesCount(counts.assistantCount);
+    }, []);
 
     // Callback to update messages signature (for hydration detection)
-    const handleMessagesSignatureChange = useCallback(
-      (signature: string) => {
-        if (messagesSignatureRef.current !== signature) {
-          messagesSignatureRef.current = signature;
-          setMessagesSignature(signature);
-        }
-      },
-      [],
-    );
+    const handleMessagesSignatureChange = useCallback((signature: string) => {
+      if (messagesSignatureRef.current !== signature) {
+        messagesSignatureRef.current = signature;
+        setMessagesSignature(signature);
+      }
+    }, []);
 
     // Callback to update streaming state from CopilotKit
-    const handleStreamingChange = useCallback(
-      (isStreaming: boolean) => {
-        setCopilotIsStreaming(isStreaming);
-      },
-      [],
-    );
+    const handleStreamingChange = useCallback((isStreaming: boolean) => {
+      setCopilotIsStreaming(isStreaming);
+    }, []);
 
     // Headers for CopilotKit provider - useMemo provides sufficient stability
     const copilotHeaders = useMemo(() => {
       if (!sessionId) return {};
 
       const headers: Record<string, string> = {
-      'x-copilot-thread-id': sessionId,
+        'x-copilot-thread-id': sessionId,
       };
-      
+
       // Only add agent/model when both are selected to avoid intermediate "half-loaded" states
       if (selectedAgent && selectedModel && selectedAgent !== '' && selectedModel !== '') {
         headers['x-copilot-agent-type'] = selectedAgent;
         headers['x-copilot-model-type'] = selectedModel;
-      
+
         if (organization?.id) headers['x-copilot-organization-id'] = organization.id;
         if (activeTeam) headers['x-copilot-team-id'] = activeTeam;
       }
-      
+
       return headers;
     }, [selectedAgent, selectedModel, sessionId, organization?.id, activeTeam]);
 
     // V2: Tool renderers - create once and keep stable
-    const toolRenderers = useMemo(() => createAllToolRenderers({ clipText }), [/* static */]);
+    const toolRenderers = useMemo(
+      () => createAllToolRenderers({ clipText }),
+      [
+        /* static */
+      ],
+    );
 
     // V2: Activity message renderers - recreate when session changes
-    const activityRenderers = useMemo(() => createActivityMessageRenderers({
-        sessionId,
-        setDynamicAgentState: setCurrentAgentStepState,
-    }), [sessionId]);
+    const activityRenderers = useMemo(
+      () =>
+        createActivityMessageRenderers({
+          sessionId,
+          setDynamicAgentState: setCurrentAgentStepState,
+        }),
+      [sessionId],
+    );
 
-    const renderChatInner = useCallback(
-      () => {
-        // CRITICAL FIX: Use ref to get the latest selectedPageURLs value
-        // This ensures we always use the current state, not a stale closure value
-        const currentSelectedPageURLs = selectedPageURLsRef.current;
-        return (
+    const renderChatInner = useCallback(() => {
+      // CRITICAL FIX: Use ref to get the latest selectedPageURLs value
+      // This ensures we always use the current state, not a stale closure value
+      const currentSelectedPageURLs = selectedPageURLsRef.current;
+      return (
         <ChatInner
           // Key only includes session - agent/model changes are handled via props/headers
           // This prevents remounts when switching agents/models
@@ -1650,244 +1673,241 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           onModelChange={handleModelChange}
           isLoadingSessionSelectors={isLoadingMetadata || isLoadingFromDB}
         />
-        );
-      },
-      [
-        activeAgent,
-        activeModel,
-        activeTeam,
-        contextMenuMessage,
-        currentAgentStepState,
-        handleAgentChange,
-        handleModelChange,
-        handleAgentStepStateChange,
-        currentPageContent,
-        dbTotals,
-        enabledFrontendTools,
-        isLoadingFromDB,
-        isLoadingMetadata,
-        organization?.id,
-        selectedAgent,
-        selectedModel,
-        selectedPageURLs,
-        setSelectedPageURLs,
-        sessionId,
-        handleSetMessageCounts,
-        setIsAgentLoading,
-        setThemeColor,
-        showSuggestions,
-        showThoughtBlocks,
-        agentModeChat,
-        themeColor,
-        triggerManualRefreshWithEmbeddingWait,
-        selectedNotes,
-        selectedCredentials,
-        initialSelectedNoteIds,
-        initialSelectedCredentialIds,
-      ],
-    );
+      );
+    }, [
+      activeAgent,
+      activeModel,
+      activeTeam,
+      contextMenuMessage,
+      currentAgentStepState,
+      handleAgentChange,
+      handleModelChange,
+      handleAgentStepStateChange,
+      currentPageContent,
+      dbTotals,
+      enabledFrontendTools,
+      isLoadingFromDB,
+      isLoadingMetadata,
+      organization?.id,
+      selectedAgent,
+      selectedModel,
+      selectedPageURLs,
+      setSelectedPageURLs,
+      sessionId,
+      handleSetMessageCounts,
+      setIsAgentLoading,
+      setThemeColor,
+      showSuggestions,
+      showThoughtBlocks,
+      agentModeChat,
+      themeColor,
+      triggerManualRefreshWithEmbeddingWait,
+      selectedNotes,
+      selectedCredentials,
+      initialSelectedNoteIds,
+      initialSelectedCredentialIds,
+    ]);
 
     return (
       <ExploreAccordionProvider>
-      <div className="relative flex flex-1 flex-col overflow-hidden">
-        {/* Content area - no margin here; ConfigPanel is portaled to SessionsPage, content column has marginRight */}
-        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-        {/* Save/Load buttons and Page Status - Fixed at top */}
-        {statusBarElement}
+        <div className="relative flex flex-1 flex-col overflow-hidden">
+          {/* Content area - no margin here; ConfigPanel is portaled to SessionsPage, content column has marginRight */}
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            {/* Save/Load buttons and Page Status - Fixed at top */}
+            {statusBarElement}
 
-        {/* Stale content notification banner */}
-        {showStaleIndicator && isPanelActive && (
-          <div
-            className={`flex items-center gap-2 px-2 py-1.5 text-xs ${
-              isLight
-                ? 'border-b border-orange-200 bg-orange-50 text-orange-800'
-                : 'border-b border-orange-800 bg-orange-900/20 text-orange-300'
-            }`}>
-            <svg className="h-3 w-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fillRule="evenodd"
-                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <span className="flex-1">Page content changed</span>
-            <button
-              onClick={triggerManualRefresh}
-              className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
-                isLight
-                  ? 'bg-orange-100 text-orange-900 hover:bg-orange-200'
-                  : 'bg-orange-800 text-orange-100 hover:bg-orange-700'
-              }`}>
-              Refresh
-            </button>
-          </div>
-        )}
-
-        {/* Chat container with panels */}
-        {/* Main container - no position so ConfigPanel anchors to root (immediately below header) */}
-        <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Note: Agent switching modal removed - switching is now instant without remount */}
-
-          {/* Defer mounting CopilotKit until metadata is loaded AND we have valid agent/model.
-              This prevents redundant connections during initialization (default -> target agent). */}
-          {shouldShowLoading ? (
-            <div className="relative flex flex-1 flex-col overflow-hidden items-center justify-center">
-              <div className="text-center p-6">
-                <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                <p className={isLight ? 'text-gray-600 font-medium' : 'text-gray-300 font-medium'}>
-                  Loading session...
-                </p>
+            {/* Stale content notification banner */}
+            {showStaleIndicator && isPanelActive && (
+              <div
+                className={`flex items-center gap-2 px-2 py-1.5 text-xs ${
+                  isLight
+                    ? 'border-b border-orange-200 bg-orange-50 text-orange-800'
+                    : 'border-b border-orange-800 bg-orange-900/20 text-orange-300'
+                }`}>
+                <svg className="h-3 w-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fillRule="evenodd"
+                    d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <span className="flex-1">Page content changed</span>
+                <button
+                  onClick={triggerManualRefresh}
+                  className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
+                    isLight
+                      ? 'bg-orange-100 text-orange-900 hover:bg-orange-200'
+                      : 'bg-orange-800 text-orange-100 hover:bg-orange-700'
+                  }`}>
+                  Refresh
+                </button>
               </div>
-            </div>
-          ) : (
-            <CopilotKitProvider
-              key={`copilot-provider-${sessionId}`}
-              runtimeUrl={COPIOLITKIT_CONFIG.RUNTIME_URL}
-              headers={copilotHeaders}
-              showDevConsole={false}
-              renderToolCalls={toolRenderers as any}
-              renderActivityMessages={activityRenderers as any}
-            >
-              <SharedAgentProvider key={sessionId} sessionKey={sessionId}>
-                <AgentStateSync 
-                  sessionId={sessionId} 
-                  agentStateRef={dynamicAgentStateRef}
-                  onStateChange={handleAgentStateChange}
-                />
-                
-                {/* Wrapper for chat container and panels */}
-                <div 
-                  ref={chatWrapperRef}
-                  className="relative flex flex-1 flex-col overflow-hidden h-full"
-                >
-                  {/* Chat Container */}
-                  <div
-                    className={`copilot-chat-container flex flex-1 flex-col overflow-hidden ${!isLight ? 'dark' : ''} font-size-${chatFontSize} transition-opacity duration-300 transition-all`}
-                    style={
-                      {
-                        '--copilot-kit-primary-color': themeColor,
-                        opacity: isCounterReady ? 1 : 0,
-                        visibility: isCounterReady ? 'visible' : 'hidden',
-                        // Margin applied at content wrapper level (StatusBar + main + SelectorsBar) for push behavior
-                      } as CSSProperties
-                    }>
-                    <div className="relative flex flex-1 flex-col overflow-hidden h-full">
-                      {/* Selection Overlay - only visible when agent/model not selected */}
-                      {(!selectedAgent || !selectedModel) && (
-                        <div className={`absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm ${isLight ? 'bg-white/80' : 'bg-gray-900/80'}`}>
-                          <div className="text-center p-6">
-                            <p className={isLight ? 'text-gray-600 font-medium' : 'text-gray-300 font-medium'}>
-                              {!selectedAgent || !selectedModel 
-                                ? 'Select an agent and model to continue' 
-                                : 'Loading agent configuration...'}
-                            </p>
-                          </div>
-                        </div>
-                      )}
+            )}
 
-                      <ChatInnerWithSignatureSync
-                        sessionId={sessionId}
-                        onSignatureChange={handleMessagesSignatureChange}
-                        onStreamingChange={handleStreamingChange}
-                        renderChatInner={renderChatInner}
-                        agentStateRef={dynamicAgentStateRef}
-                      />
-                    </div>
+            {/* Chat container with panels */}
+            {/* Main container - no position so ConfigPanel anchors to root (immediately below header) */}
+            <div className="flex flex-1 flex-col overflow-hidden">
+              {/* Note: Agent switching modal removed - switching is now instant without remount */}
+
+              {/* Defer mounting CopilotKit until metadata is loaded AND we have valid agent/model.
+              This prevents redundant connections during initialization (default -> target agent). */}
+              {shouldShowLoading ? (
+                <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden">
+                  <div className="p-6 text-center">
+                    <div className="border-primary mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" />
+                    <p className={isLight ? 'font-medium text-gray-600' : 'font-medium text-gray-300'}>
+                      Loading session...
+                    </p>
                   </div>
                 </div>
+              ) : (
+                <CopilotKitProvider
+                  key={`copilot-provider-${sessionId}`}
+                  runtimeUrl={COPIOLITKIT_CONFIG.RUNTIME_URL}
+                  headers={copilotHeaders}
+                  showDevConsole={false}
+                  renderToolCalls={toolRenderers as any}
+                  renderActivityMessages={activityRenderers as any}>
+                  <SharedAgentProvider key={sessionId} sessionKey={sessionId}>
+                    <AgentStateSync
+                      sessionId={sessionId}
+                      agentStateRef={dynamicAgentStateRef}
+                      onStateChange={handleAgentStateChange}
+                    />
 
-                {/* 
+                    {/* Wrapper for chat container and panels */}
+                    <div ref={chatWrapperRef} className="relative flex h-full flex-1 flex-col overflow-hidden">
+                      {/* Chat Container */}
+                      <div
+                        className={`copilot-chat-container flex flex-1 flex-col overflow-hidden ${!isLight ? 'dark' : ''} font-size-${chatFontSize} transition-all transition-opacity duration-300`}
+                        style={
+                          {
+                            '--copilot-kit-primary-color': themeColor,
+                            opacity: isCounterReady ? 1 : 0,
+                            visibility: isCounterReady ? 'visible' : 'hidden',
+                            // Margin applied at content wrapper level (StatusBar + main + SelectorsBar) for push behavior
+                          } as CSSProperties
+                        }>
+                        <div className="relative flex h-full flex-1 flex-col overflow-hidden">
+                          {/* Selection Overlay - only visible when agent/model not selected */}
+                          {(!selectedAgent || !selectedModel) && (
+                            <div
+                              className={`absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm ${isLight ? 'bg-white/80' : 'bg-gray-900/80'}`}>
+                              <div className="p-6 text-center">
+                                <p className={isLight ? 'font-medium text-gray-600' : 'font-medium text-gray-300'}>
+                                  {!selectedAgent || !selectedModel
+                                    ? 'Select an agent and model to continue'
+                                    : 'Loading agent configuration...'}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                          <VirtuaChatSessionVisibleProvider visible={isActive}>
+                            <ChatInnerWithSignatureSync
+                              sessionId={sessionId}
+                              onSignatureChange={handleMessagesSignatureChange}
+                              onStreamingChange={handleStreamingChange}
+                              renderChatInner={renderChatInner}
+                              agentStateRef={dynamicAgentStateRef}
+                            />
+                          </VirtuaChatSessionVisibleProvider>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 
                   Config Panel (plans, graphs, and other containers) - INSIDE SharedAgentProvider 
                   so it can access agent setState for bidirectional sync.
                   Only portal when active - multiple sessions share the portal, so inactive ones must not render.
                 */}
-                {isActive && showConfigPanel && (
-                  <ConfigPanelWrapper
-                    isLight={isLight}
-                    showConfigPanel={showConfigPanel}
-                    activeTab={configPanelTab}
-                    onTabChange={setConfigPanelTab}
-                    agentPlans={agentPlans}
-                    agentGraphs={agentGraphs}
-                    sessionId={sessionId}
-                    onCloseConfig={() => setShowConfigPanel(false)}
-                    portalRef={configPanelPortalRef}
-                    onPlansUpdate={(updatedPlans: any) => {
-                      const planIds = Object.keys(updatedPlans ?? {});
-                      debug.log('[SessionPlans] ChatSessionContainer onPlansUpdate:', {
-                        sessionId: sessionId?.slice(0, 8),
-                        plansCount: planIds.length,
-                        planIds,
-                      });
-                      setAgentPlans({ ...updatedPlans });
-                      dynamicAgentStateRef.current = {
-                        ...dynamicAgentStateRef.current,
-                        plans: updatedPlans,
-                      };
-                    }}
-                    onGraphsUpdate={(updatedGraphs: any) => {
-                      setAgentGraphs({ ...updatedGraphs });
-                      dynamicAgentStateRef.current = {
-                        ...dynamicAgentStateRef.current,
-                        graphs: updatedGraphs,
-                      };
-                    }}
-                    onWidthChange={handlePanelWidthChange}
-                    initialPanelWidth={panelWidth}
-                    chatFontSize={chatFontSize}
-                  />
-                )}
-              </SharedAgentProvider>
-            </CopilotKitProvider>
-          )}
-        </div>
+                    {isActive && showConfigPanel && (
+                      <ConfigPanelWrapper
+                        isLight={isLight}
+                        showConfigPanel={showConfigPanel}
+                        activeTab={configPanelTab}
+                        onTabChange={setConfigPanelTab}
+                        agentPlans={agentPlans}
+                        agentGraphs={agentGraphs}
+                        sessionId={sessionId}
+                        onCloseConfig={() => setShowConfigPanel(false)}
+                        portalRef={configPanelPortalRef}
+                        onPlansUpdate={(updatedPlans: any) => {
+                          const planIds = Object.keys(updatedPlans ?? {});
+                          debug.log('[SessionPlans] ChatSessionContainer onPlansUpdate:', {
+                            sessionId: sessionId?.slice(0, 8),
+                            plansCount: planIds.length,
+                            planIds,
+                          });
+                          setAgentPlans({ ...updatedPlans });
+                          dynamicAgentStateRef.current = {
+                            ...dynamicAgentStateRef.current,
+                            plans: updatedPlans,
+                          };
+                        }}
+                        onGraphsUpdate={(updatedGraphs: any) => {
+                          setAgentGraphs({ ...updatedGraphs });
+                          dynamicAgentStateRef.current = {
+                            ...dynamicAgentStateRef.current,
+                            graphs: updatedGraphs,
+                          };
+                        }}
+                        onWidthChange={handlePanelWidthChange}
+                        initialPanelWidth={panelWidth}
+                        chatFontSize={chatFontSize}
+                      />
+                    )}
+                  </SharedAgentProvider>
+                </CopilotKitProvider>
+              )}
+            </div>
 
-        {/* Agent and Model Selectors with Settings - Outside chat container so panels don't cover it */}
-        <SelectorsBar
+            {/* Agent and Model Selectors with Settings - Outside chat container so panels don't cover it */}
+            <SelectorsBar
+              isLight={isLight}
+              selectedAgent={selectedAgent}
+              selectedModel={selectedModel}
+              isLoadingSession={isLoadingMetadata || isLoadingFromDB}
+              showSuggestions={showSuggestions}
+              showThoughtBlocks={showThoughtBlocks}
+              onAgentChange={handleAgentChange}
+              onModelChange={handleModelChange}
+              onShowSuggestionsChange={(show: boolean) => preferencesStorage.setShowSuggestions(show)}
+              onShowThoughtBlocksChange={(show: boolean) => preferencesStorage.setShowThoughtBlocks(show)}
+              onExpandSettingsClick={() => setIsSettingsOpen(true)}
+            />
+          </div>
+
+          {/* Settings Modal */}
+          <SettingsModal
+            isOpen={isSettingsOpen}
             isLight={isLight}
-            selectedAgent={selectedAgent}
-            selectedModel={selectedModel}
-            isLoadingSession={isLoadingMetadata || isLoadingFromDB}
             showSuggestions={showSuggestions}
             showThoughtBlocks={showThoughtBlocks}
-            onAgentChange={handleAgentChange}
-            onModelChange={handleModelChange}
+            agentModeChat={agentModeChat}
+            agentType={activeAgent}
+            modelType={activeModel}
+            organizationId={organization?.id || undefined}
+            teamId={activeTeam || undefined}
+            sharedContexts={sharedContexts}
+            onClose={() => setIsSettingsOpen(false)}
             onShowSuggestionsChange={(show: boolean) => preferencesStorage.setShowSuggestions(show)}
             onShowThoughtBlocksChange={(show: boolean) => preferencesStorage.setShowThoughtBlocks(show)}
-            onExpandSettingsClick={() => setIsSettingsOpen(true)}
+            onAgentModeChatChange={(enabled: boolean) => preferencesStorage.setAgentModeChat(enabled)}
+          />
+
+          {/* Usage Popup */}
+          <UsagePopup
+            isOpen={isUsagePopupOpen}
+            onClose={() => setIsUsagePopupOpen(false)}
+            lastUsage={lastUsage}
+            cumulativeUsage={cumulativeUsage}
+            isConnected={isUsageConnected}
+            isLight={isLight}
+            onReset={resetCumulative}
+            sessionId={sessionId}
           />
         </div>
-
-        {/* Settings Modal */}
-        <SettingsModal
-          isOpen={isSettingsOpen}
-          isLight={isLight}
-          showSuggestions={showSuggestions}
-          showThoughtBlocks={showThoughtBlocks}
-          agentModeChat={agentModeChat}
-          agentType={activeAgent}
-          modelType={activeModel}
-          organizationId={organization?.id || undefined}
-          teamId={activeTeam || undefined}
-          sharedContexts={sharedContexts}
-          onClose={() => setIsSettingsOpen(false)}
-          onShowSuggestionsChange={(show: boolean) => preferencesStorage.setShowSuggestions(show)}
-          onShowThoughtBlocksChange={(show: boolean) => preferencesStorage.setShowThoughtBlocks(show)}
-          onAgentModeChatChange={(enabled: boolean) => preferencesStorage.setAgentModeChat(enabled)}
-        />
-
-        {/* Usage Popup */}
-        <UsagePopup
-          isOpen={isUsagePopupOpen}
-          onClose={() => setIsUsagePopupOpen(false)}
-          lastUsage={lastUsage}
-          cumulativeUsage={cumulativeUsage}
-          isConnected={isUsageConnected}
-          isLight={isLight}
-          onReset={resetCumulative}
-          sessionId={sessionId}
-        />
-      </div>
       </ExploreAccordionProvider>
     );
   },

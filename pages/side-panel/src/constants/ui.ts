@@ -4,6 +4,11 @@
  */
 
 export const Z_INDEX = {
+  /**
+   * Virtua sticky user message duplicate — portaled under `[data-load-more-scroll]` so it stays below
+   * SessionHeader (z-20). Within the chat shell, sits above the message list.
+   */
+  virtuaStickyUserHeaderPortal: 20,
   dropdown: 9999,
   modalBackdrop: 10000,
   modal: 10001,
@@ -43,7 +48,7 @@ export const SESSION_CACHE = {
 /**
  * Shiki syntax highlighting themes for Streamdown code blocks
  * Format: [lightTheme, darkTheme]
- * 
+ *
  * Available themes: https://shiki.style/themes
  * - one-dark-pro: One Dark Pro theme (matches VS Code extension)
  * - github-light: GitHub's light theme
@@ -52,4 +57,3 @@ export const SESSION_CACHE = {
  * - nord: Arctic blue theme
  */
 export const SHIKI_THEMES = ['github-light', 'one-dark-pro'] as const;
-

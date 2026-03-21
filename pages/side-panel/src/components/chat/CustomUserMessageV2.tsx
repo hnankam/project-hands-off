@@ -1,15 +1,15 @@
 /**
  * Custom User Message Component for CopilotKit V2
- * 
+ *
  * Phase 1: Basic wrapper with theme support
- * 
+ *
  * This is a wrapper around CopilotChatUserMessage that provides:
  * - Theme-aware styling (light/dark mode)
  * - Built-in features from CopilotKit:
  *   - Edit mode (textarea, save/cancel, keyboard shortcuts)
  *   - Copy button (with feedback)
  *   - Toolbar hover management
- * 
+ *
  * Future phases will add:
  * - Custom toolbar items (rerun, undo, delete menu)
  * - Attachment chip rendering
@@ -26,8 +26,8 @@ import { themeStorage } from '@extension/storage';
 import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
 import type { UserMessage } from '@ag-ui/core';
 import { CustomUserMessageRenderer } from './slots/CustomUserMessageRenderer';
-import { 
-  CustomCopyButton, 
+import {
+  CustomCopyButton,
   CustomEditButton,
   CustomUndoButton,
   CustomMoreOptionsButton,
@@ -49,7 +49,7 @@ type AttachmentInfo = {
  */
 const extractAttachments = (content: any): AttachmentInfo[] => {
   if (!Array.isArray(content)) return [];
-  
+
   return content
     .filter((item: any) => item?.type === 'binary')
     .map((item: any) => ({
@@ -66,7 +66,7 @@ const extractAttachments = (content: any): AttachmentInfo[] => {
 const extractTextContent = (content: any): string => {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
-  
+
   return content
     .filter((item: any) => item?.type === 'text')
     .map((item: any) => item.text || '')
@@ -76,25 +76,25 @@ const extractTextContent = (content: any): string => {
 
 /**
  * CustomUserMessageV2Component - Wrapper with theme support and full width message renderer
- * 
+ *
  * Uses the children render prop to customize:
  * - Container with theme-aware classes
  * - MessageRenderer for full width content
- * 
+ *
  * Features:
  * - Theme-aware Container with theme class
  * - Full width message content
  * - All built-in CopilotKit features (edit, copy, toolbar)
- * 
+ *
  * Props destructured from children render function (line 87):
- * 
+ *
  * SLOT ELEMENTS (React.ReactElement):
  * - messageRenderer: Rendered message content element (uses our CustomMessageRenderer)
  * - toolbar: Edit/copy buttons toolbar element
  * - copyButton: Individual copy button element (already included in toolbar)
  * - editButton: Individual edit button element (already included in toolbar)
  * - branchNavigation: Branch navigation UI element (if branching enabled)
- * 
+ *
  * CONFIGURATION PROPS (from ...slotProps):
  * - message: UserMessage object (REQUIRED) - The message data from @ag-ui/core
  * - onEditMessage?: (props: { message: UserMessage }) => void - Callback when message edited
@@ -102,7 +102,7 @@ const extractTextContent = (content: any): string => {
  * - branchIndex?: number - Current branch index (if branching enabled)
  * - numberOfBranches?: number - Total number of branches (if branching enabled)
  * - additionalToolbarItems?: React.ReactNode - Custom toolbar items to add
- * 
+ *
  * HTML DIV ATTRIBUTES (from ...slotProps):
  * - className?: string - CSS classes
  * - style?: React.CSSProperties - Inline styles
@@ -115,12 +115,14 @@ const extractTextContent = (content: any): string => {
  * - role?: string - ARIA role
  * - tabIndex?: number - Tab index
  * - ... (all other standard HTML div attributes)
- * 
+ *
  * @param props - All CopilotChatUserMessage props
  */
-const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) => {
-  const { message, ...restProps } = props;
-  
+type CustomUserMessageV2Props = UserMessageProps & { virtuaStickyPortal?: boolean };
+
+const CustomUserMessageV2ComponentInner: React.FC<CustomUserMessageV2Props> = props => {
+  const { message, virtuaStickyPortal = false, ...restProps } = props;
+
   const { isLight } = useStorage(themeStorage);
   const [isHovered, setIsHovered] = useState(false);
   const [editHistory, setEditHistory] = useState<string[]>([]);
@@ -142,7 +144,7 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
   // Read messages lazily (only at interaction time) via getMessages() to avoid subscriptions.
   // For render-time index tracking we keep the existing ref-based caching pattern below.
   const messages = getMessages();
-  
+
   // Stabilize message content for memoization dependencies
   const messageContentId = useMemo(() => {
     if (!message?.content) return '';
@@ -162,20 +164,20 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
 
   const attachmentsForMessageRendererRef = React.useRef(attachments);
   attachmentsForMessageRendererRef.current = attachments;
-  
+
   const textContent = useMemo(() => {
     return extractTextContent(message?.content);
   }, [messageContentId]);
-  
+
   // PERFORMANCE FIX: Use ref to track message index and only update when it actually changes
   // This prevents re-renders when assistant streams tokens (messages array reference changes but our index doesn't)
   const cachedMessageIndexRef = React.useRef<number>(-1);
   const cachedIsLastRef = React.useRef<boolean>(false);
-  
+
   // Only recalculate index when messages length changes or message ID changes
   const messagesLengthRef = React.useRef(messages?.length ?? 0);
   const messageIdRef = React.useRef(message?.id);
-  
+
   if (!messages || !message?.id) {
     // If no messages or ID, we're likely the first message being rendered optimistically
     if (cachedMessageIndexRef.current !== 0) {
@@ -187,13 +189,13 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
     const currentId = message.id;
     const lengthChanged = messagesLengthRef.current !== currentLength;
     const idChanged = messageIdRef.current !== currentId;
-    
+
     if (lengthChanged || idChanged || cachedMessageIndexRef.current === -1) {
       messagesLengthRef.current = currentLength;
       messageIdRef.current = currentId;
-      
+
       const index = messages.findIndex(m => m.id === message.id);
-      
+
       if (index === -1) {
         cachedMessageIndexRef.current = currentLength;
         cachedIsLastRef.current = true;
@@ -203,10 +205,10 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
       }
     }
   }
-  
+
   const messageIndex = cachedMessageIndexRef.current;
   const isLast = cachedIsLastRef.current;
-  
+
   // Stabilize isFirstMessage using ref to prevent callback recreation
   const isFirstMessageRef = React.useRef(messageIndex === 0);
   if (messageIndex === 0 && !isFirstMessageRef.current) {
@@ -220,45 +222,45 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
   // Use refs to access latest messages without causing rerenders
   const messagesRef = React.useRef(messages);
   const messageIndexRef = React.useRef(messageIndex);
-  
+
   React.useEffect(() => {
     messagesRef.current = messages;
     messageIndexRef.current = messageIndex;
   }, [messages, messageIndex]);
-  
+
   // Stabilize message using ref to prevent recreations
   const messageRef = React.useRef(message);
-  
+
   React.useEffect(() => {
     messageRef.current = message;
   }, [message]);
-  
+
   const handleRerun = useCallback(() => {
     const currentMessages = messagesRef.current;
     const currentMessageIndex = messageIndexRef.current;
     const currentMessage = messageRef.current;
     if (!currentMessages || !currentMessage || currentMessageIndex === -1) return;
-    
+
     // For refresh response: filter messages to include only up to and including this user message
     // This excludes the assistant response and any subsequent messages
     // Then trigger a new agent run
     if (currentMessage.id) {
-        reloadMessages(currentMessage.id);
+      reloadMessages(currentMessage.id);
     }
   }, [reloadMessages]);
-  
+
   // Handle undo - restore previous edit
   const editHistoryRef = React.useRef(editHistory);
   React.useEffect(() => {
     editHistoryRef.current = editHistory;
   }, [editHistory]);
-  
+
   const handleUndo = useCallback(() => {
     const currentMessages = messagesRef.current;
     const currentMessageIndex = messageIndexRef.current;
     const currentEditHistory = editHistoryRef.current;
     if (!currentMessages || currentEditHistory.length === 0 || currentMessageIndex === -1) return;
-    
+
     const previousContent = currentEditHistory[currentEditHistory.length - 1];
     const updatedMessages = [...currentMessages];
     updatedMessages[currentMessageIndex] = {
@@ -268,109 +270,112 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
     setMessages(updatedMessages);
     setEditHistory(prev => prev.slice(0, -1));
   }, [setMessages, setEditHistory]); // Include setMessages to use latest version
-  
+
   // Handle delete operations
   const sessionIdRef = React.useRef(sessionId);
   React.useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
-  
-  const handleDelete = useCallback(async (type: 'this' | 'above' | 'below') => {
-    const currentMessages = messagesRef.current;
-    const currentMessageIndex = messageIndexRef.current;
-    const currentSessionId = sessionIdRef.current;
-    
-    if (!currentMessages || currentMessageIndex === -1 || !currentSessionId) return;
-    
-    const currentMessage = currentMessages[currentMessageIndex];
-    if (!currentMessage?.id) {
-      console.error('[CustomUserMessageV2] Cannot delete message without ID');
-      return;
-    }
-    
-    try {
-      let messageIdsToDelete: string[] = [];
-      
-      switch (type) {
-        case 'this':
-          messageIdsToDelete = [currentMessage.id];
-          break;
-        case 'above':
-          // Delete all messages from index 0 to current index (inclusive)
-          messageIdsToDelete = currentMessages
-            .slice(0, currentMessageIndex + 1)
-            .map(msg => msg.id)
-            .filter((id): id is string => Boolean(id));
-          break;
-        case 'below':
-          // Delete all messages from current index to end (inclusive)
-          messageIdsToDelete = currentMessages
-            .slice(currentMessageIndex)
-            .map(msg => msg.id)
-            .filter((id): id is string => Boolean(id));
-          break;
-      }
-      
-      if (messageIdsToDelete.length === 0) {
-        console.warn('[CustomUserMessageV2] No message IDs to delete');
+
+  const handleDelete = useCallback(
+    async (type: 'this' | 'above' | 'below') => {
+      const currentMessages = messagesRef.current;
+      const currentMessageIndex = messageIndexRef.current;
+      const currentSessionId = sessionIdRef.current;
+
+      if (!currentMessages || currentMessageIndex === -1 || !currentSessionId) return;
+
+      const currentMessage = currentMessages[currentMessageIndex];
+      if (!currentMessage?.id) {
+        console.error('[CustomUserMessageV2] Cannot delete message without ID');
         return;
       }
-      
-      // Call API to delete messages (reuses same helper as reloadMessages)
-      await deleteMessagesFromBackend(currentSessionId, messageIdsToDelete);
-      
-      // Update local state after successful API call
-    let updatedMessages: typeof currentMessages;
-    switch (type) {
-      case 'this':
-        updatedMessages = currentMessages.filter((_, i) => i !== currentMessageIndex);
-        break;
-      case 'above':
-        updatedMessages = currentMessages.filter((_, i) => i > currentMessageIndex);
-        break;
-      case 'below':
-        updatedMessages = currentMessages.filter((_, i) => i < currentMessageIndex);
-        break;
-    }
-    
-    // Signal intentional delete if empty
-      if (updatedMessages.length === 0) {
-      persistenceLock.setManualReset(currentSessionId, true);
-    }
-    
-    // Call setMessages directly (not through ref) to ensure we use the latest agent reference
-    setMessages(updatedMessages);
-    } catch (error) {
-      console.error('[CustomUserMessageV2] Error deleting message:', error);
-      // Optionally show user-facing error notification here
-    }
-  }, [setMessages]);
-  
+
+      try {
+        let messageIdsToDelete: string[] = [];
+
+        switch (type) {
+          case 'this':
+            messageIdsToDelete = [currentMessage.id];
+            break;
+          case 'above':
+            // Delete all messages from index 0 to current index (inclusive)
+            messageIdsToDelete = currentMessages
+              .slice(0, currentMessageIndex + 1)
+              .map(msg => msg.id)
+              .filter((id): id is string => Boolean(id));
+            break;
+          case 'below':
+            // Delete all messages from current index to end (inclusive)
+            messageIdsToDelete = currentMessages
+              .slice(currentMessageIndex)
+              .map(msg => msg.id)
+              .filter((id): id is string => Boolean(id));
+            break;
+        }
+
+        if (messageIdsToDelete.length === 0) {
+          console.warn('[CustomUserMessageV2] No message IDs to delete');
+          return;
+        }
+
+        // Call API to delete messages (reuses same helper as reloadMessages)
+        await deleteMessagesFromBackend(currentSessionId, messageIdsToDelete);
+
+        // Update local state after successful API call
+        let updatedMessages: typeof currentMessages;
+        switch (type) {
+          case 'this':
+            updatedMessages = currentMessages.filter((_, i) => i !== currentMessageIndex);
+            break;
+          case 'above':
+            updatedMessages = currentMessages.filter((_, i) => i > currentMessageIndex);
+            break;
+          case 'below':
+            updatedMessages = currentMessages.filter((_, i) => i < currentMessageIndex);
+            break;
+        }
+
+        // Signal intentional delete if empty
+        if (updatedMessages.length === 0) {
+          persistenceLock.setManualReset(currentSessionId, true);
+        }
+
+        // Call setMessages directly (not through ref) to ensure we use the latest agent reference
+        setMessages(updatedMessages);
+      } catch (error) {
+        console.error('[CustomUserMessageV2] Error deleting message:', error);
+        // Optionally show user-facing error notification here
+      }
+    },
+    [setMessages],
+  );
+
   // Handle edit button click - enter edit mode
   const textContentRef = React.useRef(textContent);
   React.useEffect(() => {
     textContentRef.current = textContent;
   }, [textContent]);
-  
+
   const handleEditClick = useCallback(() => {
     // Extract text content (handles both string and multimodal array)
     const currentText = textContentRef.current || '';
-    
+
     // Save current content to edit history before editing
     setEditHistory(prev => [...prev, currentText]);
     editedContentRef.current = currentText;
     setEditedContent(currentText);
-    setEditFieldMountKey((k) => k + 1);
+    setEditFieldMountKey(k => k + 1);
     setIsEditing(true);
   }, [setEditHistory, setEditedContent, setIsEditing]);
-  
+
   // Handle save edit - use refs to stabilize callback
   const restPropsRef = React.useRef(restProps);
   const setMessagesRef = React.useRef(setMessages);
   const setIsEditingRef = React.useRef(setIsEditing);
   const setEditHistoryRef = React.useRef(setEditHistory);
   const setEditedContentRef = React.useRef(setEditedContent);
-  
+
   React.useEffect(() => {
     editedContentRef.current = editedContent;
     restPropsRef.current = restProps;
@@ -379,19 +384,19 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
     setEditHistoryRef.current = setEditHistory;
     setEditedContentRef.current = setEditedContent;
   }, [editedContent, restProps, setMessages, setIsEditing, setEditHistory, setEditedContent]);
-  
+
   // Create stable handlers that don't recreate on every render
   const handleSaveEdit = React.useCallback(() => {
     const currentMessages = messagesRef.current;
     const currentMessageIndex = messageIndexRef.current;
     const currentEditedContent = editedContentRef.current;
     const currentRestProps = restPropsRef.current;
-    
+
     if (!currentMessages || currentMessageIndex === -1) return;
-    
+
     const currentMessage = currentMessages[currentMessageIndex];
     const currentContent = (currentMessage as any)?.content;
-    
+
     // Preserve attachments if they exist in the original message
     let newContent: any;
     if (Array.isArray(currentContent)) {
@@ -402,7 +407,7 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
         }
         return part; // Keep binary parts as-is
       });
-      
+
       // If there was no text part originally, add it
       const hasTextPart = currentContent.some(p => p?.type === 'text');
       if (!hasTextPart && currentEditedContent.trim()) {
@@ -412,7 +417,7 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
       // Simple string content
       newContent = currentEditedContent;
     }
-    
+
     const updatedMessages = [...currentMessages];
     updatedMessages[currentMessageIndex] = {
       ...updatedMessages[currentMessageIndex],
@@ -420,13 +425,13 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
     };
     setMessagesRef.current(updatedMessages);
     setIsEditingRef.current(false);
-    
+
     // Call onEditMessage callback if provided
     if (currentRestProps.onEditMessage) {
       currentRestProps.onEditMessage({ message: updatedMessages[currentMessageIndex] as UserMessage });
     }
   }, []); // Empty deps - all accessed via refs
-  
+
   // Handle cancel edit - stable callback
   const handleCancelEdit = React.useCallback(() => {
     setIsEditingRef.current(false);
@@ -434,12 +439,12 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
     // Remove the last edit history entry since we're canceling
     setEditHistoryRef.current(prev => prev.slice(0, -1));
   }, []); // Empty deps - all accessed via refs
-  
+
   // Handle edit message callback - track in history (called after save)
   const handleEditMessage = useCallback((editProps: { message: UserMessage }) => {
     // This is called after edit is saved, edit history already tracked in handleEditClick
   }, []);
-  
+
   // Focus textarea when entering edit mode
   React.useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -453,14 +458,10 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
         });
       }
       textareaRef.current.focus();
-      textareaRef.current.setSelectionRange(
-        textareaRef.current.value.length,
-        textareaRef.current.value.length
-      );
+      textareaRef.current.setSelectionRange(textareaRef.current.value.length, textareaRef.current.value.length);
     }
   }, [isEditing]);
 
-  
   // Handle keyboard shortcuts - stable callback
   const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -471,13 +472,13 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
       handleCancelEdit();
     }
   }, []); // Empty deps - handlers are stable
-  
+
   // Construct className with theme class only (copilotKitUserMessage removed)
   const containerClassName = useMemo(() => {
     const themeClass = isLight ? 'light-theme' : 'dark-theme';
     return themeClass;
   }, [isLight]);
-  
+
   // V1 button container styles with fade-in and gradient background
   const buttonContainerStyles = useMemo(() => {
     const baseStyles: React.CSSProperties = {
@@ -497,31 +498,37 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
       marginBottom: '0.33rem',
       paddingLeft: '35px',
     };
-    
-    // Gradient background fade matching V1
+
+    // Gradient fade matches user bubble fill (gray-50 / ChatInputV2)
     if (isLight) {
+      const g =
+        'linear-gradient(to right, rgba(249, 250, 251, 0) 0%, rgba(249, 250, 251, 0.8) 20%, rgba(249, 250, 251, 0.95) 40%, rgb(249, 250, 251) 60%)';
       return {
         ...baseStyles,
-        background: 'linear-gradient(to right, rgba(249, 250, 251, 0) 0%, rgba(249, 250, 251, 0.8) 20%, rgba(249, 250, 251, 0.95) 40%, rgb(249, 250, 251) 60%)',
+        background: g,
       };
     } else {
       return {
         ...baseStyles,
-        background: 'linear-gradient(to right, rgba(21, 28, 36, 0) 0%, rgba(21, 28, 36, 0.8) 20%, rgba(21, 28, 36, 0.95) 40%, rgb(21, 28, 36) 60%)',
+        background:
+          'linear-gradient(to right, rgba(21, 28, 36, 0) 0%, rgba(21, 28, 36, 0.8) 20%, rgba(21, 28, 36, 0.95) 40%, rgb(21, 28, 36) 60%)',
       };
     }
   }, [isLight, isHovered]);
-  
+
   // Container styles - position relative for absolute positioned toolbar
-  const containerStyles = useMemo(() => ({
-    position: 'relative' as const,
-    overflow: 'visible' as const,
-  }), []);
-  
+  const containerStyles = useMemo(
+    () => ({
+      position: 'relative' as const,
+      overflow: 'visible' as const,
+    }),
+    [],
+  );
+
   // No additional toolbar items - we'll reorder in the children render prop
   // This prevents duplicate buttons since we're manually reordering
   const additionalToolbarItems = null;
-  
+
   // Store cursor position when restoring focus after a remount (draft is local; no per-keypress parent state).
   const cursorPositionRef = React.useRef<number | null>(null);
 
@@ -535,37 +542,54 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
 
   // Keep `editedContent` off deps (use ref) so the callback identity stays stable while typing — avoids slot remounts.
   // Include `isEditing` in deps so CopilotChatUserMessage (often memoized) sees a prop change and re-renders when entering/leaving edit.
-  const MessageRendererWithEdit = React.useCallback((rendererProps: { content: string; className?: string }) => {
-    if (isEditingForMessageRendererRef.current) {
+  const MessageRendererWithEdit = React.useCallback(
+    (rendererProps: { content: string; className?: string }) => {
+      if (isEditingForMessageRendererRef.current) {
+        return (
+          <CustomUserMessageRenderer
+            key={`edit-${message.id}`}
+            {...rendererProps}
+            isEditing
+            editedContent={editedContentRef.current}
+            onContentChange={mirrorEditedDraftToRef}
+            onSave={handleSaveEdit}
+            onCancel={handleCancelEdit}
+            textareaRef={textareaRef}
+            onKeyDown={handleKeyDown}
+            attachments={attachmentsForMessageRendererRef.current}
+            isFirstMessage={isFirstMessageRef.current}
+            virtuaStickyPortal={virtuaStickyPortal}
+            messageId={message.id != null ? String(message.id) : undefined}
+            savedScrollTopRef={savedScrollTopRef}
+            savedCursorRef={savedCursorRef}
+            editFieldMountKey={editFieldMountKey}
+          />
+        );
+      }
       return (
         <CustomUserMessageRenderer
-          key={`edit-${message.id}`}
+          key={`view-${message.id}`}
           {...rendererProps}
-          isEditing
-          editedContent={editedContentRef.current}
-          onContentChange={mirrorEditedDraftToRef}
-          onSave={handleSaveEdit}
-          onCancel={handleCancelEdit}
-          textareaRef={textareaRef}
-          onKeyDown={handleKeyDown}
           attachments={attachmentsForMessageRendererRef.current}
           isFirstMessage={isFirstMessageRef.current}
-          savedScrollTopRef={savedScrollTopRef}
-          savedCursorRef={savedCursorRef}
-          editFieldMountKey={editFieldMountKey}
+          virtuaStickyPortal={virtuaStickyPortal}
+          messageId={message.id != null ? String(message.id) : undefined}
         />
       );
-    }
-    return (
-      <CustomUserMessageRenderer
-        key={`view-${message.id}`}
-        {...rendererProps}
-        attachments={attachmentsForMessageRendererRef.current}
-        isFirstMessage={isFirstMessageRef.current}
-      />
-    );
-  }, [message.id, isEditing, editFieldMountKey, mirrorEditedDraftToRef, handleSaveEdit, handleCancelEdit, handleKeyDown]);
-  
+    },
+    [
+      message.id,
+      isEditing,
+      editFieldMountKey,
+      mirrorEditedDraftToRef,
+      handleSaveEdit,
+      handleCancelEdit,
+      handleKeyDown,
+      virtuaStickyPortal,
+      message.id,
+    ],
+  );
+
   // Restore focus/cursor only when focus was stolen (e.g. CopilotKit remount).
   // Do not call setSelectionRange on every keystroke — it resets textarea scrollTop in WebKit/Blink.
   React.useEffect(() => {
@@ -609,22 +633,24 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
       cursorPositionRef.current = null;
     });
   }, [isEditing, message.id]);
-  
+
   // Custom edit button that triggers edit mode
-  const CustomEditButtonWithHandler = useCallback((buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>) => {
-    return <CustomEditButton {...buttonProps} onClick={handleEditClick} />;
-  }, [handleEditClick]);
-  
+  const CustomEditButtonWithHandler = useCallback(
+    (buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>) => {
+      return <CustomEditButton {...buttonProps} onClick={handleEditClick} />;
+    },
+    [handleEditClick],
+  );
+
   return (
-    <CopilotChatUserMessage 
+    <CopilotChatUserMessage
       {...restProps}
       message={message}
       messageRenderer={MessageRendererWithEdit}
       copyButton={CustomCopyButton}
       editButton={CustomEditButtonWithHandler}
       onEditMessage={handleEditMessage}
-      additionalToolbarItems={additionalToolbarItems}
-    >
+      additionalToolbarItems={additionalToolbarItems}>
       {({ messageRenderer, toolbar, copyButton, editButton, branchNavigation, ...slotProps }) => {
         // Reorder toolbar buttons: Undo, Edit, Copy, More Options (rightmost)
         // Hide toolbar when in edit mode
@@ -634,23 +660,18 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
         // since these buttons don't rely on our local state
         const reorderedToolbar = useMemo(() => {
           if (isEditing) return null;
-          
+
           return (
-            <div
-              className=""
-              style={buttonContainerStyles}
-            >
+            <div data-user-message-toolbar className="" style={buttonContainerStyles}>
               {/* Undo Button - Only show if there's edit history */}
-              {editHistory.length > 0 && (
-                <CustomUndoButton onUndo={handleUndo} />
-              )}
-              
+              {editHistory.length > 0 && <CustomUndoButton onUndo={handleUndo} />}
+
               {/* Edit Button */}
               {editButton}
-              
+
               {/* Copy Button */}
               {copyButton}
-              
+
               {/* More Options Button (rightmost) - Contains Refresh and Delete */}
               <CustomMoreOptionsButton
                 onRerun={handleRerun}
@@ -661,16 +682,26 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
             </div>
           );
           // eslint-disable-next-line react-hooks/exhaustive-deps
-        }, [isEditing, editHistory.length, messageIndex, isLast, buttonContainerStyles, handleUndo, handleRerun, handleDelete]);
+        }, [
+          isEditing,
+          editHistory.length,
+          messageIndex,
+          isLast,
+          buttonContainerStyles,
+          handleUndo,
+          handleRerun,
+          handleDelete,
+        ]);
         // editButton and copyButton intentionally excluded - they change every render
-        
+
         return (
           <CopilotChatUserMessage.Container
-            className={containerClassName}
+            className={[containerClassName, virtuaStickyPortal ? 'virtua-sticky-user-message-root' : '']
+              .filter(Boolean)
+              .join(' ')}
             style={containerStyles}
             onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
-          >
+            onMouseLeave={() => setIsHovered(false)}>
             {messageRenderer}
             {/* Reordered toolbar - Hide when in edit mode */}
             {reorderedToolbar}
@@ -685,17 +716,14 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
  * Export with static properties copied from CopilotChatUserMessage
  * This is required for the V2 slot system to work correctly.
  */
-export const CustomUserMessageV2 = Object.assign(
-  CustomUserMessageV2ComponentInner,
-  {
-    Container: CopilotChatUserMessage.Container,
-    MessageRenderer: CopilotChatUserMessage.MessageRenderer,
-    Toolbar: CopilotChatUserMessage.Toolbar,
-    ToolbarButton: CopilotChatUserMessage.ToolbarButton,
-    CopyButton: CopilotChatUserMessage.CopyButton,
-    EditButton: CopilotChatUserMessage.EditButton,
-    BranchNavigation: CopilotChatUserMessage.BranchNavigation,
-  }
-) as typeof CopilotChatUserMessage;
+export const CustomUserMessageV2 = Object.assign(CustomUserMessageV2ComponentInner, {
+  Container: CopilotChatUserMessage.Container,
+  MessageRenderer: CopilotChatUserMessage.MessageRenderer,
+  Toolbar: CopilotChatUserMessage.Toolbar,
+  ToolbarButton: CopilotChatUserMessage.ToolbarButton,
+  CopyButton: CopilotChatUserMessage.CopyButton,
+  EditButton: CopilotChatUserMessage.EditButton,
+  BranchNavigation: CopilotChatUserMessage.BranchNavigation,
+}) as typeof CopilotChatUserMessage & React.FC<CustomUserMessageV2Props>;
 
 export default CustomUserMessageV2;

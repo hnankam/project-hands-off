@@ -1,9 +1,9 @@
 /**
  * Custom Slot Components for CopilotKit V2
- * 
+ *
  * These components are designed to be passed to CopilotChat's slot system
  * for customizing various UI elements.
- * 
+ *
  * Available slots in CopilotChat:
  * - scrollToBottomButton: Button to scroll to latest messages
  * - feather: Gradient fade at bottom of scroll area
@@ -33,30 +33,23 @@ export type { CustomDisclaimerProps } from './CustomDisclaimer';
 export { CustomInputContainer } from './CustomInputContainer';
 export type { CustomInputContainerProps } from './CustomInputContainer';
 
-export { 
-  CustomSuggestionView, 
-  CustomSuggestionPill,
-} from './CustomSuggestionView';
-export type { 
-  CustomSuggestionViewProps, 
-  CustomSuggestionPillProps,
-  Suggestion 
-} from './CustomSuggestionView';
+export { CustomSuggestionView, CustomSuggestionPill } from './CustomSuggestionView';
+export type { CustomSuggestionViewProps, CustomSuggestionPillProps, Suggestion } from './CustomSuggestionView';
 
 export { CustomUserMessageRenderer } from './CustomUserMessageRenderer';
 export type { CustomUserMessageRendererProps } from './CustomUserMessageRenderer';
 
 // User message buttons
-export { 
-  CustomCopyButton, 
+export {
+  CustomCopyButton,
   CustomEditButton,
   CustomRerunButton,
   CustomUndoButton,
   CustomDeleteButton,
   CustomMoreOptionsButton,
 } from './CustomUserMessageButtons';
-export type { 
-  CustomCopyButtonProps, 
+export type {
+  CustomCopyButtonProps,
   CustomEditButtonProps,
   CustomRerunButtonProps,
   CustomUndoButtonProps,
@@ -68,6 +61,7 @@ export type {
 export {
   CustomCopyButton as CustomAssistantCopyButton,
   CustomRegenerateButton,
+  CustomAssistantMoreOptionsButton,
   CustomThumbsUpButton,
   CustomThumbsDownButton,
   CustomReadAloudButton,
@@ -75,8 +69,8 @@ export {
 export type {
   CustomCopyButtonProps as CustomAssistantCopyButtonProps,
   CustomRegenerateButtonProps,
+  CustomAssistantMoreOptionsButtonProps,
   CustomThumbsUpButtonProps,
   CustomThumbsDownButtonProps,
   CustomReadAloudButtonProps,
 } from './CustomAssistantMessageButtons';
-

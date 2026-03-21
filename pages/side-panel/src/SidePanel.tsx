@@ -1,9 +1,9 @@
 /**
  * @fileoverview Main Side Panel Component
- * 
+ *
  * Root component for the side panel interface.
  * Manages authentication, routing, theming, and top-level state.
- * 
+ *
  * Features:
  * - Multi-page navigation (Home, Chats, Admin)
  * - Authentication flow with login and invitation handling
@@ -18,16 +18,9 @@ import './SidePanel.css';
 // CopilotKit styles now imported in index.css (after Tailwind base for @layer support)
 import * as React from 'react';
 import { useCallback, useEffect } from 'react';
-import {
-  useStorage,
-  useSessionStorageDB,
-  withErrorBoundary,
-} from '@extension/shared';
+import { useStorage, useSessionStorageDB, withErrorBoundary } from '@extension/shared';
 import { themeStorage, apiConfigStorage } from '@extension/storage';
-import {
-  cn,
-  ErrorDisplay,
-} from '@extension/ui';
+import { cn, ErrorDisplay } from '@extension/ui';
 import { HomePage } from './pages/HomePage';
 import { SessionsPage } from './pages/SessionsPage';
 import { AdminPage } from './pages/AdminPage';
@@ -54,26 +47,26 @@ const SidePanel = () => {
   // ============================================================================
   // Core State & Hooks
   // ============================================================================
-  
+
   // Authentication
   const { isAuthenticated, isLoading: authLoading } = useAuth();
-  
+
   // Database worker
   const { isReady: dbWorkerReady, error: dbWorkerError } = useDBWorkerClient();
-  
+
   // Theme
   const { isLight, theme } = useStorage(themeStorage);
   useThemeManager(isLight, theme);
-  
+
   // API config from Options page (overrides build-time .env defaults)
   const { apiUrl, backendUrl } = useStorage(apiConfigStorage);
   useEffect(() => {
     initApiConfig(apiUrl, backendUrl);
   }, [apiUrl, backendUrl]);
-  
+
   // Sessions
   const { sessions, currentSessionId, isLoading: sessionsLoading } = useSessionStorageDB();
-  
+
   // Navigation
   const {
     activePage,
@@ -91,56 +84,63 @@ const SidePanel = () => {
     setOAuthProvider,
     setSSOEmail,
   } = useNavigationManager();
-  
+
   // Stable callback for page changes to prevent unnecessary re-renders
-  const handlePageChange = useCallback((page: 'sessions') => {
-    if (page === 'sessions') {
-      navigateToSessions();
-    }
-  }, [navigateToSessions]);
-  
+  const handlePageChange = useCallback(
+    (page: 'sessions') => {
+      if (page === 'sessions') {
+        navigateToSessions();
+      }
+    },
+    [navigateToSessions],
+  );
+
   // Session URL synchronization
   useSessionUrlSync({
     sessions,
     currentSessionId,
     activePage,
     onPageChange: handlePageChange,
+    sessionsLoading,
   });
-  
+
   // Message handlers (context menu, close events)
   const { contextMenuMessage } = useMessageHandlers();
-  
+
   // ============================================================================
   // UI State
   // ============================================================================
-  
+
   const [aboutOpen, setAboutOpen] = React.useState(false);
   const [invitationModalOpen, setInvitationModalOpen] = React.useState(false);
-  
+
   // ============================================================================
   // Event Handlers
   // ============================================================================
-  
+
   const closeSidePanel = useCallback(() => {
     // Send message to popup to update its state
     chrome.runtime.sendMessage({ action: 'sidePanelClosed' });
     // Close the side panel
     window.close();
   }, []);
-  
+
   const openAbout = useCallback(() => {
     setAboutOpen(true);
   }, []);
-  
-  const handleInvitationSubmit = useCallback((trimmedId: string) => {
-    setInvitationId(trimmedId);
-    window.location.hash = `#/accept-invitation/${trimmedId}`;
-  }, [setInvitationId]);
-  
+
+  const handleInvitationSubmit = useCallback(
+    (trimmedId: string) => {
+      setInvitationId(trimmedId);
+      window.location.hash = `#/accept-invitation/${trimmedId}`;
+    },
+    [setInvitationId],
+  );
+
   const handleInvitationSuccess = useCallback(() => {
     // Clear invitation ID
     setInvitationId(null);
-    
+
     // If authenticated (after accepting), redirect to home and reload
     // If not authenticated (after declining), just return to login
     if (isAuthenticated) {
@@ -151,7 +151,7 @@ const SidePanel = () => {
       window.location.hash = '';
     }
   }, [isAuthenticated, setInvitationId]);
-  
+
   const handleResetPasswordSuccess = useCallback(() => {
     // Clear the reset password token
     setResetPasswordToken(null);
@@ -159,38 +159,35 @@ const SidePanel = () => {
     window.history.replaceState({}, document.title, window.location.pathname);
     window.location.hash = '';
   }, [setResetPasswordToken]);
-  
+
   const handleResetPasswordCancel = useCallback(() => {
     // Clear the reset password token and go back to login
     setResetPasswordToken(null);
     window.history.replaceState({}, document.title, window.location.pathname);
     window.location.hash = '';
   }, [setResetPasswordToken]);
-  
+
   // ============================================================================
   // Loading & Error States
   // ============================================================================
-  
+
   // Show error if DB worker failed
   if (dbWorkerError) {
     return (
-      <div className={cn('h-screen flex items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
-        <div className="text-center p-4">
-          <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">
-            Database Initialization Failed
-          </h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{dbWorkerError.message}</p>
+      <div className={cn('flex h-screen items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
+        <div className="p-4 text-center">
+          <h3 className="mb-2 text-lg font-semibold text-red-600 dark:text-red-400">Database Initialization Failed</h3>
+          <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">{dbWorkerError.message}</p>
           <button
             onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
+            className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">
             Reload Extension
           </button>
         </div>
       </div>
     );
   }
-  
+
   // Show loading while checking authentication OR DB initialization
   if (authLoading || !dbWorkerReady) {
     return (
@@ -199,11 +196,11 @@ const SidePanel = () => {
       </div>
     );
   }
-  
+
   // ============================================================================
   // Route: OAuth (opened in popup for social login)
   // ============================================================================
-  
+
   if (oauthProvider) {
     return (
       <OAuthPage
@@ -211,17 +208,17 @@ const SidePanel = () => {
         onSuccess={() => {
           // OAuth redirect will handle success
         }}
-        onError={(error) => {
+        onError={error => {
           console.error('[OAuth] Error:', error);
         }}
       />
     );
   }
-  
+
   // ============================================================================
   // Route: SSO (opened in popup for enterprise SSO login)
   // ============================================================================
-  
+
   if (ssoEmail) {
     return (
       <SSOPage
@@ -229,17 +226,17 @@ const SidePanel = () => {
         onSuccess={() => {
           // SSO redirect will handle success
         }}
-        onError={(error) => {
+        onError={error => {
           console.error('[SSO] Error:', error);
         }}
       />
     );
   }
-  
+
   // ============================================================================
   // Route: Password Reset
   // ============================================================================
-  
+
   if (resetPasswordToken) {
     return (
       <ResetPasswordPage
@@ -249,29 +246,24 @@ const SidePanel = () => {
       />
     );
   }
-  
+
   // ============================================================================
   // Route: Invitation Acceptance
   // ============================================================================
-  
+
   if (invitationId) {
-    return (
-      <AcceptInvitationPage
-        invitationId={invitationId}
-        onSuccess={handleInvitationSuccess}
-      />
-    );
+    return <AcceptInvitationPage invitationId={invitationId} onSuccess={handleInvitationSuccess} />;
   }
-  
+
   // ============================================================================
   // Route: Login (Unauthenticated)
   // ============================================================================
-  
+
   if (!isAuthenticated) {
     return (
       <>
         <LoginPage onGoToInvitation={() => setInvitationModalOpen(true)} />
-        
+
         <InvitationModal
           isOpen={invitationModalOpen}
           onClose={() => setInvitationModalOpen(false)}
@@ -281,64 +273,59 @@ const SidePanel = () => {
       </>
     );
   }
-  
+
   // ============================================================================
   // Main Authenticated UI
   // ============================================================================
-  
+
   return (
-    <div className={cn('flex h-screen max-h-screen min-h-0 flex-col overflow-hidden relative', isLight ? 'bg-white' : 'bg-[#151C24]')}>
+    <div
+      className={cn(
+        'relative flex h-screen max-h-screen min-h-0 flex-col overflow-hidden',
+        isLight ? 'bg-white' : 'bg-[#151C24]',
+      )}>
       {/* Page Content - Chats page stays mounted to preserve session cache */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* Chats Page - Always mounted once visited to preserve LRU session cache */}
-        <div 
-          key="sessions" 
+        <div
+          key="sessions"
           className={cn(
             'absolute inset-0 flex flex-col overflow-hidden',
-            activePage === 'sessions' && 'animate-fadeIn'
+            activePage === 'sessions' && 'animate-fadeIn',
           )}
-          style={{ display: activePage === 'sessions' ? 'flex' : 'none' }}
-        >
-            <SessionsPage
-              isLight={isLight}
-              sessions={sessions}
-              currentSessionId={currentSessionId}
-              sessionsLoading={sessionsLoading}
-              publicApiKey={COPILOTKIT_PUBLIC_KEY}
-              contextMenuMessage={contextMenuMessage}
-              isVisible={activePage === 'sessions'}
-              onGoHome={navigateToHome}
-              onClose={closeSidePanel}
-              onOpenAbout={openAbout}
-              onGoAdmin={navigateToAdmin}
-            />
-          </div>
-        
+          style={{ display: activePage === 'sessions' ? 'flex' : 'none' }}>
+          <SessionsPage
+            isLight={isLight}
+            sessions={sessions}
+            currentSessionId={currentSessionId}
+            sessionsLoading={sessionsLoading}
+            publicApiKey={COPILOTKIT_PUBLIC_KEY}
+            contextMenuMessage={contextMenuMessage}
+            isVisible={activePage === 'sessions'}
+            onGoHome={navigateToHome}
+            onClose={closeSidePanel}
+            onOpenAbout={openAbout}
+            onGoAdmin={navigateToAdmin}
+          />
+        </div>
+
         {/* Admin Page - Conditionally rendered (no persistent state to preserve) */}
         {activePage === 'admin' && (
-          <div key="admin" className="absolute inset-0 flex flex-col overflow-hidden animate-fadeIn">
+          <div key="admin" className="animate-fadeIn absolute inset-0 flex flex-col overflow-hidden">
             <AdminPage onGoHome={navigateToHome} onGoToSessions={navigateToSessions} initialTab={adminInitialTab} />
           </div>
         )}
-        
+
         {/* Home Page - Conditionally rendered (no persistent state to preserve) */}
         {activePage === 'home' && (
-          <div key="home" className="absolute inset-0 flex flex-col overflow-hidden animate-fadeIn">
-            <HomePage
-              isLight={isLight}
-              onGoToSessions={navigateToSessions}
-              onGoAdmin={navigateToAdmin}
-            />
+          <div key="home" className="animate-fadeIn absolute inset-0 flex flex-col overflow-hidden">
+            <HomePage isLight={isLight} onGoToSessions={navigateToSessions} onGoAdmin={navigateToAdmin} />
           </div>
         )}
       </div>
-      
+
       {/* About Modal */}
-      <AboutModal
-        isOpen={aboutOpen}
-        onClose={() => setAboutOpen(false)}
-        isLight={isLight}
-      />
+      <AboutModal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} isLight={isLight} />
     </div>
   );
 };

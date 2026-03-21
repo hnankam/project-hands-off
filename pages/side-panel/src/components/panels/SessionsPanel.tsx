@@ -20,6 +20,9 @@ interface SessionsPanelProps {
   onDeleteSession?: (sessionId: string) => void;
   onWidthChange?: (width: number) => void;
   initialWidth?: number;
+  /** Fraction of the content area (below header) for the open-chats row; persisted like panel width */
+  initialSplitRatio?: number;
+  onSplitRatioChange?: (ratio: number) => void;
   isSmallView?: boolean;
   apiBaseUrl?: string;
 }
@@ -120,7 +123,7 @@ const SessionMoreOptionsButton: React.FC<SessionMoreOptionsButtonProps> = ({
   const makeItem = (onClick: () => void, icon: React.ReactNode, label: string, isLast = false) => (
     <button
       type="button"
-      onClick={(e) => {
+      onClick={e => {
         e.preventDefault();
         e.stopPropagation();
         onClick();
@@ -130,9 +133,12 @@ const SessionMoreOptionsButton: React.FC<SessionMoreOptionsButtonProps> = ({
         color: menuItemTextColor,
         ...(!isLast && { borderBottom: `1px solid ${menuItemBorderColor}` }),
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = menuItemHoverBg; }}
-      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
-    >
+      onMouseEnter={e => {
+        e.currentTarget.style.backgroundColor = menuItemHoverBg;
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.backgroundColor = 'transparent';
+      }}>
       {icon}
       {label}
     </button>
@@ -144,13 +150,20 @@ const SessionMoreOptionsButton: React.FC<SessionMoreOptionsButtonProps> = ({
         ref={moreButtonRef}
         className={buttonClassName}
         title="More options"
-        onClick={(e) => {
+        onClick={e => {
           e.stopPropagation();
           e.preventDefault();
           onToggle();
-        }}
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+        }}>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          width="16"
+          height="16">
           <circle cx="12" cy="12" r="1" />
           <circle cx="12" cy="5" r="1" />
           <circle cx="12" cy="19" r="1" />
@@ -161,7 +174,15 @@ const SessionMoreOptionsButton: React.FC<SessionMoreOptionsButtonProps> = ({
           <div ref={moreDropdownRef} style={dropdownStyles}>
             {makeItem(
               onOpen,
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14">
                 <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
               </svg>,
@@ -170,7 +191,15 @@ const SessionMoreOptionsButton: React.FC<SessionMoreOptionsButtonProps> = ({
             )}
             {makeItem(
               onClone,
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14">
                 <path d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>,
               'Clone Chat',
@@ -179,7 +208,15 @@ const SessionMoreOptionsButton: React.FC<SessionMoreOptionsButtonProps> = ({
             {!isArchived &&
               makeItem(
                 onArchive,
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  width="14"
+                  height="14">
                   <path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                 </svg>,
                 'Archive Chat',
@@ -187,7 +224,15 @@ const SessionMoreOptionsButton: React.FC<SessionMoreOptionsButtonProps> = ({
               )}
             {makeItem(
               onDelete,
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14">
                 <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>,
               'Delete Chat',
@@ -204,6 +249,12 @@ const MIN_PANEL_WIDTH = 220;
 const MAX_PANEL_WIDTH = 400;
 const DEFAULT_PANEL_WIDTH = 280;
 const PANEL_ANIMATION_DURATION_MS = 220;
+
+/** Total height of split drag row (py + 1px line) for flex track math */
+const SPLIT_HANDLE_PX = 13;
+const MIN_SPLIT_RATIO = 0.22;
+const MAX_SPLIT_RATIO = 0.82;
+const DEFAULT_SPLIT_RATIO = 0.55;
 
 const formatTimestamp = (timestamp: number) => {
   const now = Date.now();
@@ -230,13 +281,17 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
   onDeleteSession,
   onWidthChange,
   initialWidth = DEFAULT_PANEL_WIDTH,
+  initialSplitRatio = DEFAULT_SPLIT_RATIO,
+  onSplitRatioChange,
   isSmallView = false,
   apiBaseUrl,
 }) => {
   const [width, setWidth] = useState(initialWidth);
+  const [splitRatio, setSplitRatio] = useState(initialSplitRatio);
   const [openMoreMenuSessionId, setOpenMoreMenuSessionId] = useState<string | null>(null);
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
+  const [isResizingSplit, setIsResizingSplit] = useState(false);
   const [isAnimatingIn, setIsAnimatingIn] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -249,6 +304,9 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
   const hoverFetchSessionRef = useRef<string | null>(null);
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(initialWidth);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const splitResizeStartY = useRef(0);
+  const splitResizeStartRatio = useRef(DEFAULT_SPLIT_RATIO);
 
   /** Top scroll feather overlays content; hide at scrollTop 0 so the first row is not dimmed */
   const [showOpenListTopFeather, setShowOpenListTopFeather] = useState(false);
@@ -270,11 +328,11 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
   }, [isOpen]);
 
   const openSessions = React.useMemo(
-    () => [...sessions.filter((s) => s.isOpen)].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
+    () => [...sessions.filter(s => s.isOpen)].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
     [sessions],
   );
   const archivedSessions = React.useMemo(
-    () => [...sessions.filter((s) => !s.isOpen)].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
+    () => [...sessions.filter(s => !s.isOpen)].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
     [sessions],
   );
 
@@ -308,7 +366,7 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
     () => () => {
       if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     },
-    []
+    [],
   );
 
   // Update width when initialWidth changes
@@ -320,25 +378,25 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
   }, [isOpen, initialWidth, width]);
 
   // Left panel: resize handle on RIGHT edge; dragging right increases width
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
-    resizeStartX.current = e.clientX;
-    resizeStartWidth.current = width;
-  }, [width]);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      setIsResizing(true);
+      resizeStartX.current = e.clientX;
+      resizeStartWidth.current = width;
+    },
+    [width],
+  );
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
       if (!isResizing) return;
       const deltaX = e.clientX - resizeStartX.current;
-      const newWidth = Math.min(
-        MAX_PANEL_WIDTH,
-        Math.max(MIN_PANEL_WIDTH, resizeStartWidth.current + deltaX)
-      );
+      const newWidth = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, resizeStartWidth.current + deltaX));
       setWidth(newWidth);
       onWidthChange?.(newWidth);
     },
-    [isResizing, onWidthChange]
+    [isResizing, onWidthChange],
   );
 
   const handleMouseUp = useCallback(() => {
@@ -359,10 +417,65 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
     };
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
-  const handleSessionClick = useCallback((sessionId: string) => {
-    if (sessionId === currentSessionId) return;
-    sessionStorageDBWrapper.setActiveSession(sessionId);
-  }, [currentSessionId]);
+  React.useEffect(() => {
+    if (isOpen && initialSplitRatio !== splitRatio) {
+      setSplitRatio(initialSplitRatio);
+    }
+  }, [isOpen, initialSplitRatio, splitRatio]);
+
+  const handleSplitMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const el = splitContainerRef.current;
+      const h = el?.getBoundingClientRect().height ?? 0;
+      if (h <= SPLIT_HANDLE_PX) return;
+      setIsResizingSplit(true);
+      splitResizeStartY.current = e.clientY;
+      splitResizeStartRatio.current = splitRatio;
+    },
+    [splitRatio],
+  );
+
+  const handleSplitMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isResizingSplit) return;
+      const el = splitContainerRef.current;
+      const h = el?.getBoundingClientRect().height ?? 0;
+      const track = Math.max(1, h - SPLIT_HANDLE_PX);
+      const deltaY = e.clientY - splitResizeStartY.current;
+      const deltaRatio = deltaY / track;
+      const next = Math.min(MAX_SPLIT_RATIO, Math.max(MIN_SPLIT_RATIO, splitResizeStartRatio.current + deltaRatio));
+      setSplitRatio(next);
+      onSplitRatioChange?.(next);
+    },
+    [isResizingSplit, onSplitRatioChange],
+  );
+
+  const handleSplitMouseUp = useCallback(() => {
+    setIsResizingSplit(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (!isResizingSplit) return;
+    document.addEventListener('mousemove', handleSplitMouseMove);
+    document.addEventListener('mouseup', handleSplitMouseUp);
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+    return () => {
+      document.removeEventListener('mousemove', handleSplitMouseMove);
+      document.removeEventListener('mouseup', handleSplitMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizingSplit, handleSplitMouseMove, handleSplitMouseUp]);
+
+  const handleSessionClick = useCallback(
+    (sessionId: string) => {
+      if (sessionId === currentSessionId) return;
+      sessionStorageDBWrapper.setActiveSession(sessionId);
+    },
+    [currentSessionId],
+  );
 
   const handleEditClick = useCallback((sessionId: string, currentTitle: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -384,13 +497,16 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
     setEditValue('');
   }, []);
 
-  const handleEditKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleEditSubmit();
-    } else if (e.key === 'Escape') {
-      handleEditCancel();
-    }
-  }, [handleEditSubmit, handleEditCancel]);
+  const handleEditKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        handleEditSubmit();
+      } else if (e.key === 'Escape') {
+        handleEditCancel();
+      }
+    },
+    [handleEditSubmit, handleEditCancel],
+  );
 
   useEffect(() => {
     if (editingSessionId && editInputRef.current) {
@@ -399,28 +515,31 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
     }
   }, [editingSessionId]);
 
-  const handleSessionMouseEnter = useCallback((sessionId: string, el: HTMLElement, e?: React.MouseEvent) => {
-    if (editingSessionId && editingSessionId === sessionId) return;
-    if (e?.target && (e.target as Element).closest?.('[data-tooltip-exclude]')) return;
-    hoverTimeoutRef.current = setTimeout(async () => {
-      const rect = el.getBoundingClientRect();
-      setHoverRect({ left: rect.left + rect.width / 2, top: rect.bottom });
-      setHoveredSessionId(sessionId);
-      setHoverUsageStats('loading');
-      hoverFetchSessionRef.current = sessionId;
-      try {
-        const baseUrl = apiBaseUrl ?? API_CONFIG.BASE_URL;
-        const stats = await fetchSessionUsageSummary(baseUrl, sessionId);
-        if (hoverFetchSessionRef.current === sessionId) {
-          setHoverUsageStats(stats);
+  const handleSessionMouseEnter = useCallback(
+    (sessionId: string, el: HTMLElement, e?: React.MouseEvent) => {
+      if (editingSessionId && editingSessionId === sessionId) return;
+      if (e?.target && (e.target as Element).closest?.('[data-tooltip-exclude]')) return;
+      hoverTimeoutRef.current = setTimeout(async () => {
+        const rect = el.getBoundingClientRect();
+        setHoverRect({ left: rect.left + rect.width / 2, top: rect.bottom });
+        setHoveredSessionId(sessionId);
+        setHoverUsageStats('loading');
+        hoverFetchSessionRef.current = sessionId;
+        try {
+          const baseUrl = apiBaseUrl ?? API_CONFIG.BASE_URL;
+          const stats = await fetchSessionUsageSummary(baseUrl, sessionId);
+          if (hoverFetchSessionRef.current === sessionId) {
+            setHoverUsageStats(stats);
+          }
+        } catch {
+          if (hoverFetchSessionRef.current === sessionId) {
+            setHoverUsageStats(null);
+          }
         }
-      } catch {
-        if (hoverFetchSessionRef.current === sessionId) {
-          setHoverUsageStats(null);
-        }
-      }
-    }, 150);
-  }, [editingSessionId, apiBaseUrl]);
+      }, 150);
+    },
+    [editingSessionId, apiBaseUrl],
+  );
 
   const handleSessionMouseLeave = useCallback(() => {
     if (hoverTimeoutRef.current) {
@@ -443,9 +562,12 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
     setHoverUsageStats('loading');
   }, []);
 
-  useEffect(() => () => {
-    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    },
+    [],
+  );
 
   const formatNumber = (n: number) => n.toLocaleString();
 
@@ -453,13 +575,191 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
     return null;
   }
 
+  const hasArchivedSplit = archivedSessions.length > 0;
+
+  const renderOpenChatsSection = () => (
+    <>
+      {onNewSession && (
+        <button
+          onClick={onNewSession}
+          className={cn(
+            'text-md mb-3 flex w-full flex-shrink-0 items-center gap-2 rounded px-3 py-3 font-bold uppercase transition-colors',
+            hasArchivedSplit ? 'mt-1' : 'mt-3',
+            isLight ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700',
+          )}
+          title="Start new chat">
+          <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path d="M12 4v16m8-8H4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>Start New Chat</span>
+        </button>
+      )}
+      {openSessions.length === 0 ? (
+        <div className={cn('flex-shrink-0 px-4 py-8 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
+          <p>No open chats</p>
+          <p className="mt-1 text-xs opacity-75">Create a new chat to get started.</p>
+        </div>
+      ) : (
+        <div
+          className={cn('sessions-panel-open-wrapper relative flex flex-col', hasArchivedSplit && 'min-h-0 flex-1')}
+          style={
+            {
+              '--archived-feather-bg': isLight ? '#ffffff' : '#0D1117',
+            } as React.CSSProperties
+          }>
+          <div
+            className={cn(
+              'sessions-panel-list recent-sessions-scroll space-y-0 overflow-y-auto pb-2',
+              hasArchivedSplit ? 'min-h-0 flex-1' : 'max-h-[min(50vh,20rem)]',
+            )}
+            onScroll={handleOpenSessionsScroll}>
+            {openSessions.map(session => (
+              <div
+                key={session.id}
+                data-session-id={session.id}
+                onClick={() => handleSessionClick(session.id)}
+                onMouseEnter={e => handleSessionMouseEnter(session.id, e.currentTarget, e)}
+                onMouseLeave={handleSessionMouseLeave}
+                className={cn(
+                  'group relative flex cursor-pointer items-center rounded px-3 py-2 text-xs transition-colors',
+                  session.id === currentSessionId
+                    ? isLight
+                      ? 'bg-gray-50 font-semibold text-gray-700'
+                      : 'bg-[#151C24] font-semibold text-gray-300'
+                    : isLight
+                      ? 'text-gray-600 hover:bg-gray-100'
+                      : 'text-gray-500 hover:bg-gray-700/50',
+                )}
+                style={
+                  {
+                    '--close-feather-hover-bg':
+                      session.id === currentSessionId
+                        ? isLight
+                          ? '#f9fafb'
+                          : '#151C24'
+                        : isLight
+                          ? '#f3f4f6'
+                          : '#1f2937',
+                  } as React.CSSProperties
+                }>
+                {editingSessionId === session.id ? (
+                  <input
+                    ref={editInputRef}
+                    type="text"
+                    value={editValue}
+                    onChange={e => setEditValue(e.target.value)}
+                    onBlur={handleEditSubmit}
+                    onKeyDown={handleEditKeyDown}
+                    onClick={e => e.stopPropagation()}
+                    className={cn(
+                      'min-w-0 flex-1 border-none bg-transparent px-1 py-0 text-xs outline-none',
+                      isLight ? 'text-gray-900' : 'text-gray-100',
+                    )}
+                  />
+                ) : (
+                  <>
+                    <div
+                      className={cn(
+                        'min-w-0 flex-1 truncate transition-colors',
+                        session.id !== currentSessionId && (isLight ? 'text-gray-600' : 'text-gray-500'),
+                      )}
+                      style={session.id !== currentSessionId ? { color: isLight ? '#4b5563' : '#6b7280' } : undefined}>
+                      {session.title}
+                    </div>
+                    <span
+                      className={cn('ml-2 flex-shrink-0 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}
+                      data-tooltip-exclude
+                      onMouseEnter={handleTooltipExcludeMouseEnter}>
+                      {formatTimestamp(session.timestamp)}
+                    </span>
+                    <div
+                      className={cn(
+                        'sessions-panel-close-feather pointer-events-none absolute top-0 right-0 bottom-0 flex items-center justify-end rounded-r pr-1 pl-12 group-hover:pointer-events-auto',
+                        openMoreMenuSessionId === session.id && 'is-open pointer-events-auto',
+                      )}>
+                      <button
+                        type="button"
+                        data-tooltip-exclude
+                        onMouseEnter={handleTooltipExcludeMouseEnter}
+                        onClick={e => handleEditClick(session.id, session.title, e)}
+                        className={cn(
+                          'flex flex-shrink-0 items-center justify-center rounded p-1 transition-colors',
+                          isLight ? 'text-gray-500 hover:text-gray-800' : 'text-gray-400 hover:text-gray-100',
+                        )}
+                        title="Edit chat title">
+                        <svg
+                          className="h-3.5 w-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          strokeWidth={2}>
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                          />
+                        </svg>
+                      </button>
+                      {(onOpenSession || onCloneSession || onArchiveSession || onDeleteSession) && (
+                        <div
+                          className="pointer-events-auto flex-shrink-0"
+                          data-tooltip-exclude
+                          onMouseEnter={handleTooltipExcludeMouseEnter}>
+                          <SessionMoreOptionsButton
+                            session={session}
+                            isLight={isLight}
+                            isOpen={openMoreMenuSessionId === session.id}
+                            onToggle={() =>
+                              setOpenMoreMenuSessionId(openMoreMenuSessionId === session.id ? null : session.id)
+                            }
+                            onOpen={() => {
+                              setOpenMoreMenuSessionId(null);
+                              onOpenSession?.(session.id);
+                            }}
+                            onClone={() => {
+                              setOpenMoreMenuSessionId(null);
+                              onCloneSession?.(session.id);
+                            }}
+                            onArchive={() => {
+                              setOpenMoreMenuSessionId(null);
+                              onArchiveSession?.(session.id);
+                            }}
+                            onDelete={() => {
+                              setOpenMoreMenuSessionId(null);
+                              onDeleteSession?.(session.id);
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+          <div
+            className={cn(
+              'sessions-panel-scroll-feather-top pointer-events-none absolute top-0 right-0 left-0 z-10 h-2 transition-opacity duration-150',
+              showOpenListTopFeather ? 'opacity-100' : 'opacity-0',
+            )}
+            aria-hidden
+          />
+          <div
+            className="sessions-panel-archived-feather pointer-events-none absolute right-0 bottom-0 left-0 z-10 h-2"
+            aria-hidden
+          />
+        </div>
+      )}
+    </>
+  );
+
   return (
     <>
       {isSmallView && (
         <div
           className={cn(
             'absolute inset-0 z-30 bg-black/50 transition-opacity duration-[220ms] ease-out',
-            isClosing ? 'opacity-0' : isAnimatingIn ? 'opacity-100' : 'opacity-0'
+            isClosing ? 'opacity-0' : isAnimatingIn ? 'opacity-100' : 'opacity-0',
           )}
           onClick={handleCloseClick}
           style={{ pointerEvents: 'auto' }}
@@ -468,23 +768,22 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
 
       <div
         className={cn(
-          'absolute left-0 top-0 bottom-0 z-40 flex flex-col border-r',
-          isLight ? 'bg-white border-gray-200' : 'border-gray-700'
+          'absolute top-0 bottom-0 left-0 z-40 flex flex-col border-r',
+          isLight ? 'border-gray-200 bg-white' : 'border-gray-700',
         )}
         style={{
           backgroundColor: isLight ? '#ffffff' : '#0D1117',
           width: isSmallView ? '85vw' : `${width}px`,
           maxWidth: isSmallView ? '400px' : undefined,
-          transition: isResizing ? 'none' : 'width 0.2s ease-in-out, transform 220ms ease-out',
+          transition: isResizing || isResizingSplit ? 'none' : 'width 0.2s ease-in-out, transform 220ms ease-out',
           transform: isClosing ? 'translateX(-100%)' : isAnimatingIn ? 'translateX(0)' : 'translateX(-100%)',
           pointerEvents: 'auto',
-        }}
-      >
+        }}>
         {!isSmallView && (
           <div
             className={cn(
-              'absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500/50 transition-colors',
-              isResizing && 'bg-blue-500'
+              'absolute top-0 right-0 bottom-0 w-1 cursor-ew-resize transition-colors hover:bg-blue-500/50',
+              isResizing && 'bg-blue-500',
             )}
             onMouseDown={handleMouseDown}
           />
@@ -493,355 +792,208 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
         {/* Header */}
         <div
           className={cn(
-            'flex items-center border-b h-[34px]',
-            isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700'
+            'flex h-[34px] items-center border-b',
+            isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
           )}
         />
 
-        {/* Add Chat button + open list (scroll + bottom feather) + archived */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto py-2 px-2">
-          {onNewSession && (
-            <button
-              onClick={onNewSession}
-              className={cn(
-                'flex w-full flex-shrink-0 items-center gap-2 px-3 py-3 mb-3 mt-3 rounded text-md font-bold uppercase transition-colors',
-                isLight
-                  ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700',
-              )}
-              title="Start new chat"
-            >
-              <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path d="M12 4v16m8-8H4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <span>Start New Chat</span>
-            </button>
-          )}
-          {openSessions.length === 0 ? (
+        {/* Open chats row + optional vertical split + archived row */}
+        {hasArchivedSplit ? (
+          <div ref={splitContainerRef} className="flex min-h-0 flex-1 flex-col overflow-hidden py-2">
             <div
-              className={cn(
-                'flex-shrink-0 text-center py-8 text-sm px-4',
-                isLight ? 'text-gray-500' : 'text-gray-400'
-              )}
-            >
-              <p>No open chats</p>
-              <p className="mt-1 text-xs opacity-75">
-                Create a new chat to get started.
-              </p>
+              className="flex min-h-0 flex-col overflow-hidden px-2"
+              style={{ flex: `${splitRatio} 1 0`, minHeight: 0 }}>
+              {renderOpenChatsSection()}
             </div>
-          ) : (
+            {/* Full panel width (no px on parent); 1px line matches border-r; row is draggable */}
             <div
-              className="sessions-panel-open-wrapper relative flex flex-col"
-              style={{
-                '--archived-feather-bg': isLight ? '#ffffff' : '#0D1117',
-              } as React.CSSProperties}
-            >
-              {/* Capped height: do not flex-grow or archived section is pushed below the fold */}
-              <div
-                className="sessions-panel-list max-h-[min(50vh,20rem)] space-y-0 overflow-y-auto pb-2 recent-sessions-scroll"
-                onScroll={handleOpenSessionsScroll}
-              >
-                {openSessions.map((session) => (
-                  <div
-                    key={session.id}
-                    data-session-id={session.id}
-                    onClick={() => handleSessionClick(session.id)}
-                    onMouseEnter={(e) => handleSessionMouseEnter(session.id, e.currentTarget, e)}
-                    onMouseLeave={handleSessionMouseLeave}
+              className={cn(
+                'flex w-full flex-shrink-0 cursor-ns-resize flex-col justify-center py-1.5 transition-colors',
+                'hover:bg-blue-500/40',
+                isResizingSplit && 'bg-blue-500/50',
+              )}
+              onMouseDown={handleSplitMouseDown}
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize between open chats and archived chats">
+              <div className={cn('h-px w-full', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+            </div>
+            <div
+              className="flex min-h-0 flex-col overflow-hidden px-2"
+              style={{ flex: `${1 - splitRatio} 1 0`, minHeight: 0 }}>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setIsArchivedExpanded(!isArchivedExpanded)}
+                  className={cn(
+                    'flex w-full flex-shrink-0 items-center justify-between gap-1 rounded px-3 py-1.5 text-xs font-medium transition-colors',
+                    isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-500 hover:bg-gray-700/50',
+                  )}>
+                  <span className="min-w-0 flex-1 truncate pr-1 text-left">Archived Chats</span>
+                  <span
                     className={cn(
-                      'group relative flex cursor-pointer items-center rounded px-3 py-2 text-xs transition-colors',
-                      session.id === currentSessionId
-                        ? isLight
-                          ? 'bg-gray-200 font-semibold text-gray-600'
-                          : 'bg-gray-800/60 font-semibold text-gray-400'
-                        : isLight
-                          ? 'text-gray-600 hover:bg-gray-100'
-                          : 'text-gray-500 hover:bg-gray-700/50'
-                    )}
-                    style={{
-                      '--close-feather-hover-bg': session.id === currentSessionId
-                        ? (isLight ? '#e5e7eb' : '#181f2a')
-                        : (isLight ? '#f3f4f6' : '#1f2937'),
-                    } as React.CSSProperties}
-                  >
-                    {editingSessionId === session.id ? (
-                      <input
-                        ref={editInputRef}
-                        type="text"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={handleEditSubmit}
-                        onKeyDown={handleEditKeyDown}
-                        onClick={(e) => e.stopPropagation()}
-                        className={cn(
-                          'min-w-0 flex-1 border-none bg-transparent px-1 py-0 text-xs outline-none',
-                          isLight ? 'text-gray-900' : 'text-gray-100'
-                        )}
-                      />
-                    ) : (
-                      <>
-                        {/* Title - fills available space, truncated */}
+                      'flex flex-shrink-0 items-center gap-1',
+                      isLight ? 'text-gray-500' : 'text-gray-500',
+                    )}>
+                    {archivedSessions.length}
+                    <svg
+                      className={cn('h-3 w-3 transition-transform', isArchivedExpanded && 'rotate-180')}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </span>
+                </button>
+                {isArchivedExpanded && (
+                  <div
+                    className="sessions-panel-archived-wrapper relative mt-0.5 flex min-h-0 flex-1 flex-col"
+                    style={
+                      {
+                        '--archived-feather-bg': isLight ? '#ffffff' : '#0D1117',
+                      } as React.CSSProperties
+                    }>
+                    <div
+                      className="sessions-panel-list recent-sessions-scroll min-h-0 flex-1 space-y-0 overflow-y-auto pb-2"
+                      onScroll={handleArchivedSessionsScroll}>
+                      {archivedSessions.map(session => (
                         <div
+                          key={session.id}
+                          data-session-id={session.id}
+                          onClick={() => handleSessionClick(session.id)}
+                          onMouseEnter={e => handleSessionMouseEnter(session.id, e.currentTarget, e)}
+                          onMouseLeave={handleSessionMouseLeave}
                           className={cn(
-                            'min-w-0 flex-1 truncate transition-colors',
-                            session.id !== currentSessionId && (isLight ? 'text-gray-600' : 'text-gray-500')
+                            'group relative flex cursor-pointer items-center rounded px-3 py-2 text-xs transition-colors',
+                            isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-500 hover:bg-gray-700/50',
                           )}
                           style={
-                            session.id !== currentSessionId
-                              ? { color: isLight ? '#4b5563' : '#6b7280' }
-                              : undefined
-                          }
-                        >
-                          {session.title}
-                        </div>
-                        {/* Timestamp - always visible at rest */}
-                        <span
-                          className={cn(
-                            'ml-2 flex-shrink-0 text-xs',
-                            isLight ? 'text-gray-500' : 'text-gray-400'
-                          )}
-                          data-tooltip-exclude
-                          onMouseEnter={handleTooltipExcludeMouseEnter}
-                        >
-                          {formatTimestamp(session.timestamp)}
-                        </span>
-                        {/* Floating feather overlay - opacity-transitioned for smooth hover */}
-                        <div
-                          className={cn(
-                            'sessions-panel-close-feather absolute right-0 top-0 bottom-0 flex items-center justify-end rounded-r pl-12 pr-1 pointer-events-none group-hover:pointer-events-auto',
-                            openMoreMenuSessionId === session.id && 'is-open pointer-events-auto'
-                          )}
-                        >
-                          <button
-                            type="button"
-                            data-tooltip-exclude
-                            onMouseEnter={handleTooltipExcludeMouseEnter}
-                            onClick={(e) => handleEditClick(session.id, session.title, e)}
-                            className={cn(
-                              'flex flex-shrink-0 items-center justify-center rounded p-1 transition-colors',
-                              isLight
-                                ? 'text-gray-500 hover:text-gray-800'
-                                : 'text-gray-400 hover:text-gray-100'
-                            )}
-                            title="Edit chat title"
-                          >
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          </button>
-                          {(onOpenSession || onCloneSession || onArchiveSession || onDeleteSession) && (
-                            <div
-                              className="pointer-events-auto flex-shrink-0"
-                              data-tooltip-exclude
-                              onMouseEnter={handleTooltipExcludeMouseEnter}
-                            >
-                              <SessionMoreOptionsButton
-                                session={session}
-                                isLight={isLight}
-                                isOpen={openMoreMenuSessionId === session.id}
-                                onToggle={() => setOpenMoreMenuSessionId(openMoreMenuSessionId === session.id ? null : session.id)}
-                                onOpen={() => {
-                                  setOpenMoreMenuSessionId(null);
-                                  onOpenSession?.(session.id);
-                                }}
-                                onClone={() => {
-                                  setOpenMoreMenuSessionId(null);
-                                  onCloneSession?.(session.id);
-                                }}
-                                onArchive={() => {
-                                  setOpenMoreMenuSessionId(null);
-                                  onArchiveSession?.(session.id);
-                                }}
-                                onDelete={() => {
-                                  setOpenMoreMenuSessionId(null);
-                                  onDeleteSession?.(session.id);
-                                }}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div
-                className={cn(
-                  'sessions-panel-scroll-feather-top pointer-events-none absolute left-0 right-0 top-0 z-10 h-2 transition-opacity duration-150',
-                  showOpenListTopFeather ? 'opacity-100' : 'opacity-0',
-                )}
-                aria-hidden
-              />
-              <div
-                className="sessions-panel-archived-feather pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-2"
-                aria-hidden
-              />
-            </div>
-          )}
-
-          {/* Archived Chats accordion */}
-          {archivedSessions.length > 0 && (
-            <div className={cn('mt-8 flex-shrink-0 border-t pt-5', isLight ? 'border-gray-200' : 'border-gray-700')}>
-              <button
-                onClick={() => setIsArchivedExpanded(!isArchivedExpanded)}
-                className={cn(
-                  'flex w-full items-center justify-between gap-1 px-3 py-1.5 text-xs font-medium transition-colors rounded',
-                  isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-500 hover:bg-gray-700/50'
-                )}
-              >
-                <span className="flex-1 min-w-0 truncate pr-1 text-left">Archived Chats</span>
-                <span className={cn('flex flex-shrink-0 items-center gap-1', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                  {archivedSessions.length}
-                  <svg
-                    className={cn('h-3 w-3 transition-transform', isArchivedExpanded && 'rotate-180')}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </span>
-                {/* Spacer to align count with chat list timestamps (matches more-options button width) */}
-                {/* <span className="w-2 flex-shrink-0" aria-hidden /> */}
-              </button>
-              {isArchivedExpanded && (
-                <div
-                  className="sessions-panel-archived-wrapper relative mt-0.5"
-                  style={{
-                    '--archived-feather-bg': isLight ? '#ffffff' : '#0D1117',
-                  } as React.CSSProperties}
-                >
-                  <div
-                    className="space-y-0 max-h-[200px] overflow-y-auto recent-sessions-scroll sessions-panel-list pb-2"
-                    onScroll={handleArchivedSessionsScroll}
-                  >
-                  {archivedSessions.map((session) => (
-                    <div
-                      key={session.id}
-                      data-session-id={session.id}
-                      onClick={() => handleSessionClick(session.id)}
-                      onMouseEnter={(e) => handleSessionMouseEnter(session.id, e.currentTarget, e)}
-                      onMouseLeave={handleSessionMouseLeave}
-                      className={cn(
-                        'group flex items-center px-3 py-2 text-xs cursor-pointer transition-colors rounded relative',
-                        isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-500 hover:bg-gray-700/50'
-                      )}
-                      style={{
-                        '--close-feather-hover-bg': isLight ? '#f3f4f6' : '#1f2937',
-                      } as React.CSSProperties}
-                    >
-                      {editingSessionId === session.id ? (
-                        <input
-                          ref={editInputRef}
-                          type="text"
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onBlur={handleEditSubmit}
-                          onKeyDown={handleEditKeyDown}
-                          onClick={(e) => e.stopPropagation()}
-                          className={cn(
-                            'flex-1 bg-transparent border-none outline-none text-xs py-0 px-1 min-w-0',
-                            isLight ? 'text-gray-900' : 'text-gray-100'
-                          )}
-                        />
-                      ) : (
-                        <>
-                          {/* Title */}
-                          <div
-                            className="flex-1 min-w-0 truncate"
-                            style={{ color: isLight ? '#4b5563' : '#6b7280' }}
-                          >
-                            {session.title}
-                          </div>
-                          {/* Timestamp - always visible at rest */}
-                          <span
-                            className={cn('flex-shrink-0 ml-2 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}
-                            data-tooltip-exclude
-                            onMouseEnter={handleTooltipExcludeMouseEnter}
-                          >
-                            {formatTimestamp(session.timestamp)}
-                          </span>
-                          {/* Floating feather overlay - opacity-transitioned for smooth hover */}
-                          <div
-                            className={cn(
-                              'sessions-panel-close-feather absolute right-0 top-0 bottom-0 flex items-center justify-end pr-1 pl-12 rounded-r pointer-events-none group-hover:pointer-events-auto',
-                              openMoreMenuSessionId === session.id && 'is-open pointer-events-auto'
-                            )}
-                          >
-                            <button
-                              type="button"
-                              data-tooltip-exclude
-                              onMouseEnter={handleTooltipExcludeMouseEnter}
-                              onClick={(e) => handleEditClick(session.id, session.title, e)}
+                            {
+                              '--close-feather-hover-bg': isLight ? '#f3f4f6' : '#1f2937',
+                            } as React.CSSProperties
+                          }>
+                          {editingSessionId === session.id ? (
+                            <input
+                              ref={editInputRef}
+                              type="text"
+                              value={editValue}
+                              onChange={e => setEditValue(e.target.value)}
+                              onBlur={handleEditSubmit}
+                              onKeyDown={handleEditKeyDown}
+                              onClick={e => e.stopPropagation()}
                               className={cn(
-                                'p-1 rounded transition-colors flex items-center justify-center flex-shrink-0',
-                                isLight
-                                  ? 'text-gray-500 hover:text-gray-800'
-                                  : 'text-gray-400 hover:text-gray-100'
+                                'min-w-0 flex-1 border-none bg-transparent px-1 py-0 text-xs outline-none',
+                                isLight ? 'text-gray-900' : 'text-gray-100',
                               )}
-                              title="Edit chat title"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                              </svg>
-                            </button>
-                            {(onOpenSession || onCloneSession || onDeleteSession) && (
+                            />
+                          ) : (
+                            <>
                               <div
-                                className="flex-shrink-0 pointer-events-auto"
-                                data-tooltip-exclude
-                                onMouseEnter={handleTooltipExcludeMouseEnter}
-                              >
-                                <SessionMoreOptionsButton
-                                  session={session}
-                                  isLight={isLight}
-                                  isArchived
-                                  isOpen={openMoreMenuSessionId === session.id}
-                                  onToggle={() => setOpenMoreMenuSessionId(openMoreMenuSessionId === session.id ? null : session.id)}
-                                  onOpen={() => {
-                                    setOpenMoreMenuSessionId(null);
-                                    onOpenSession?.(session.id);
-                                  }}
-                                  onClone={() => {
-                                    setOpenMoreMenuSessionId(null);
-                                    onCloneSession?.(session.id);
-                                  }}
-                                  onArchive={() => {
-                                    setOpenMoreMenuSessionId(null);
-                                    onOpenSession?.(session.id);
-                                  }}
-                                  onDelete={() => {
-                                    setOpenMoreMenuSessionId(null);
-                                    onDeleteSession?.(session.id);
-                                  }}
-                                />
+                                className="min-w-0 flex-1 truncate"
+                                style={{ color: isLight ? '#4b5563' : '#6b7280' }}>
+                                {session.title}
                               </div>
-                            )}
-                          </div>
-                        </>
-                      )}
+                              <span
+                                className={cn(
+                                  'ml-2 flex-shrink-0 text-xs',
+                                  isLight ? 'text-gray-500' : 'text-gray-400',
+                                )}
+                                data-tooltip-exclude
+                                onMouseEnter={handleTooltipExcludeMouseEnter}>
+                                {formatTimestamp(session.timestamp)}
+                              </span>
+                              <div
+                                className={cn(
+                                  'sessions-panel-close-feather pointer-events-none absolute top-0 right-0 bottom-0 flex items-center justify-end rounded-r pr-1 pl-12 group-hover:pointer-events-auto',
+                                  openMoreMenuSessionId === session.id && 'is-open pointer-events-auto',
+                                )}>
+                                <button
+                                  type="button"
+                                  data-tooltip-exclude
+                                  onMouseEnter={handleTooltipExcludeMouseEnter}
+                                  onClick={e => handleEditClick(session.id, session.title, e)}
+                                  className={cn(
+                                    'flex flex-shrink-0 items-center justify-center rounded p-1 transition-colors',
+                                    isLight ? 'text-gray-500 hover:text-gray-800' : 'text-gray-400 hover:text-gray-100',
+                                  )}
+                                  title="Edit chat title">
+                                  <svg
+                                    className="h-3.5 w-3.5"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                    strokeWidth={2}>
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                                    />
+                                  </svg>
+                                </button>
+                                {(onOpenSession || onCloneSession || onDeleteSession) && (
+                                  <div
+                                    className="pointer-events-auto flex-shrink-0"
+                                    data-tooltip-exclude
+                                    onMouseEnter={handleTooltipExcludeMouseEnter}>
+                                    <SessionMoreOptionsButton
+                                      session={session}
+                                      isLight={isLight}
+                                      isArchived
+                                      isOpen={openMoreMenuSessionId === session.id}
+                                      onToggle={() =>
+                                        setOpenMoreMenuSessionId(
+                                          openMoreMenuSessionId === session.id ? null : session.id,
+                                        )
+                                      }
+                                      onOpen={() => {
+                                        setOpenMoreMenuSessionId(null);
+                                        onOpenSession?.(session.id);
+                                      }}
+                                      onClone={() => {
+                                        setOpenMoreMenuSessionId(null);
+                                        onCloneSession?.(session.id);
+                                      }}
+                                      onArchive={() => {
+                                        setOpenMoreMenuSessionId(null);
+                                        onOpenSession?.(session.id);
+                                      }}
+                                      onDelete={() => {
+                                        setOpenMoreMenuSessionId(null);
+                                        onDeleteSession?.(session.id);
+                                      }}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                    <div
+                      className={cn(
+                        'sessions-panel-scroll-feather-top pointer-events-none absolute top-0 right-0 left-0 z-10 h-2 transition-opacity duration-150',
+                        showArchivedListTopFeather ? 'opacity-100' : 'opacity-0',
+                      )}
+                      aria-hidden
+                    />
+                    <div
+                      className="sessions-panel-archived-feather pointer-events-none absolute right-0 bottom-0 left-0 z-10 h-2"
+                      aria-hidden
+                    />
                   </div>
-                  <div
-                    className={cn(
-                      'sessions-panel-scroll-feather-top pointer-events-none absolute left-0 right-0 top-0 z-10 h-2 transition-opacity duration-150',
-                      showArchivedListTopFeather ? 'opacity-100' : 'opacity-0',
-                    )}
-                    aria-hidden
-                  />
-                  <div
-                    className="sessions-panel-archived-feather pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-2"
-                    aria-hidden
-                  />
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-2">{renderOpenChatsSection()}</div>
+        )}
       </div>
 
       {/* Usage stats tooltip - same design as PlanStateCard plan items */}
-      {hoveredSessionId !== null && hoverRect &&
+      {hoveredSessionId !== null &&
+        hoverRect &&
         createPortal(
           <div
             style={{
@@ -851,15 +1003,13 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
               transform: 'translateX(-50%)',
               zIndex: 100000,
               pointerEvents: 'none',
-            }}
-          >
+            }}>
             <div
               className={cn(
-                'px-2 py-1.5 text-[11px] rounded-md border shadow-lg',
-                isLight ? 'bg-white border-gray-200 text-gray-800' : 'bg-[#151C24] border-gray-700 text-gray-100'
+                'rounded-md border px-2 py-1.5 text-[11px] shadow-lg',
+                isLight ? 'border-gray-200 bg-white text-gray-800' : 'border-gray-700 bg-[#151C24] text-gray-100',
               )}
-              style={{ maxWidth: 280, whiteSpace: 'pre-wrap' }}
-            >
+              style={{ maxWidth: 280, whiteSpace: 'pre-wrap' }}>
               {hoverUsageStats === 'loading' ? (
                 <span className={isLight ? 'text-gray-500' : 'text-gray-400'}>Loading...</span>
               ) : hoverUsageStats ? (
@@ -876,7 +1026,11 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                     <span className={isLight ? 'text-gray-600' : 'text-gray-400'}>Response tokens</span>
                     <span className="font-medium">{formatNumber(hoverUsageStats.response)}</span>
                   </div>
-                  <div className={cn('flex justify-between gap-4 pt-1 border-t', isLight ? 'border-gray-200' : 'border-gray-600')}>
+                  <div
+                    className={cn(
+                      'flex justify-between gap-4 border-t pt-1',
+                      isLight ? 'border-gray-200' : 'border-gray-600',
+                    )}>
                     <span className={isLight ? 'text-gray-700' : 'text-gray-300'}>Total tokens</span>
                     <span className="font-semibold">{formatNumber(hoverUsageStats.total)}</span>
                   </div>
@@ -886,7 +1040,7 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
               )}
             </div>
           </div>,
-          document.body
+          document.body,
         )}
     </>
   );

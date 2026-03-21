@@ -1,6 +1,6 @@
 /**
  * SessionHeader Component
- * 
+ *
  * Renders the header for the Chats page with chat tabs, actions dropdown, and navigation.
  */
 
@@ -75,7 +75,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
       )}>
       {/* Left: Sessions panel toggle (only when provided) */}
       {onToggleSessionsPanel && (
-      <div className="flex flex-shrink-0 items-center">
+        <div className="flex flex-shrink-0 items-center">
           <button
             onClick={onToggleSessionsPanel}
             className={cn(
@@ -89,56 +89,67 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
                   ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                   : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
             )}
-            title={sessionsPanelOpen ? 'Hide open chats' : 'Show open chats'}
-          >
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            title={sessionsPanelOpen ? 'Hide open chats' : 'Show open chats'}>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden>
+              {/* Sidebar panel: rounded frame + vertical rail (left = show panel, right = panel open / hide) */}
+              <rect x="3.5" y="4" width="17" height="16" rx="2" ry="2" fill="none" />
+              {sessionsPanelOpen ? <line x1="15" y1="8" x2="15" y2="16" /> : <line x1="9" y1="8" x2="9" y2="16" />}
             </svg>
           </button>
-      </div>
+        </div>
       )}
 
       {/* Center: Session tabs (centered when they don't overflow, like admin tabs) */}
       {!sessionsPanelOpen && (
-        <div className="flex flex-1 min-w-0 items-center justify-center overflow-hidden">
-          <SessionTabs isLight={isLight} viewMode={viewMode} isVisible={isVisible} apiBaseUrl={apiBaseUrl} className="w-full max-w-full" />
+        <div className="flex min-w-0 flex-1 items-center justify-center overflow-hidden">
+          <SessionTabs
+            isLight={isLight}
+            viewMode={viewMode}
+            isVisible={isVisible}
+            apiBaseUrl={apiBaseUrl}
+            className="w-full max-w-full"
+          />
         </div>
       )}
 
       {/* Spacer when sessions panel is open (keeps right content aligned) */}
-      {sessionsPanelOpen && <div className="flex-1 min-w-0" />}
+      {sessionsPanelOpen && <div className="min-w-0 flex-1" />}
 
       <div className="flex flex-shrink-0 items-center space-x-1">
         {/* Add New Session Button - hidden when sessions panel is open */}
         {!sessionsPanelOpen && (
-        <button
-          onClick={onNewSession}
-          className={cn(
-            'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors',
-            isLight
-              ? 'text-gray-600 hover:bg-gray-200/70'
-              : 'text-gray-400 hover:bg-gray-800/50',
-          )}
-          title="Add new chat">
-          <svg
-            width="16"
-            height="16"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round">
-            <path d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
+          <button
+            onClick={onNewSession}
+            className={cn(
+              'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors',
+              isLight ? 'text-gray-600 hover:bg-gray-200/70' : 'text-gray-400 hover:bg-gray-800/50',
+            )}
+            title="Add new chat">
+            <svg
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round">
+              <path d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
         )}
 
         {/* View Options Menu - Open in Popup/New Tab */}
-        <ViewOptionsMenu
-          isLight={isLight}
-          currentSessionId={currentSessionId}
-        />
+        <ViewOptionsMenu isLight={isLight} currentSessionId={currentSessionId} />
 
         {/* Config Panel Button - Plans, graphs & more (hidden) */}
         {false && onToggleConfigPanel && (
@@ -154,8 +165,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
                   ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                   : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
             )}
-            title={configPanelOpen ? 'Hide plans & graphs' : 'Show plans & graphs'}
-          >
+            title={configPanelOpen ? 'Hide plans & graphs' : 'Show plans & graphs'}>
             <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
               <g transform="translate(-3, 0)">
                 <path d="M7 14.18V3a1 1 0 0 0-2 0v11.18a3 3 0 0 0 0 5.64V21a1 1 0 0 0 2 0v-1.18a3 3 0 0 0 0-5.64zM6 18a1 1 0 1 1 1-1 1 1 0 0 1-1 1z" />
@@ -176,7 +186,9 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
           title="Home"
           className={cn(
             'h-7 w-7 p-0',
-            isLight ? 'text-gray-600 bg-gray-200/70 hover:bg-gray-300/70' : 'text-gray-400 bg-gray-800/50 hover:bg-gray-700/60',
+            isLight
+              ? 'bg-gray-200/70 text-gray-600 hover:bg-gray-300/70'
+              : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700/60',
           )}>
           <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
             <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -191,4 +203,3 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
 };
 
 export default SessionHeader;
-

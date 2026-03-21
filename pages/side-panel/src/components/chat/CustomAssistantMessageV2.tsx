@@ -1,6 +1,6 @@
 /**
  * Custom Assistant Message for CopilotKit V2
- * 
+ *
  * Wraps CopilotChatAssistantMessage with custom MarkdownRenderer
  * and styled toolbar buttons matching user message design (right-aligned, no gradient).
  */
@@ -11,10 +11,10 @@ import { CopilotChatAssistantMessage, deleteMessagesFromBackend } from '../../ho
 import { useMessageOperations } from '../../context/MessageOperationsContext';
 import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
 import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';
-import { 
+import {
   CustomCopyButton,
   CustomRegenerateButton,
-  CustomRetryKeepButton,
+  CustomAssistantMoreOptionsButton,
   CustomThumbsUpButton,
   CustomThumbsDownButton,
   CustomReadAloudButton,
@@ -31,14 +31,14 @@ type AssistantMessageProps = React.ComponentProps<typeof CopilotChatAssistantMes
 
 /**
  * CustomAssistantMessageV2 - Wrapper for CopilotChatAssistantMessage
- * 
+ *
  * Features:
  * - Custom MarkdownRenderer with syntax highlighting
  * - Styled toolbar buttons matching user message design
  * - Right-aligned buttons in default toolbar (always visible)
- * 
+ *
  * Available Props (from CopilotChatAssistantMessage):
- * 
+ *
  * SLOT PROPS (can be customized):
  * - markdownRenderer: Custom markdown renderer component
  * - toolbar: Custom toolbar component
@@ -48,7 +48,7 @@ type AssistantMessageProps = React.ComponentProps<typeof CopilotChatAssistantMes
  * - readAloudButton: Custom read aloud button component
  * - regenerateButton: Custom regenerate button component
  * - toolCallsView: Custom tool calls view component
- * 
+ *
  * CONFIGURATION PROPS:
  * - message: AssistantMessage (REQUIRED) - The message object from @ag-ui/core
  * - messages?: Message[] - Array of all messages (for context)
@@ -59,7 +59,7 @@ type AssistantMessageProps = React.ComponentProps<typeof CopilotChatAssistantMes
  * - onRegenerate?: (message: AssistantMessage) => void - Callback when regenerate clicked
  * - additionalToolbarItems?: React.ReactNode - Custom toolbar items to add
  * - toolbarVisible?: boolean - Whether to show the toolbar (default: true)
- * 
+ *
  * CHILDREN RENDER PROPS (available in children function):
  * - markdownRenderer: React.ReactElement - Rendered markdown content
  * - toolbar: React.ReactElement - Rendered toolbar with buttons
@@ -75,7 +75,7 @@ type AssistantMessageProps = React.ComponentProps<typeof CopilotChatAssistantMes
  * - onThumbsUp, onThumbsDown, onReadAloud, onRegenerate: Callback functions
  * - additionalToolbarItems?: React.ReactNode - Custom toolbar items
  * - toolbarVisible?: boolean - Toolbar visibility state
- * 
+ *
  * HTML DIV ATTRIBUTES:
  * - className?: string - CSS classes
  * - style?: React.CSSProperties - Inline styles
@@ -89,7 +89,7 @@ type AssistantMessageProps = React.ComponentProps<typeof CopilotChatAssistantMes
  * - tabIndex?: number - Tab index
  * - ... (all other standard HTML div attributes)
  */
-const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (props) => {
+const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = props => {
   // [FREEZE-DEBUG] per-instance render counter
   const instanceRenderRef = React.useRef(0);
   instanceRenderRef.current += 1;
@@ -115,19 +115,19 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
   const { message, messages, isRunning } = props;
   const { isLight } = useStorage(themeStorage);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
-  
+
   // Reset hover state when message changes (for messages loaded from history)
   // This ensures hover state is properly initialized for each message
   React.useEffect(() => {
     setIsHovered(false);
   }, [message?.id]);
-  
+
   // Helper function to extract text from message content
   // Excludes <think> and <thinking> tags and their content
   const extractTextFromMessage = useCallback((msg: any): string => {
     if (!msg) return '';
     const content = msg.content;
-    
+
     let textContent = '';
     if (typeof content === 'string') {
       textContent = content;
@@ -146,10 +146,8 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
 
     // Remove <think>...</think> and <thinking>...</thinking> tags and their content
     // Using regex with dotall flag to match across newlines
-    textContent = textContent
-      .replace(/<think>[\s\S]*?<\/think>/gi, '')
-      .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
-    
+    textContent = textContent.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+
     return textContent.trim();
   }, []);
 
@@ -215,7 +213,7 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
       isLastInSeries: isLast,
       assistantSeries: assistantGroup,
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [message?.id, messages?.length, isRunning]);
 
   // Aggregate content from all assistant messages in the series
@@ -236,26 +234,29 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
   }, [assistantSeries, extractTextFromMessage]);
 
   // Custom copy handler that copies aggregated content from all assistant messages in series
-  const handleCopy = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const textToCopy = aggregatedSeriesContent || extractTextFromMessage(message);
-    const safeText = textToCopy?.trim();
+  const handleCopy = useCallback(
+    async (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    if (!safeText) {
-      return;
-    }
+      const textToCopy = aggregatedSeriesContent || extractTextFromMessage(message);
+      const safeText = textToCopy?.trim();
 
-    try {
-      await navigator.clipboard.writeText(safeText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error('Failed to copy assistant response:', error);
-    }
-  }, [aggregatedSeriesContent, message, extractTextFromMessage]);
-  
+      if (!safeText) {
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(safeText);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (error) {
+        console.error('Failed to copy assistant response:', error);
+      }
+    },
+    [aggregatedSeriesContent, message, extractTextFromMessage],
+  );
+
   // Retry without deleting: re-run agent with current messages
   const handleRetryKeep = useCallback(() => {
     reloadMessages();
@@ -328,13 +329,11 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
       thumbsUpButton={CustomThumbsUpButton}
       thumbsDownButton={CustomThumbsDownButton}
       readAloudButton={CustomReadAloudButton}
-      onRegenerate={handleRegenerate}
-    >
-      {({ 
-        markdownRenderer, 
-        toolbar, 
+      onRegenerate={handleRegenerate}>
+      {({
+        markdownRenderer,
+        toolbar,
         toolCallsView,
-        regenerateButton,
         thumbsUpButton,
         thumbsDownButton,
         readAloudButton,
@@ -349,39 +348,40 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
       }) => {
         // Use renderMessage from render context for accurate role checking
         const currentMessage = renderMessage || message;
-        
+
         // Check if this message is truly the LAST message in the entire conversation
         // Not just the last in a series between user messages
         const messagesToCheck = renderMessages || messages;
-        const isActuallyLastMessage = messagesToCheck && messagesToCheck.length > 0 && 
-                                      currentMessage?.id === messagesToCheck[messagesToCheck.length - 1]?.id;
-        
+        const isActuallyLastMessage =
+          messagesToCheck &&
+          messagesToCheck.length > 0 &&
+          currentMessage?.id === messagesToCheck[messagesToCheck.length - 1]?.id;
+
         // Use isRunning from either props or render context (whichever is true)
         // BUT: For old messages loaded from history, isRunning should be false
         // Only the ACTUAL last message in the entire conversation should potentially be running
         // CopilotKit incorrectly marks all messages as running when loading history
         // So we MUST check if this is the actual last message
         const effectiveIsRunning = Boolean((isRunning || renderIsRunning) && isActuallyLastMessage);
-        
+
         // Check if we should render toolbar at all (only for pure assistant messages with content)
         // Explicitly exclude:
         // - Non-assistant messages (user, tool, system, etc.)
         // - Tool result messages (messages with toolCallId)
         // - Assistant messages initiating tool calls (messages with toolCalls array)
         // - Messages with empty content
-        const hasContent = currentMessage?.content && (typeof currentMessage.content === 'string' ? currentMessage.content.trim() !== '' : true);
-        const isPureAssistantMessage = currentMessage?.role === 'assistant' && 
-                                       !(currentMessage as any)?.toolCallId && 
-                                       (!(currentMessage as any)?.toolCalls || (currentMessage as any)?.toolCalls?.length === 0);
-        
-        const shouldRenderToolbar = isPureAssistantMessage && 
-                                   hasContent && 
-                                   isLastInSeries;
-        
+        const hasContent =
+          currentMessage?.content &&
+          (typeof currentMessage.content === 'string' ? currentMessage.content.trim() !== '' : true);
+        const isPureAssistantMessage =
+          currentMessage?.role === 'assistant' &&
+          !(currentMessage as any)?.toolCallId &&
+          (!(currentMessage as any)?.toolCalls || (currentMessage as any)?.toolCalls?.length === 0);
+
+        const shouldRenderToolbar = isPureAssistantMessage && hasContent && isLastInSeries;
+
         // Determine toolbar visibility - always show on hover only (simplified logic)
-        const shouldShowToolbar = Boolean(!effectiveIsRunning && 
-                                  shouldRenderToolbar &&
-                                  isHovered);
+        const shouldShowToolbar = Boolean(!effectiveIsRunning && shouldRenderToolbar && isHovered);
 
         // Control toolbar visibility with opacity and visibility (only when toolbar should be rendered)
         // Use both opacity and visibility to ensure proper hiding/showing
@@ -397,96 +397,64 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
               copied: copied,
             })
           : copyButton;
-        
-        // Clone regenerate button with custom onClick handler
-        const customRegenerateButton = React.isValidElement(regenerateButton)
-          ? React.cloneElement(regenerateButton as React.ReactElement<any>, {
-              onClick: (e: React.MouseEvent) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleRegenerate();
-              },
-              title: 'Regenerate (deletes failed response)',
-            })
-          : regenerateButton;
 
-        // Retry (keep) button - re-runs without deleting
-        const retryKeepButton = (
-          <CustomRetryKeepButton
-            onClick={(e: React.MouseEvent) => {
-              e.preventDefault();
-              e.stopPropagation();
-              handleRetryKeep();
-            }}
-          />
-        );
-        
-        // Reorder buttons: Regenerate, Retry (keep), Copy (rightmost)
-        // Only render toolbar for assistant messages with content
+        // Copy left, More options (… Regenerate + Retry) right — flex-end aligns group to the message edge
         const reorderedToolbar = shouldRenderToolbar ? (
-          <div 
-            style={{ 
-            display: 'flex', 
-            justifyContent: 'flex-end', 
-            width: '100%',
-            gap: '0.25rem',
-            opacity: toolbarOpacity,
-            visibility: toolbarVisibility,
-            pointerEvents: toolbarPointerEvents,
-            transition: 'opacity 0.2s ease-in-out, visibility 0.2s ease-in-out',
-            marginBottom: '12px',
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              width: '100%',
+              gap: '0.25rem',
+              opacity: toolbarOpacity,
+              visibility: toolbarVisibility,
+              pointerEvents: toolbarPointerEvents,
+              transition: 'opacity 0.2s ease-in-out, visibility 0.2s ease-in-out',
+              marginBottom: '12px',
             }}
             data-toolbar-opacity={toolbarOpacity}
             data-toolbar-visibility={toolbarVisibility}
-            data-toolbar-should-show={shouldShowToolbar}
-          >
-            {/* Regenerate Button (deletes and retries) */}
-            {customRegenerateButton}
-            {/* Retry (keep) - re-runs without deleting */}
-            {retryKeepButton}
-            
-            {/* Thumbs Up Button */}
-            {/* {thumbsUpButton} */}
-            
-            {/* Thumbs Down Button */}
-            {/* {thumbsDownButton} */}
-            
-            {/* Read Aloud Button */}
-            {/* {readAloudButton} */}
-            
-            {/* Copy Button (rightmost) - with aggregated content */}
+            data-toolbar-should-show={shouldShowToolbar}>
             {customCopyButton}
+            <CustomAssistantMoreOptionsButton
+              onRegenerate={() => {
+                void handleRegenerate();
+              }}
+              onRetryKeep={() => {
+                void handleRetryKeep();
+              }}
+            />
           </div>
         ) : null;
-        
+
         return (
           <>
-            <div 
+            <div
               ref={containerRef}
-              style={{ 
-                color: isLight ? '#374151' : '#d1d5db', 
-                paddingLeft: '12px', 
+              style={{
+                color: isLight ? '#374151' : '#d1d5db',
+                paddingLeft: '12px',
                 paddingRight: '12px',
                 position: 'relative', // Ensure proper stacking context
                 zIndex: 1, // Ensure hover area is above other elements
                 borderRadius: contextMenu ? '8px' : undefined,
                 border: contextMenu ? (isLight ? '1px solid #3b82f6' : '1px solid #60a5fa') : undefined,
               }}
-              onMouseEnter={(e) => {
+              onMouseEnter={e => {
                 e.stopPropagation();
                 setIsHovered(true);
               }}
-              onMouseLeave={(e) => {
+              onMouseLeave={e => {
                 e.stopPropagation();
                 setIsHovered(false);
               }}
-              onMouseMove={(e) => {
+              onMouseMove={e => {
                 // Ensure hover state is set on mouse move (handles edge cases)
                 if (!isHovered) {
                   setIsHovered(true);
                 }
               }}
-              onContextMenu={(e) => {
+              onContextMenu={e => {
                 e.preventDefault();
                 e.stopPropagation();
                 // Slight offset so cursor doesn't obscure first menu item
@@ -494,8 +462,7 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
               }}
               data-message-role="assistant"
               data-message-id={currentMessage?.id}
-              data-is-hovered={isHovered}
-            >
+              data-is-hovered={isHovered}>
               {markdownRenderer}
               {toolCallsView}
               {reorderedToolbar}
@@ -517,11 +484,10 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
                     zIndex: 10002,
                     minWidth: '140px',
                     overflow: 'hidden',
-                  }}
-                >
+                  }}>
                   <button
                     type="button"
-                    onClick={(e) => {
+                    onClick={e => {
                       e.preventDefault();
                       e.stopPropagation();
                       handleCopy(e as unknown as React.MouseEvent<HTMLButtonElement>);
@@ -540,13 +506,12 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
                       alignItems: 'center',
                       gap: '8px',
                     }}
-                    onMouseEnter={(e) => {
+                    onMouseEnter={e => {
                       e.currentTarget.style.backgroundColor = isLight ? '#e5e7eb' : '#374151';
                     }}
-                    onMouseLeave={(e) => {
+                    onMouseLeave={e => {
                       e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
+                    }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
@@ -555,7 +520,7 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => {
+                    onClick={e => {
                       e.preventDefault();
                       e.stopPropagation();
                       handleDelete();
@@ -574,13 +539,12 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
                       gap: '8px',
                       borderTop: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
                     }}
-                    onMouseEnter={(e) => {
+                    onMouseEnter={e => {
                       e.currentTarget.style.backgroundColor = isLight ? '#e5e7eb' : '#374151';
                     }}
-                    onMouseLeave={(e) => {
+                    onMouseLeave={e => {
                       e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
+                    }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <polyline points="3 6 5 6 21 6" />
                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
@@ -590,7 +554,7 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
                     Delete
                   </button>
                 </div>,
-                document.body
+                document.body,
               )}
           </>
         );
@@ -600,19 +564,15 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
 };
 
 // Copy static properties from CopilotChatAssistantMessage to match the expected slot type
-export const CustomAssistantMessageV2 = Object.assign(
-  CustomAssistantMessageV2Component,
-  {
-    MarkdownRenderer: CopilotChatAssistantMessage.MarkdownRenderer,
-    Toolbar: CopilotChatAssistantMessage.Toolbar,
-    ToolbarButton: CopilotChatAssistantMessage.ToolbarButton,
-    CopyButton: CopilotChatAssistantMessage.CopyButton,
-    ThumbsUpButton: CopilotChatAssistantMessage.ThumbsUpButton,
-    ThumbsDownButton: CopilotChatAssistantMessage.ThumbsDownButton,
-    ReadAloudButton: CopilotChatAssistantMessage.ReadAloudButton,
-    RegenerateButton: CopilotChatAssistantMessage.RegenerateButton,
-  }
-) as typeof CopilotChatAssistantMessage;
+export const CustomAssistantMessageV2 = Object.assign(CustomAssistantMessageV2Component, {
+  MarkdownRenderer: CopilotChatAssistantMessage.MarkdownRenderer,
+  Toolbar: CopilotChatAssistantMessage.Toolbar,
+  ToolbarButton: CopilotChatAssistantMessage.ToolbarButton,
+  CopyButton: CopilotChatAssistantMessage.CopyButton,
+  ThumbsUpButton: CopilotChatAssistantMessage.ThumbsUpButton,
+  ThumbsDownButton: CopilotChatAssistantMessage.ThumbsDownButton,
+  ReadAloudButton: CopilotChatAssistantMessage.ReadAloudButton,
+  RegenerateButton: CopilotChatAssistantMessage.RegenerateButton,
+}) as typeof CopilotChatAssistantMessage;
 
 export default CustomAssistantMessageV2;
-

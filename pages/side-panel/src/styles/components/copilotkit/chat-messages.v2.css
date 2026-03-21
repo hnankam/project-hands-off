@@ -253,7 +253,8 @@
   box-sizing: border-box !important;
 }
 
-.sticky-message-header .copilotKitUserMessage {
+/* Legacy non-Virtua strip under header (flat merge into chrome) */
+.sticky-message-header:not(.sticky-message-header--virtua-fixed) .copilotKitUserMessage {
   pointer-events: auto;
   margin-top: 0 !important;
   margin-left: auto !important;
@@ -264,6 +265,191 @@
   border-top-right-radius: 0 !important;
   border-top: none !important;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Virtua: portal + position:fixed (top/left/width inline) — sticky breaks with Copilot display:contents / flex + external scrollRef */
+.sticky-message-header.sticky-message-header--virtua-fixed {
+  /* Within chat shell stacking; portal target keeps this below SessionHeader. Matches Z_INDEX.virtuaStickyUserHeaderPortal */
+  z-index: 20 !important;
+  position: fixed;
+  box-sizing: border-box !important;
+  /* V2 often has no `.copilotKitUserMessage`; `none` + only that child `auto` let clicks/select hit the list behind */
+  pointer-events: auto !important;
+  /* Only the user bubble is visible — matches in-list message, not a full-width slab */
+  background-color: transparent !important;
+  /* left/width set from JS to the in-list column; no horizontal padding or the bubble is wider than messages */
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Portaled to body: same font stack as .copilot-chat-container messages */
+.sticky-message-header.sticky-message-header--virtua-fixed,
+.sticky-message-header.sticky-message-header--virtua-fixed * {
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
+}
+
+/* Match CustomUserMessageV2 / .copilotKitUserMessage card in chat (not the old flat sticky strip) */
+.sticky-message-header.sticky-message-header--virtua-fixed .copilotKitUserMessage {
+  pointer-events: auto !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  max-width: 56rem !important;
+  width: 100% !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+  border-bottom-left-radius: 10px !important;
+  border-bottom-right-radius: 10px !important;
+  border: 1px solid #e5e7eb !important;
+  border-top: none !important;
+  /* Shadow lives on .virtua-sticky-portal-inner so the column stacks visually under the sticky */
+  box-shadow: none !important;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: visible !important;
+}
+
+/*
+ * CustomUserMessageRenderer uses inline marginTop: 1rem when isFirstMessage — still true in the portal.
+ * Kill that gap for Virtua sticky (flush under scroll chrome).
+ * Same for inline borderRadius: 10px on the inner content shell — square top to match outer card.
+ */
+.sticky-message-header.sticky-message-header--virtua-fixed .copilotKitUserMessage [data-message-role="user"],
+.sticky-message-header.sticky-message-header--virtua-fixed .virtua-sticky-user-message-root [data-message-role="user"] {
+  margin-top: 0 !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+  border-bottom-left-radius: 10px !important;
+  border-bottom-right-radius: 10px !important;
+}
+
+/* V2 custom slot uses .virtua-sticky-user-message-root without .copilotKitUserMessage — mirror card chrome */
+.sticky-message-header.sticky-message-header--virtua-fixed.virtua-sticky-theme-light .copilotKitUserMessage,
+.sticky-message-header.sticky-message-header--virtua-fixed.virtua-sticky-theme-light .virtua-sticky-user-message-root {
+  /* Match CustomInputV2 backgroundColor (gray-50 / #f9fafb) */
+  background-color: #f9fafb !important;
+  border: 1px solid #e5e7eb !important;
+  border-top: none !important;
+  color: #374151 !important;
+}
+
+.sticky-message-header.sticky-message-header--virtua-fixed.virtua-sticky-theme-dark .copilotKitUserMessage,
+.sticky-message-header.sticky-message-header--virtua-fixed.virtua-sticky-theme-dark .virtua-sticky-user-message-root {
+  /* Fallbacks: portaled node may sit outside .copilot-chat-container / CopilotKit var scope */
+  background-color: var(--copilot-kit-secondary-color, #151c24) !important;
+  border: 1px solid var(--copilot-kit-border-color, #374151) !important;
+  border-top: none !important;
+  color: #d1d5db !important;
+}
+
+/*
+ * Portaled Virtua: keep `.virtua-sticky-user-message-root` background from theme rules above.
+ * Strip only the root border so `.virtua-sticky-user-message-surface` is the single stroked card.
+ * Do not set background/border/color on the surface in CSS — that used !important and overrode
+ * inline styles in DevTools; the shell uses `setProperty(..., 'important')` in CustomUserMessageRenderer instead.
+ */
+.sticky-message-header.sticky-message-header--virtua-fixed[data-virtua-sticky-portal] .virtua-sticky-user-message-root {
+  border: none !important;
+}
+
+/* Outside .copilot-chat-container, Streamdown/prose defaults can paint white over the card */
+.sticky-message-header.sticky-message-header--virtua-fixed[data-virtua-sticky-portal]
+  .virtua-sticky-user-message-surface .markdown-content,
+.sticky-message-header.sticky-message-header--virtua-fixed[data-virtua-sticky-portal]
+  .virtua-sticky-user-message-surface [class*="prose"] {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* Surface uses inline borders from CustomUserMessageRenderer — keep top flush with scroll underlay */
+.sticky-message-header.sticky-message-header--virtua-fixed[data-virtua-sticky-portal]
+  .virtua-sticky-user-message-surface {
+  border-top: none !important;
+}
+
+.sticky-message-header.sticky-message-header--virtua-fixed[data-virtua-sticky-portal]
+  .virtua-sticky-user-message-root
+  [data-user-message-toolbar] {
+  position: absolute !important;
+  top: auto !important;
+  bottom: 0 !important;
+  right: 0 !important;
+  left: auto !important;
+}
+
+/* Message controls: portaled node is outside .copilot-chat-container — mirror hover rules */
+.sticky-message-header.sticky-message-header--virtua-fixed .copilotKitUserMessage .copilotKitMessageControls {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out !important;
+  overflow: visible !important;
+}
+
+.sticky-message-header.sticky-message-header--virtua-fixed .copilotKitUserMessage:hover .copilotKitMessageControls {
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: flex !important;
+  pointer-events: auto !important;
+}
+
+/* Same scrollable content height as in-thread user messages */
+.sticky-message-header.sticky-message-header--virtua-fixed .copilotKitUserMessage > div:not(.copilotKitMessageControls):not(.edit-mode):not([data-user-message-toolbar]),
+.sticky-message-header.sticky-message-header--virtua-fixed
+  .virtua-sticky-user-message-root
+  > div:not(.edit-mode):not([data-user-message-toolbar]) {
+  max-height: 150px !important;
+  overflow-y: auto !important;
+  overflow-x: visible !important;
+}
+
+.sticky-message-header.sticky-message-header--virtua-fixed.virtua-sticky-theme-light .copilotKitUserMessage .edit-mode textarea {
+  background-color: #f9fafb !important;
+}
+
+/*
+ * Copilot V2 user slot may not use `.copilotKitUserMessage` on the outer node — margin/radius were
+ * ignored. CustomUserMessageV2 adds `.virtua-sticky-user-message-root` on CopilotChatUserMessage.Container.
+ */
+.sticky-message-header.sticky-message-header--virtua-fixed .virtua-sticky-portal-inner {
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  pointer-events: auto !important;
+  overflow: visible !important;
+  /* Match .copilotKitUserMessage / .virtua-sticky-user-message-root bottom radius so shadow isn’t rectangular */
+  border-bottom-left-radius: 10px !important;
+  border-bottom-right-radius: 10px !important;
+}
+
+/* Depth cue: list reads as scrolling under the sticky strip (kept subtle — strong shadow felt heavy) */
+.sticky-message-header.sticky-message-header--virtua-fixed.virtua-sticky-theme-light .virtua-sticky-portal-inner {
+  box-shadow:
+    0 2px 8px -2px rgba(15, 23, 42, 0.05),
+    0 1px 3px -1px rgba(15, 23, 42, 0.04);
+}
+
+.sticky-message-header.sticky-message-header--virtua-fixed.virtua-sticky-theme-dark .virtua-sticky-portal-inner {
+  box-shadow:
+    0 2px 10px -3px rgba(0, 0, 0, 0.18),
+    0 1px 4px -2px rgba(0, 0, 0, 0.12);
+}
+
+.sticky-message-header.sticky-message-header--virtua-fixed .virtua-sticky-portal-inner > * {
+  margin-top: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.sticky-message-header.sticky-message-header--virtua-fixed .virtua-sticky-user-message-root {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+  border-bottom-left-radius: 10px !important;
+  border-bottom-right-radius: 10px !important;
 }
 
 /* ==========================================================
@@ -282,15 +468,16 @@
    USER MESSAGE CONTENT CONSTRAINTS
    ========================================================== */
 
-.copilot-chat-container .copilotKitUserMessage > div:not(.copilotKitMessageControls):not(.edit-mode) {
+/* CustomUserMessageV2 toolbar is a direct child div without .copilotKitMessageControls — exclude via data attr */
+.copilot-chat-container .copilotKitUserMessage > div:not(.copilotKitMessageControls):not(.edit-mode):not([data-user-message-toolbar]) {
   max-height: 150px !important;
   overflow-y: auto !important;
   overflow-x: visible !important;
 }
 
-/* Compact display in sticky mode */
-.copilot-chat-container .copilotKitUserMessage.is-sticky > div:not(.copilotKitMessageControls):not(.edit-mode),
-.sticky-message-header .copilotKitUserMessage > div:not(.copilotKitMessageControls):not(.edit-mode) {
+/* Compact display in sticky mode (non-Virtua strip only) */
+.copilot-chat-container .copilotKitUserMessage.is-sticky > div:not(.copilotKitMessageControls):not(.edit-mode):not([data-user-message-toolbar]),
+.sticky-message-header:not(.sticky-message-header--virtua-fixed) .copilotKitUserMessage > div:not(.copilotKitMessageControls):not(.edit-mode):not([data-user-message-toolbar]) {
   max-height: 70px !important;
 }
 

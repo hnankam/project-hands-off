@@ -2,7 +2,12 @@ import * as React from 'react';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { ChatSessionContainer } from '../components/chat/ChatSessionContainer';
 import { ErrorBoundary } from '../components/utilities/ErrorBoundary';
-import { ChatSkeleton, MessagesOnlySkeleton, StatusBarSkeleton, SelectorsBarSkeleton } from '../components/feedback/LoadingStates';
+import {
+  ChatSkeleton,
+  MessagesOnlySkeleton,
+  StatusBarSkeleton,
+  SelectorsBarSkeleton,
+} from '../components/feedback/LoadingStates';
 import type { SessionMetadata } from '@extension/shared';
 import { sessionStorageDBWrapper, generateSessionName, debug } from '@extension/shared';
 import { useAuth } from '../context/AuthContext';
@@ -53,31 +58,27 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
 }) => {
   // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
-  
+
   // Detect current view mode for conditional styling
   const viewMode = getCurrentViewMode();
 
   // Auth
   const { user } = useAuth();
-  
+
   // Ensure sessions is always an array (defensive programming)
   const sessions = useMemo(() => {
     return Array.isArray(sessionsProp) ? sessionsProp : [];
   }, [sessionsProp]);
-  
+
   // Loading state for initial render
   const [isEnsuringInitialSession, setIsEnsuringInitialSession] = useState(false);
-  
+
   // Track live message counts per session
   const [sessionMessageCounts, setSessionMessageCounts] = useState<Record<string, number>>({});
-  
+
   // Session loading states (managed by custom hook)
-  const {
-    isSessionReady,
-    isMessagesLoading,
-    handleSessionReady,
-    handleMessagesLoadingChange,
-  } = useSessionLoadingState(currentSessionId);
+  const { isSessionReady, isMessagesLoading, handleSessionReady, handleMessagesLoadingChange } =
+    useSessionLoadingState(currentSessionId);
 
   // Session actions (managed by custom hook)
   const {
@@ -123,9 +124,18 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       return 280;
     }
   });
+  const [sessionsPanelSplitRatio, setSessionsPanelSplitRatio] = useState(() => {
+    try {
+      const stored = localStorage.getItem('sessionsPanelSplitRatio');
+      const r = stored ? parseFloat(stored) : 0.55;
+      return !isNaN(r) && r >= 0.22 && r <= 0.82 ? r : 0.55;
+    } catch {
+      return 0.55;
+    }
+  });
   const contentAreaRef = useRef<HTMLDivElement>(null);
   const [isSessionsPanelSmallView, setIsSessionsPanelSmallView] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth < 600 : true
+    typeof window !== 'undefined' ? window.innerWidth < 600 : true,
   );
   const SESSIONS_PANEL_SMALL_VIEW_THRESHOLD = 600; // Match ConfigPanel threshold
 
@@ -144,6 +154,13 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       console.error('[SessionsPage] Failed to persist sessionsPanelWidth', e);
     }
   }, [sessionsPanelWidth]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('sessionsPanelSplitRatio', String(sessionsPanelSplitRatio));
+    } catch (e) {
+      console.error('[SessionsPage] Failed to persist sessionsPanelSplitRatio', e);
+    }
+  }, [sessionsPanelSplitRatio]);
 
   useEffect(() => {
     const el = contentAreaRef.current;
@@ -172,10 +189,15 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   }, [currentSessionId]);
 
   // Config panel state for header button and layout (registered by active ChatSessionContainer)
-  const [configPanelState, setConfigPanelState] = useState<Record<string, { isOpen: boolean; width: number; toggle: () => void }>>({});
-  const handleRegisterConfigPanel = useCallback((sessionId: string, state: { isOpen: boolean; width: number; toggle: () => void }) => {
-    setConfigPanelState((prev) => ({ ...prev, [sessionId]: state }));
-  }, []);
+  const [configPanelState, setConfigPanelState] = useState<
+    Record<string, { isOpen: boolean; width: number; toggle: () => void }>
+  >({});
+  const handleRegisterConfigPanel = useCallback(
+    (sessionId: string, state: { isOpen: boolean; width: number; toggle: () => void }) => {
+      setConfigPanelState(prev => ({ ...prev, [sessionId]: state }));
+    },
+    [],
+  );
   const handleToggleConfigPanel = useCallback(() => {
     configPanelState[currentSessionId ?? '']?.toggle?.();
   }, [currentSessionId, configPanelState]);
@@ -185,7 +207,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const effectiveConfigPanelState = useMemo(() => {
     const current = configPanelState[currentSessionId ?? ''];
     if (current) return current;
-    const fallback = Object.values(configPanelState).find((s) => s.isOpen);
+    const fallback = Object.values(configPanelState).find(s => s.isOpen);
     return fallback ?? null;
   }, [configPanelState, currentSessionId]);
 
@@ -195,13 +217,16 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   // Delete session from SessionsPanel (with confirmation)
   const [deleteSessionConfirmOpen, setDeleteSessionConfirmOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; title: string } | null>(null);
-  const handleDeleteSessionFromPanel = useCallback((sessionId: string) => {
-    const session = sessions.find((s) => s.id === sessionId);
-    if (session) {
-      setSessionToDelete({ id: sessionId, title: session.title });
-      setDeleteSessionConfirmOpen(true);
-    }
-  }, [sessions]);
+  const handleDeleteSessionFromPanel = useCallback(
+    (sessionId: string) => {
+      const session = sessions.find(s => s.id === sessionId);
+      if (session) {
+        setSessionToDelete({ id: sessionId, title: session.title });
+        setDeleteSessionConfirmOpen(true);
+      }
+    },
+    [sessions],
+  );
   const handleConfirmDeleteSessionFromPanel = useCallback(async () => {
     if (!sessionToDelete) return;
     try {
@@ -212,7 +237,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       console.error('[SessionsPage] Failed to delete session:', err);
     }
   }, [sessionToDelete]);
-  
+
   const lastStorageUserIdRef = useRef<string | null>(null);
   const hasSeenSessionsForCurrentUserRef = useRef<boolean>(false);
 
@@ -220,18 +245,18 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   // This reduces redundant getCurrentUserId() calls
   useEffect(() => {
     const storageUserId = sessionStorageDBWrapper.getCurrentUserId();
-    
+
     if (!user?.id || !storageUserId) {
       return;
     }
-    
+
     // Track when the storage userId changes; require at least one sessions fetch after change
     if (lastStorageUserIdRef.current !== storageUserId) {
       lastStorageUserIdRef.current = storageUserId;
       hasSeenSessionsForCurrentUserRef.current = false;
       hasAttemptedInitialSessionRef.current = false;
     }
-    
+
     // Mark that we've observed at least one sessions snapshot for the current user
     if (lastStorageUserIdRef.current === storageUserId) {
       hasSeenSessionsForCurrentUserRef.current = true;
@@ -323,7 +348,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       debug.log('[SessionsPage] Session cache size changed:', {
         size: stats.size,
         maxSize: stats.maxSize,
-        ids: stats.ids.map(id => id.slice(0, 8))
+        ids: stats.ids.map(id => id.slice(0, 8)),
       });
       prevCacheSizeRef.current = stats.size;
     }
@@ -331,7 +356,8 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
 
   const hasSessions = sessions.length > 0;
   const isWaitingForFirstSession = !hasSessions && !hasAttemptedInitialSessionRef.current;
-  const shouldShowSkeleton = isEnsuringInitialSession || isWaitingForFirstSession || (!!currentSessionId && !isSessionReady);
+  const shouldShowSkeleton =
+    isEnsuringInitialSession || isWaitingForFirstSession || (!!currentSessionId && !isSessionReady);
   // Full skeleton overlay only for initial loading states (not for session transitions)
   const shouldShowSkeletonOverlay = Boolean(activeSession) && (isEnsuringInitialSession || isWaitingForFirstSession);
   const shouldShowStandaloneSkeleton = !activeSession && shouldShowSkeleton;
@@ -362,13 +388,20 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [clearMessagesConfirmOpen, clearSessionsConfirmOpen, resetSessionConfirmOpen, setClearMessagesConfirmOpen, setClearSessionsConfirmOpen, setResetSessionConfirmOpen]);
+  }, [
+    clearMessagesConfirmOpen,
+    clearSessionsConfirmOpen,
+    resetSessionConfirmOpen,
+    setClearMessagesConfirmOpen,
+    setClearSessionsConfirmOpen,
+    setResetSessionConfirmOpen,
+  ]);
 
   // Get current session title for modals
   const currentSessionTitle = sessions.find(s => s.id === currentSessionId)?.title || 'this chat';
 
   return (
-    <div className="sessions-page flex flex-col flex-1 min-h-0">
+    <div className="sessions-page flex min-h-0 flex-1 flex-col">
       {/* Chats Page Header */}
       <SessionHeader
         isLight={isLight}
@@ -393,13 +426,13 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         onGoHome={onGoHome}
         onGoAdmin={onGoAdmin}
         sessionsPanelOpen={showSessionsPanel}
-        onToggleSessionsPanel={() => setShowSessionsPanel((p) => !p)}
+        onToggleSessionsPanel={() => setShowSessionsPanel(p => !p)}
         configPanelOpen={effectiveConfigPanelState?.isOpen ?? false}
         onToggleConfigPanel={handleToggleConfigPanel}
       />
 
       {/* Session Content Area - with optional left SessionsPanel and right ConfigPanel (same parent) */}
-      <div ref={contentAreaRef} className="relative z-10 flex flex-1 flex-col min-h-0 overflow-hidden">
+      <div ref={contentAreaRef} className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* z-[55] wrappers sit above the chat column (z-50) so small-view backdrops paint on top */}
         {showSessionsPanel && (
           <div className="pointer-events-none absolute inset-0 z-[55]">
@@ -410,12 +443,14 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
               sessions={sessions}
               currentSessionId={currentSessionId}
               onNewSession={handleNewSession}
-              onOpenSession={(id) => sessionStorageDBWrapper.setActiveSession(id)}
-              onCloneSession={(id) => sessionStorageDBWrapper.cloneSession(id, API_CONFIG.BASE_URL)}
-              onArchiveSession={(id) => sessionStorageDBWrapper.closeSession(id)}
+              onOpenSession={id => sessionStorageDBWrapper.setActiveSession(id)}
+              onCloneSession={id => sessionStorageDBWrapper.cloneSession(id, API_CONFIG.BASE_URL)}
+              onArchiveSession={id => sessionStorageDBWrapper.closeSession(id)}
               onDeleteSession={handleDeleteSessionFromPanel}
               onWidthChange={setSessionsPanelWidth}
               initialWidth={sessionsPanelWidth}
+              initialSplitRatio={sessionsPanelSplitRatio}
+              onSplitRatioChange={setSessionsPanelSplitRatio}
               isSmallView={isSessionsPanelSmallView}
               apiBaseUrl={API_CONFIG.BASE_URL}
             />
@@ -425,143 +460,139 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         <div ref={configPanelPortalRef} className="pointer-events-none absolute inset-0 z-[55]" aria-hidden />
         {/* Content column: z-50 — in-panel UI; side/config overlays use z-[55] siblings */}
         <div
-          className="relative z-50 flex flex-1 flex-col min-h-0 overflow-hidden min-w-0"
+          className="relative z-50 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           style={{
             marginLeft: isSessionsPanelSmallView ? 0 : showSessionsPanel ? `${sessionsPanelWidth}px` : 0,
-            marginRight: isSessionsPanelSmallView ? 0 : (effectiveConfigPanelState?.isOpen ? (effectiveConfigPanelState.width ?? 384) : 0),
+            marginRight: isSessionsPanelSmallView
+              ? 0
+              : effectiveConfigPanelState?.isOpen
+                ? (effectiveConfigPanelState.width ?? 384)
+                : 0,
             transition: 'margin-left 0.22s ease-out, margin-right 0.22s ease-out',
-          }}
-        >
-      <div className="relative flex-1 overflow-hidden">
-        {/* Render all cached sessions (hide inactive ones) */}
-        {sessionsToRender.map(session => {
-          const isActive = session.id === currentSessionId;
-          return (
-            <div
-              key={session.id}
-              className={cn(
-                'absolute inset-0 z-0 flex flex-col overflow-hidden',
-                isActive && 'animate-fadeIn'
-              )}
-              style={{ display: isActive ? 'flex' : 'none' }}
-            >
-            <ErrorBoundary
-              level="component"
-              fallback={
-                <div className="flex flex-1 items-center justify-center p-4">
-                  <div className="text-center">
-                    <p className="mb-2 text-red-600 dark:text-red-400">Chat Error</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      This chat encountered an error. Try switching to another chat.
-                    </p>
+          }}>
+          <div className="relative flex-1 overflow-hidden">
+            {/* Render all cached sessions (hide inactive ones) */}
+            {sessionsToRender.map(session => {
+              const isActive = session.id === currentSessionId;
+              return (
+                <div
+                  key={session.id}
+                  className={cn('absolute inset-0 z-0 flex flex-col overflow-hidden', isActive && 'animate-fadeIn')}
+                  style={{ display: isActive ? 'flex' : 'none' }}>
+                  <ErrorBoundary
+                    level="component"
+                    fallback={
+                      <div className="flex flex-1 items-center justify-center p-4">
+                        <div className="text-center">
+                          <p className="mb-2 text-red-600 dark:text-red-400">Chat Error</p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            This chat encountered an error. Try switching to another chat.
+                          </p>
+                        </div>
+                      </div>
+                    }>
+                    <ChatSessionContainer
+                      sessionId={session.id}
+                      isLight={isLight}
+                      publicApiKey={publicApiKey}
+                      initialMetadata={session}
+                      isActive={isActive}
+                      contextMenuMessage={isActive ? contextMenuMessage : null}
+                      onMessagesCountChange={handleMessagesCountChange}
+                      onRegisterResetFunction={handleRegisterResetFunction}
+                      onRegisterOpenSettings={handleRegisterOpenSettings}
+                      onRegisterConfigPanel={handleRegisterConfigPanel}
+                      onRegisterGetMessagesFunction={handleRegisterGetMessagesFunction}
+                      onReady={handleSessionReady}
+                      onMessagesLoadingChange={handleMessagesLoadingChange}
+                      configPanelPortalRef={configPanelPortalRef}
+                      configPanelOpenOverride={
+                        isActive && !configPanelState[session.id] && (effectiveConfigPanelState?.isOpen ?? false)
+                      }
+                      moreOptionsMenu={
+                        isActive
+                          ? {
+                              isLight,
+                              currentSessionId,
+                              sessionMessageCount: sessionMessageCounts[currentSessionId ?? ''] ?? 0,
+                              copiedSessionId,
+                              onResetSession: handleResetSession,
+                              onCloseSession: handleCloseSession,
+                              onClearAllMessages: handleClearAllMessages,
+                              onClearAllSessions: openClearSessionsConfirm,
+                              onExportAsMarkdown: handleExportAsMarkdown,
+                              onExportAsHTML: handleExportAsHTML,
+                              onCopySessionId: handleCopySessionId,
+                              onOpenSettings: handleOpenSettings,
+                              onOpenAbout,
+                              onClose,
+                            }
+                          : undefined
+                      }
+                    />
+                  </ErrorBoundary>
+                </div>
+              );
+            })}
+
+            {/* Empty states when no sessions are mounted */}
+            {sessionsToRender.length === 0 &&
+              (shouldShowStandaloneSkeleton ? (
+                <ChatSkeleton isLight={isLight} />
+              ) : hasSessions ? (
+                <div className="flex flex-1 items-center justify-center overflow-hidden">
+                  <div className="text-center text-gray-500 dark:text-gray-400">
+                    <p>Select a chat to begin</p>
+                    <p className="text-sm">Choose a chat from the list below to continue</p>
                   </div>
                 </div>
-              }>
-                <ChatSessionContainer
-                  sessionId={session.id}
-                  isLight={isLight}
-                  publicApiKey={publicApiKey}
-                  initialMetadata={session}
-                  isActive={isActive}
-                  contextMenuMessage={isActive ? contextMenuMessage : null}
-                  onMessagesCountChange={handleMessagesCountChange}
-                  onRegisterResetFunction={handleRegisterResetFunction}
-                  onRegisterOpenSettings={handleRegisterOpenSettings}
-                  onRegisterConfigPanel={handleRegisterConfigPanel}
-                  onRegisterGetMessagesFunction={handleRegisterGetMessagesFunction}
-                  onReady={handleSessionReady}
-                  onMessagesLoadingChange={handleMessagesLoadingChange}
-                  configPanelPortalRef={configPanelPortalRef}
-                  configPanelOpenOverride={
-                    isActive &&
-                    !configPanelState[session.id] &&
-                    (effectiveConfigPanelState?.isOpen ?? false)
-                  }
-                  moreOptionsMenu={
-                    isActive
-                      ? {
-                          isLight,
-                          currentSessionId,
-                          sessionMessageCount: sessionMessageCounts[currentSessionId ?? ''] ?? 0,
-                          copiedSessionId,
-                          onResetSession: handleResetSession,
-                          onCloseSession: handleCloseSession,
-                          onClearAllMessages: handleClearAllMessages,
-                          onClearAllSessions: openClearSessionsConfirm,
-                          onExportAsMarkdown: handleExportAsMarkdown,
-                          onExportAsHTML: handleExportAsHTML,
-                          onCopySessionId: handleCopySessionId,
-                          onOpenSettings: handleOpenSettings,
-                          onOpenAbout,
-                          onClose,
-                        }
-                      : undefined
-                  }
-                />
-            </ErrorBoundary>
-          </div>
-          );
-        })}
+              ) : (
+                <div className="flex flex-1 items-center justify-center overflow-hidden">
+                  <div className="text-center text-gray-500 dark:text-gray-400">
+                    <p>No active chat</p>
+                    <p className="text-sm">Create a new chat to start</p>
+                  </div>
+                </div>
+              ))}
 
-        {/* Empty states when no sessions are mounted */}
-        {sessionsToRender.length === 0 && (
-          shouldShowStandaloneSkeleton ? (
-          <ChatSkeleton isLight={isLight} />
-        ) : hasSessions ? (
-          <div className="flex flex-1 items-center justify-center overflow-hidden">
-            <div className="text-center text-gray-500 dark:text-gray-400">
-              <p>Select a chat to begin</p>
-              <p className="text-sm">Choose a chat from the list below to continue</p>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-1 items-center justify-center overflow-hidden">
-            <div className="text-center text-gray-500 dark:text-gray-400">
-              <p>No active chat</p>
-              <p className="text-sm">Create a new chat to start</p>
-            </div>
-          </div>
-          )
-        )}
+            {/* Full skeleton overlay when session is loading */}
+            {shouldShowSkeletonOverlay && (
+              <div className="pointer-events-auto absolute inset-0 z-20 flex flex-col overflow-hidden">
+                <ChatSkeleton isLight={isLight} />
+              </div>
+            )}
 
-        {/* Full skeleton overlay when session is loading */}
-        {shouldShowSkeletonOverlay && (
-            <div className="pointer-events-auto absolute inset-0 z-20 flex flex-col overflow-hidden">
-              <ChatSkeleton isLight={isLight} />
-            </div>
-        )}
-        
-        {/* Individual skeletons during session transitions (covers all three sections) */}
-        {activeSession && shouldShowSkeleton && !shouldShowSkeletonOverlay && (
-          <>
-            {/* Status Bar Skeleton - positioned at top, h-[34px] */}
-            <div className="pointer-events-auto absolute left-0 right-0 top-0 z-[15]">
-              <StatusBarSkeleton isLight={isLight} />
-            </div>
-            
-            {/* Messages Skeleton - positioned in middle (between status bar and selectors bar) */}
-            <div className="pointer-events-auto absolute bottom-[48px] left-0 right-0 top-[34px] z-[15] flex flex-col overflow-hidden">
-              <MessagesOnlySkeleton isLight={isLight} />
-            </div>
-            
-            {/* Selectors Bar Skeleton - positioned at bottom, approximately h-[48px] */}
-            <div className="pointer-events-auto absolute bottom-0 left-0 right-0 z-[15]">
-              <SelectorsBarSkeleton isLight={isLight} />
-            </div>
-          </>
-        )}
-      </div>
+            {/* Individual skeletons during session transitions (covers all three sections) */}
+            {activeSession && shouldShowSkeleton && !shouldShowSkeletonOverlay && (
+              <>
+                {/* Status Bar Skeleton - positioned at top, h-[34px] */}
+                <div className="pointer-events-auto absolute top-0 right-0 left-0 z-[15]">
+                  <StatusBarSkeleton isLight={isLight} />
+                </div>
 
-      {/* Past Chats bar — hidden when sessions panel is open (same as session tabs in header) */}
-      {!showSessionsPanel && (
-        <div
-          className={cn(
-            'flex-shrink-0 border-t px-3',
-            isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
-          )}>
-          <SessionList isLight={isLight} viewMode={viewMode} />
-        </div>
-      )}
+                {/* Messages Skeleton - positioned in middle (between status bar and selectors bar) */}
+                <div className="pointer-events-auto absolute top-[34px] right-0 bottom-[48px] left-0 z-[15] flex flex-col overflow-hidden">
+                  <MessagesOnlySkeleton isLight={isLight} />
+                </div>
+
+                {/* Selectors Bar Skeleton - positioned at bottom, approximately h-[48px] */}
+                <div className="pointer-events-auto absolute right-0 bottom-0 left-0 z-[15]">
+                  <SelectorsBarSkeleton isLight={isLight} />
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Past Chats bar — hidden when sessions panel is open (same as session tabs in header) */}
+          {!showSessionsPanel && (
+            <div
+              className={cn(
+                'flex-shrink-0 border-t px-3',
+                isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
+              )}>
+              <SessionList isLight={isLight} viewMode={viewMode} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -574,7 +605,11 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         }}
         onConfirm={handleConfirmDeleteSessionFromPanel}
         title="Delete Chat"
-        message={sessionToDelete ? `Permanently delete "<strong>${sessionToDelete.title}</strong>"? This cannot be undone.` : ''}
+        message={
+          sessionToDelete
+            ? `Permanently delete "<strong>${sessionToDelete.title}</strong>"? This cannot be undone.`
+            : ''
+        }
         confirmLabel="Delete"
         cancelLabel="Cancel"
         variant="danger"
@@ -623,7 +658,6 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         isLight={isLight}
         mainTextColor={mainTextColor}
       />
-
     </div>
   );
 };
