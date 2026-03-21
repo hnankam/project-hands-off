@@ -1,13 +1,15 @@
+import { isExtensionContext } from '@extension/platform';
+
 /**
  * ================================================================================
  * Window Manager Utility
  * ================================================================================
- * 
+ *
  * Handles opening the side panel content in different contexts:
  * - Popup window (detached, resizable)
  * - New tab
  * - Fullscreen mode
- * 
+ *
  * @module windowManager
  * ================================================================================
  */
@@ -89,9 +91,9 @@ function isValidSessionId(sessionId: string | undefined): sessionId is string {
 
 /**
  * Get the current view mode based on the context
- * 
+ *
  * @returns Current view mode
- * 
+ *
  * @example
  * ```typescript
  * const mode = getCurrentViewMode();
@@ -104,28 +106,28 @@ export function getCurrentViewMode(): ViewMode {
   // Check URL parameters
   const params = new URLSearchParams(window.location.search);
   const modeParam = params.get('mode') as ViewMode | null;
-  
+
   const validModes: ViewMode[] = ['sidepanel', 'popup', 'newtab', 'fullscreen'];
   if (modeParam && validModes.includes(modeParam)) {
     return modeParam;
   }
-  
+
   // Check if we're in a popup window (has window.opener or specific dimensions)
   if (params.has('popup') || window.opener) {
     return 'popup';
   }
-  
+
   // Check if we're in the new tab page
   if (window.location.pathname.includes('/new-tab/')) {
     return 'newtab';
   }
-  
+
   // Check if we're in the side panel (default)
   if (window.location.pathname.includes('/side-panel/')) {
     return 'sidepanel';
   }
-  
-  return 'sidepanel'; // default
+
+  return 'sidepanel'; // extension embedded UI default (side panel surface)
 }
 
 // ============================================================================
@@ -134,11 +136,11 @@ export function getCurrentViewMode(): ViewMode {
 
 /**
  * Open the side panel content in a popup window
- * 
+ *
  * @param options - Popup window options
  * @returns Created window or null on error
  * @throws Error if Chrome APIs fail
- * 
+ *
  * @example
  * ```typescript
  * const window = await openInPopupWindow({
@@ -150,42 +152,52 @@ export function getCurrentViewMode(): ViewMode {
  * ```
  */
 export async function openInPopupWindow(options: OpenInPopupOptions = {}): Promise<chrome.windows.Window | null> {
-  const {
-    width = DEFAULT_POPUP_WIDTH,
-    height = DEFAULT_POPUP_HEIGHT,
-    sessionId,
-    state = 'normal'
-  } = options;
-  
+  const { width = DEFAULT_POPUP_WIDTH, height = DEFAULT_POPUP_HEIGHT, sessionId, state = 'normal' } = options;
+
+  if (!isExtensionContext()) {
+    const validatedWidth = validateDimension(width, MIN_WINDOW_WIDTH, MAX_WINDOW_WIDTH);
+    const validatedHeight = validateDimension(height, MIN_WINDOW_HEIGHT, MAX_WINDOW_HEIGHT);
+    const u = new URL(window.location.href);
+    u.searchParams.set('mode', 'popup');
+    if (isValidSessionId(sessionId)) {
+      u.searchParams.set('sessionId', sessionId);
+    }
+    const left = Math.round((window.screen.availWidth - validatedWidth) / 2);
+    const top = Math.round((window.screen.availHeight - validatedHeight) / 2);
+    const features = `width=${validatedWidth},height=${validatedHeight},left=${Math.max(0, left)},top=${Math.max(0, top)},scrollbars=yes,resizable=yes`;
+    window.open(u.toString(), '_blank', features);
+    return null;
+  }
+
   try {
     // Validate dimensions
     const validatedWidth = validateDimension(width, MIN_WINDOW_WIDTH, MAX_WINDOW_WIDTH);
     const validatedHeight = validateDimension(height, MIN_WINDOW_HEIGHT, MAX_WINDOW_HEIGHT);
-    
+
     // Build URL with query parameters
     const url = chrome.runtime.getURL(SIDE_PANEL_HTML);
     const params = new URLSearchParams({
       mode: 'popup',
     });
-    
+
     // Add sessionId only if valid
     if (isValidSessionId(sessionId)) {
       params.set('sessionId', sessionId);
     }
-    
+
     const fullUrl = `${url}?${params.toString()}`;
-    
+
     // Get screen dimensions
     const screenWidth = window.screen.availWidth;
     const screenHeight = window.screen.availHeight;
-    
+
     // Create window options
     const createOptions: chrome.windows.CreateData = {
       url: fullUrl,
       focused: true,
       type: 'popup', // Always use popup type for tabless windows
     };
-    
+
     // For maximized or fullscreen states, set popup window to full screen dimensions
     // This creates a tabless maximized window
     if (state === 'maximized' || state === 'fullscreen') {
@@ -203,13 +215,13 @@ export async function openInPopupWindow(options: OpenInPopupOptions = {}): Promi
       createOptions.left = Math.max(0, left);
       createOptions.top = Math.max(0, top);
     }
-    
+
     const popupWindow = await chrome.windows.create(createOptions);
-    
+
     if (!popupWindow) {
       throw new Error('Failed to create popup window - chrome.windows.create returned undefined');
     }
-    
+
     console.log('[WindowManager] Popup window created:', popupWindow.id);
     return popupWindow;
   } catch (error) {
@@ -221,11 +233,11 @@ export async function openInPopupWindow(options: OpenInPopupOptions = {}): Promi
 
 /**
  * Open the side panel content in a new tab
- * 
+ *
  * @param options - New tab options
  * @returns Created tab, existing tab if found, or null on error
  * @throws Error if Chrome APIs fail
- * 
+ *
  * @example
  * ```typescript
  * const tab = await openInNewTab({
@@ -235,33 +247,43 @@ export async function openInPopupWindow(options: OpenInPopupOptions = {}): Promi
  * ```
  */
 export async function openInNewTab(options: OpenInNewTabOptions = {}): Promise<chrome.tabs.Tab | null> {
-  const {
-    active = true,
-    sessionId
-  } = options;
-  
+  const { active = true, sessionId } = options;
+
+  if (!isExtensionContext()) {
+    const u = new URL(window.location.href);
+    u.searchParams.set('mode', 'newtab');
+    if (isValidSessionId(sessionId)) {
+      u.searchParams.set('sessionId', sessionId);
+    }
+    if (!u.hash || u.hash === '#') {
+      u.hash = DEFAULT_ROUTE;
+    }
+    window.open(u.toString(), '_blank', 'noopener,noreferrer');
+    return null;
+  }
+
   try {
     // Build URL pointing to side-panel with query parameters
     const url = chrome.runtime.getURL(SIDE_PANEL_HTML);
     const params = new URLSearchParams({
       mode: 'newtab',
     });
-    
+
     // Add sessionId only if valid
     if (isValidSessionId(sessionId)) {
       params.set('sessionId', sessionId);
     }
-    
+
     const fullUrl = `${url}?${params.toString()}${DEFAULT_ROUTE}`;
-    
+
     // Check if a tab with this URL already exists
     const searchPattern = `${chrome.runtime.getURL(SIDE_PANEL_HTML)}*`;
     const existingTabs = await chrome.tabs.query({ url: searchPattern });
-    
+
     if (existingTabs.length > 0 && isValidSessionId(sessionId)) {
       // Check if any existing tab has the same sessionId
       const matchingTab = existingTabs.find(tab => tab.url?.includes(`sessionId=${sessionId}`));
-      
+
       if (matchingTab?.id) {
         // Focus existing tab
         await chrome.tabs.update(matchingTab.id, { active: true });
@@ -272,17 +294,17 @@ export async function openInNewTab(options: OpenInNewTabOptions = {}): Promise<c
         return matchingTab;
       }
     }
-    
+
     // Create new tab
     const newTab = await chrome.tabs.create({
       url: fullUrl,
-      active
+      active,
     });
-    
+
     if (!newTab) {
       throw new Error('Failed to create tab - chrome.tabs.create returned undefined');
     }
-    
+
     console.log('[WindowManager] New tab created:', newTab.id);
     return newTab;
   } catch (error) {
@@ -298,9 +320,9 @@ export async function openInNewTab(options: OpenInNewTabOptions = {}): Promise<c
 
 /**
  * Check if the current window is a popup window
- * 
+ *
  * @returns True if in popup context
- * 
+ *
  * @example
  * ```typescript
  * if (isPopupWindow()) {
@@ -315,9 +337,9 @@ export function isPopupWindow(): boolean {
 
 /**
  * Check if we're in a new tab context
- * 
+ *
  * @returns True if in new tab context
- * 
+ *
  * @example
  * ```typescript
  * if (isNewTabContext()) {
@@ -326,8 +348,7 @@ export function isPopupWindow(): boolean {
  * ```
  */
 export function isNewTabContext(): boolean {
-  const params = new URLSearchParams(window.location.search);
-  return params.get('mode') === 'newtab' || window.location.hash === DEFAULT_ROUTE;
+  return getCurrentViewMode() === 'newtab';
 }
 
 // ============================================================================
@@ -336,9 +357,9 @@ export function isNewTabContext(): boolean {
 
 /**
  * Get session ID from URL parameters
- * 
+ *
  * @returns Session ID or null if not present or invalid
- * 
+ *
  * @example
  * ```typescript
  * const sessionId = getSessionIdFromUrl();
@@ -350,38 +371,38 @@ export function isNewTabContext(): boolean {
 export function getSessionIdFromUrl(): string | null {
   const params = new URLSearchParams(window.location.search);
   const sessionId = params.get('sessionId');
-  
+
   // Return only if valid
   return isValidSessionId(sessionId || '') ? sessionId : null;
 }
 
 /**
  * Update URL with current session ID without page reload
- * 
+ *
  * @param sessionId - Session ID to set, or null to remove
- * 
+ *
  * @example
  * ```typescript
  * // Set session ID
  * updateUrlWithSession('abc123');
- * 
+ *
  * // Clear session ID
  * updateUrlWithSession(null);
  * ```
  */
 export function updateUrlWithSession(sessionId: string | null): void {
   const params = new URLSearchParams(window.location.search);
-  
+
   if (sessionId && isValidSessionId(sessionId)) {
     params.set('sessionId', sessionId);
   } else {
     params.delete('sessionId');
   }
-  
+
   const newUrl = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
-  
+
   try {
-  window.history.replaceState({}, '', newUrl);
+    window.history.replaceState({}, '', newUrl);
   } catch (error) {
     console.error('[WindowManager] Failed to update URL:', error);
   }
@@ -393,9 +414,9 @@ export function updateUrlWithSession(sessionId: string | null): void {
 
 /**
  * Close the current popup window (if it is one)
- * 
+ *
  * @throws Error if Chrome APIs fail
- * 
+ *
  * @example
  * ```typescript
  * if (isPopupWindow()) {
@@ -407,16 +428,21 @@ export async function closePopupWindow(): Promise<void> {
   if (!isPopupWindow()) {
     return;
   }
-  
-    try {
-      const currentWindow = await chrome.windows.getCurrent();
+
+  if (!isExtensionContext()) {
+    window.close();
+    return;
+  }
+
+  try {
+    const currentWindow = await chrome.windows.getCurrent();
     if (!currentWindow.id) {
       throw new Error('Current window has no ID');
     }
-    
-        await chrome.windows.remove(currentWindow.id);
+
+    await chrome.windows.remove(currentWindow.id);
     console.log('[WindowManager] Popup window closed:', currentWindow.id);
-    } catch (error) {
+  } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error('[WindowManager] Failed to close popup window:', errorMessage);
     throw new Error(`[WindowManager] Window close failed: ${errorMessage}`);
@@ -425,24 +451,29 @@ export async function closePopupWindow(): Promise<void> {
 
 /**
  * Maximize/restore the current window
- * 
+ *
  * @throws Error if Chrome APIs fail
- * 
+ *
  * @example
  * ```typescript
  * await toggleWindowMaximize(); // Maximizes or restores
  * ```
  */
 export async function toggleWindowMaximize(): Promise<void> {
+  if (!isExtensionContext()) {
+    console.warn('[WindowManager] toggleWindowMaximize is not supported in web mode');
+    return;
+  }
+
   try {
     const currentWindow = await chrome.windows.getCurrent();
     if (!currentWindow.id) {
       throw new Error('Current window has no ID');
     }
-    
-      const newState = currentWindow.state === 'maximized' ? 'normal' : 'maximized';
-      await chrome.windows.update(currentWindow.id, { state: newState });
-    
+
+    const newState = currentWindow.state === 'maximized' ? 'normal' : 'maximized';
+    await chrome.windows.update(currentWindow.id, { state: newState });
+
     console.log('[WindowManager] Window state changed to:', newState);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

@@ -1,11 +1,12 @@
 /**
  * Install App Helper Component
- * 
+ *
  * Provides instructions and commands for installing the extension as a desktop app
  */
 
 import * as React from 'react';
 import { useState, useEffect } from 'react';
+import { FEATURES } from '@extension/platform';
 import { cn } from '@extension/ui';
 
 interface InstallAppHelperProps {
@@ -21,6 +22,10 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
   const [activeTab, setActiveTab] = useState<'chrome' | 'shortcut'>('chrome');
 
   useEffect(() => {
+    if (!FEATURES.installHelper()) {
+      return;
+    }
+
     // Detect OS
     const platform = navigator.platform.toLowerCase();
     const userAgent = navigator.userAgent.toLowerCase();
@@ -44,7 +49,7 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
 
   const getShortcutCommand = () => {
     const url = getAppUrl();
-    
+
     switch (os) {
       case 'windows':
         return `"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --app="${url}"`;
@@ -92,16 +97,25 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
     }
   };
 
+  if (!FEATURES.installHelper()) {
+    return null;
+  }
+
   return (
     <div className={cn('space-y-3')}>
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className={cn(
-          'flex h-8 w-8 items-center justify-center rounded-full',
-          isLight ? 'bg-blue-100 text-blue-600' : 'bg-blue-900/30 text-blue-400'
-        )}>
+        <div
+          className={cn(
+            'flex h-8 w-8 items-center justify-center rounded-full',
+            isLight ? 'bg-blue-100 text-blue-600' : 'bg-blue-900/30 text-blue-400',
+          )}>
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+            />
           </svg>
         </div>
         <div>
@@ -116,13 +130,8 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
 
       {/* OS Detection */}
       {os !== 'unknown' && (
-        <div className={cn(
-          'flex items-center gap-2 rounded-lg px-3 py-2',
-          isLight ? 'bg-gray-50' : 'bg-gray-800/50'
-        )}>
-          <div className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>
-            {getOSIcon()}
-          </div>
+        <div className={cn('flex items-center gap-2 rounded-lg px-3 py-2', isLight ? 'bg-gray-50' : 'bg-gray-800/50')}>
+          <div className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{getOSIcon()}</div>
           <span className={cn('text-xs', isLight ? 'text-gray-700' : 'text-gray-300')}>
             Detected: <span className="font-medium capitalize">{os === 'mac' ? 'macOS' : os}</span>
           </span>
@@ -130,10 +139,7 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
       )}
 
       {/* Tab Selector */}
-      <div className={cn(
-        'flex rounded-lg p-1',
-        isLight ? 'bg-gray-100' : 'bg-gray-800'
-      )}>
+      <div className={cn('flex rounded-lg p-1', isLight ? 'bg-gray-100' : 'bg-gray-800')}>
         <button
           onClick={() => setActiveTab('chrome')}
           className={cn(
@@ -144,9 +150,8 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
                 : 'bg-gray-700 text-gray-100'
               : isLight
                 ? 'text-gray-600 hover:text-gray-900'
-                : 'text-gray-400 hover:text-gray-200'
-          )}
-        >
+                : 'text-gray-400 hover:text-gray-200',
+          )}>
           Chrome Menu
         </button>
         <button
@@ -159,9 +164,8 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
                 : 'bg-gray-700 text-gray-100'
               : isLight
                 ? 'text-gray-600 hover:text-gray-900'
-                : 'text-gray-400 hover:text-gray-200'
-          )}
-        >
+                : 'text-gray-400 hover:text-gray-200',
+          )}>
           Desktop Shortcut
         </button>
       </div>
@@ -169,15 +173,13 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
       {/* Chrome Menu Method */}
       {activeTab === 'chrome' && (
         <div className="space-y-2.5">
-          <div className={cn(
-            'rounded-lg p-3 space-y-2.5',
-            isLight ? 'bg-blue-50' : 'bg-blue-900/10'
-          )}>
+          <div className={cn('space-y-2.5 rounded-lg p-3', isLight ? 'bg-blue-50' : 'bg-blue-900/10')}>
             <div className="flex items-start gap-2">
-              <div className={cn(
-                'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold',
-                isLight ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white'
-              )}>
+              <div
+                className={cn(
+                  'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                  isLight ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white',
+                )}>
                 1
               </div>
               <p className={cn('text-xs', isLight ? 'text-gray-700' : 'text-gray-300')}>
@@ -185,10 +187,11 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
               </p>
             </div>
             <div className="flex items-start gap-2">
-              <div className={cn(
-                'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold',
-                isLight ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white'
-              )}>
+              <div
+                className={cn(
+                  'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                  isLight ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white',
+                )}>
                 2
               </div>
               <p className={cn('text-xs', isLight ? 'text-gray-700' : 'text-gray-300')}>
@@ -196,35 +199,46 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
               </p>
             </div>
             <div className="flex items-start gap-2">
-              <div className={cn(
-                'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold',
-                isLight ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white'
-              )}>
+              <div
+                className={cn(
+                  'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                  isLight ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white',
+                )}>
                 3
               </div>
               <p className={cn('text-xs', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                In the new tab, click the <span className="font-semibold">Chrome menu</span> (⋮) → <span className="font-semibold">Save and share</span> → <span className="font-semibold">Create shortcut</span>
+                In the new tab, click the <span className="font-semibold">Chrome menu</span> (⋮) →{' '}
+                <span className="font-semibold">Save and share</span> →{' '}
+                <span className="font-semibold">Create shortcut</span>
               </p>
             </div>
             <div className="flex items-start gap-2">
-              <div className={cn(
-                'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold',
-                isLight ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white'
-              )}>
+              <div
+                className={cn(
+                  'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                  isLight ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white',
+                )}>
                 4
               </div>
               <p className={cn('text-xs', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                Check <span className="font-semibold">"Open as window"</span> and click <span className="font-semibold">Create</span>
+                Check <span className="font-semibold">"Open as window"</span> and click{' '}
+                <span className="font-semibold">Create</span>
               </p>
             </div>
           </div>
 
-          <div className={cn(
-            'rounded-lg px-3 py-2 flex items-start gap-2',
-            isLight ? 'bg-gray-50' : 'bg-gray-800/50'
-          )}>
-            <svg className={cn('h-4 w-4 flex-shrink-0 mt-0.5', isLight ? 'text-blue-600' : 'text-blue-400')} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <div className={cn('flex items-start gap-2 rounded-lg px-3 py-2', isLight ? 'bg-gray-50' : 'bg-gray-800/50')}>
+            <svg
+              className={cn('mt-0.5 h-4 w-4 flex-shrink-0', isLight ? 'text-blue-600' : 'text-blue-400')}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth={2}>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
             <p className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
               This will create a desktop shortcut that opens Project Hands-Off in its own window without browser UI
@@ -236,30 +250,25 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
       {/* Desktop Shortcut Method */}
       {activeTab === 'shortcut' && (
         <div className="space-y-2.5">
-          <div className={cn(
-            'rounded-lg p-3 space-y-2.5',
-            isLight ? 'bg-amber-50' : 'bg-amber-900/10'
-          )}>
+          <div className={cn('space-y-2.5 rounded-lg p-3', isLight ? 'bg-amber-50' : 'bg-amber-900/10')}>
             <p className={cn('text-xs font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
               Command to create app-mode shortcut:
             </p>
-            
-            <div className={cn(
-              'rounded-md border p-2.5 font-mono text-xs break-all',
-              isLight ? 'bg-white border-gray-300 text-gray-800' : 'bg-gray-900 border-gray-700 text-gray-200'
-            )}>
+
+            <div
+              className={cn(
+                'rounded-md border p-2.5 font-mono text-xs break-all',
+                isLight ? 'border-gray-300 bg-white text-gray-800' : 'border-gray-700 bg-gray-900 text-gray-200',
+              )}>
               {getShortcutCommand()}
             </div>
 
             <button
               onClick={() => copyToClipboard(getShortcutCommand())}
               className={cn(
-                'w-full rounded-md px-4 py-1.5 text-xs font-medium transition-colors flex items-center justify-center gap-2',
-                isLight
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              )}
-            >
+                'flex w-full items-center justify-center gap-2 rounded-md px-4 py-1.5 text-xs font-medium transition-colors',
+                isLight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-600 text-white hover:bg-blue-700',
+              )}>
               {copied ? (
                 <>
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -270,7 +279,11 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
               ) : (
                 <>
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                    />
                   </svg>
                   Copy Command
                 </>
@@ -279,37 +292,66 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
           </div>
 
           {/* Instructions based on OS */}
-          <div className={cn(
-            'rounded-lg p-3 space-y-2.5',
-            isLight ? 'bg-gray-50' : 'bg-gray-800/50'
-          )}>
+          <div className={cn('space-y-2.5 rounded-lg p-3', isLight ? 'bg-gray-50' : 'bg-gray-800/50')}>
             <p className={cn('text-xs font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
               How to use this command:
             </p>
-            
+
             {os === 'windows' && (
-              <ol className={cn('text-xs space-y-1.5 list-decimal list-inside', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                <li>Right-click on your desktop → <span className="font-semibold">New</span> → <span className="font-semibold">Shortcut</span></li>
+              <ol
+                className={cn(
+                  'list-inside list-decimal space-y-1.5 text-xs',
+                  isLight ? 'text-gray-700' : 'text-gray-300',
+                )}>
+                <li>
+                  Right-click on your desktop → <span className="font-semibold">New</span> →{' '}
+                  <span className="font-semibold">Shortcut</span>
+                </li>
                 <li>Paste the command above into the location field</li>
-                <li>Click <span className="font-semibold">Next</span>, name it "Project Hands-Off"</li>
-                <li>Click <span className="font-semibold">Finish</span></li>
+                <li>
+                  Click <span className="font-semibold">Next</span>, name it "Project Hands-Off"
+                </li>
+                <li>
+                  Click <span className="font-semibold">Finish</span>
+                </li>
               </ol>
             )}
 
             {os === 'mac' && (
-              <ol className={cn('text-xs space-y-1.5 list-decimal list-inside', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                <li>Open <span className="font-semibold">Automator</span> and create a new <span className="font-semibold">Application</span></li>
-                <li>Add a <span className="font-semibold">Run Shell Script</span> action</li>
+              <ol
+                className={cn(
+                  'list-inside list-decimal space-y-1.5 text-xs',
+                  isLight ? 'text-gray-700' : 'text-gray-300',
+                )}>
+                <li>
+                  Open <span className="font-semibold">Automator</span> and create a new{' '}
+                  <span className="font-semibold">Application</span>
+                </li>
+                <li>
+                  Add a <span className="font-semibold">Run Shell Script</span> action
+                </li>
                 <li>Paste the command above</li>
                 <li>Save as "Project Hands-Off" to Applications or Desktop</li>
               </ol>
             )}
 
             {os === 'linux' && (
-              <ol className={cn('text-xs space-y-1.5 list-decimal list-inside', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                <li>Create a new file: <span className="font-mono text-xs">~/.local/share/applications/project-hands-off.desktop</span></li>
+              <ol
+                className={cn(
+                  'list-inside list-decimal space-y-1.5 text-xs',
+                  isLight ? 'text-gray-700' : 'text-gray-300',
+                )}>
+                <li>
+                  Create a new file:{' '}
+                  <span className="font-mono text-xs">~/.local/share/applications/project-hands-off.desktop</span>
+                </li>
                 <li>Add the desktop entry with the Exec line pointing to the command above</li>
-                <li>Make it executable: <span className="font-mono text-xs">chmod +x ~/.local/share/applications/project-hands-off.desktop</span></li>
+                <li>
+                  Make it executable:{' '}
+                  <span className="font-mono text-xs">
+                    chmod +x ~/.local/share/applications/project-hands-off.desktop
+                  </span>
+                </li>
               </ol>
             )}
           </div>
@@ -318,4 +360,3 @@ export function InstallAppHelper({ isLight }: InstallAppHelperProps) {
     </div>
   );
 }
-

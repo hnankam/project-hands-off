@@ -1,9 +1,9 @@
 /**
  * CopilotKit Runtime Server
- * 
+ *
  * Express + Hono hybrid server providing AI copilot functionality
  * with multi-tenant support, dynamic agent routing, and admin APIs.
- * 
+ *
  * Architecture:
  * - Express.js for auth and admin APIs
  * - Hono for CopilotKit runtime (AG-UI protocol)
@@ -12,7 +12,7 @@
  * - Multi-tenant configuration (organization/team scoped)
  * - Better Auth for authentication
  * - PostgreSQL for configuration and usage tracking
- * 
+ *
  * API Endpoints:
  * - /api/copilotkit - AI chat endpoint (AG-UI protocol)
  * - /api/auth - Authentication (Better Auth)
@@ -20,7 +20,7 @@
  * - /api/admin - Configuration management
  * - /api/config - Runtime configuration
  * - /health - Health check
- * 
+ *
  * @module server
  */
 
@@ -40,24 +40,24 @@ import { HttpAgent } from '@ag-ui/client';
 
 // PostgresAgentRunner for persistent storage
 import { PostgresAgentRunner } from './runners/postgres-agent-runner.js';
-import {SqliteAgentRunner} from "@copilotkitnext/sqlite-runner";
+import { SqliteAgentRunner } from '@copilotkitnext/sqlite-runner';
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-import { 
-  PORT, 
+import {
+  PORT,
   PYDANTIC_SERVICE_URL,
-  BODY_LIMIT_MB, 
-  REQUEST_TIMEOUT_MS, 
-  HEADERS_TIMEOUT_MS, 
+  BODY_LIMIT_MB,
+  REQUEST_TIMEOUT_MS,
+  HEADERS_TIMEOUT_MS,
   TRUST_PROXY,
   DEBUG,
   AGENT_RUNNER_TRANSFORM_ERRORS,
   AGENT_RUNNER_DISABLE_CLEANUP,
   AGENT_RUNNER_THREAD_TTL,
-  AGENT_RUNNER_CLEANUP_INTERVAL
+  AGENT_RUNNER_CLEANUP_INTERVAL,
 } from './config/index.js';
 
 // Runner configuration
@@ -119,7 +119,7 @@ function reorderMessages(messages) {
       const toolMsgs = toolMsgsByAssistantIdx.get(i);
       if (toolMsgs) {
         // Sort by tool call order in assistant (Anthropic expects tool results to match tool call order)
-        const toolCallOrder = (messages[i].toolCalls || []).map((tc) => tc.id);
+        const toolCallOrder = (messages[i].toolCalls || []).map(tc => tc.id);
         toolMsgs.sort((a, b) => {
           const aid = a.msg.toolCallId ?? a.msg.tool_call_id;
           const bid = b.msg.toolCallId ?? b.msg.tool_call_id;
@@ -148,11 +148,11 @@ import { getDefaultAgent, getDefaultModel } from './config/models.js';
 // Middleware
 // ============================================================================
 
-import { 
+import {
   createCorsMiddleware,
   requestIdMiddleware,
   errorHandlerMiddleware,
-  notFoundMiddleware
+  notFoundMiddleware,
 } from './middleware/index.js';
 import { teamMembersBypassMiddleware } from './middleware/team-members-bypass.js';
 
@@ -160,7 +160,7 @@ import { teamMembersBypassMiddleware } from './middleware/team-members-bypass.js
 // Routes
 // ============================================================================
 
-import { 
+import {
   healthCheckHandler,
   getAgentsHandler,
   getModelsHandler,
@@ -216,11 +216,11 @@ function getCachedAgent(context) {
   const orgId = authContext?.organizationId;
   const teamId = authContext?.teamId;
   const cacheKey = getAgentCacheKey(agentType, modelType, orgId, teamId);
-  
+
   if (agentCache.has(cacheKey)) {
     return { agent: agentCache.get(cacheKey), cached: true, cacheKey };
   }
-  
+
   // Evict oldest entries if cache is full
   if (agentCache.size >= AGENT_CACHE_MAX_SIZE) {
     const firstKey = agentCache.keys().next().value;
@@ -229,7 +229,7 @@ function getCachedAgent(context) {
       log(`Agent cache evicted: ${firstKey}`);
     }
   }
-  
+
   const url = `${PYDANTIC_SERVICE_URL}/agent/${agentType}/${modelType}`;
   const headers = {
     'x-copilot-agent-type': agentType,
@@ -258,10 +258,10 @@ function getCachedAgent(context) {
       }
     });
   }
-  
+
   const agent = new HttpAgent({ url, headers });
   agentCache.set(cacheKey, agent);
-  
+
   return { agent, cached: false, cacheKey };
 }
 
@@ -292,7 +292,7 @@ function buildPerRequestHeaders(context) {
   if (context.threadId) {
     headers['x-copilot-thread-id'] = context.threadId;
   }
-  
+
   // Include ALL auth context headers to override cached agent headers
   // This ensures fresh auth context even when agent is reused from cache
   if (context.authContext) {
@@ -308,7 +308,7 @@ function buildPerRequestHeaders(context) {
       teamName: 'x-copilot-team-name',
       sessionId: 'x-copilot-session-id',
     };
-    
+
     Object.entries(authHeaderMapping).forEach(([contextKey, headerName]) => {
       if (context.authContext[contextKey]) {
         headers[headerName] = context.authContext[contextKey];
@@ -325,7 +325,7 @@ function buildPerRequestHeaders(context) {
 
 /**
  * Create the shared CopilotKit runtime with PostgresAgentRunner
- * 
+ *
  * Uses PostgresAgentRunner for persistent storage, horizontal scalability,
  * and crash recovery. Messages are stored in a separate agent_messages table
  * for efficient querying.
@@ -333,7 +333,7 @@ function buildPerRequestHeaders(context) {
 async function createCopilotKitRuntime() {
   const defaultAgentType = await getDefaultAgent();
   const defaultModelType = await getDefaultModel();
-  
+
   // Create default HttpAgent pointing to Python backend
   const defaultAgent = new HttpAgent({
     url: `${PYDANTIC_SERVICE_URL}/agent/${defaultAgentType}/${defaultModelType}`,
@@ -346,7 +346,7 @@ async function createCopilotKitRuntime() {
 
   // Create runner based on configuration
   let runner;
-  
+
   if (USE_SQLITE_RUNNER) {
     // SQLite runner for lightweight persistence
     log('Using SqliteAgentRunner');
@@ -362,8 +362,8 @@ async function createCopilotKitRuntime() {
       cleanupInterval: AGENT_RUNNER_CLEANUP_INTERVAL,
       disableCleanup: AGENT_RUNNER_DISABLE_CLEANUP,
       persistEventsImmediately: true, // Persist events immediately for data durability
-      maxHistoricRuns: parseInt(process.env.AGENT_RUNNER_MAX_HISTORIC_RUNS) || 1000,  // Max runs to load (safety limit, set to 0/null to load all - matches SQLite)
-      debug: DEBUG,         // Verbose logging in development only
+      maxHistoricRuns: parseInt(process.env.AGENT_RUNNER_MAX_HISTORIC_RUNS) || 1000, // Max runs to load (safety limit, set to 0/null to load all - matches SQLite)
+      debug: DEBUG, // Verbose logging in development only
       transformErrors: AGENT_RUNNER_TRANSFORM_ERRORS, // false = filter out error runs, true = transform RUN_ERROR to RUN_FINISHED
     });
 
@@ -380,12 +380,12 @@ async function createCopilotKitRuntime() {
   //   },
   //   runner: new InMemoryAgentRunner(),  // Old: in-memory only
   // });
-  
+
   const runtime = new CopilotRuntime({
     agents: {
       [DEFAULT_AGENT_ID]: defaultAgent,
     },
-    runner,  // PostgreSQL or SQLite backed with persistence
+    runner, // PostgreSQL or SQLite backed with persistence
   });
 
   return { runtime, defaultAgent, defaultAgentType, defaultModelType, runner };
@@ -398,7 +398,7 @@ async function createCopilotKitRuntime() {
 /**
  * Resolve authentication context from request headers
  * Auto-selects organization and team if not set
- * 
+ *
  * Supports two modes:
  * 1. Session-based auth (from cookies) - for frontend requests
  * 2. Header-based auth (from x-copilot-* headers) - for internal agent requests
@@ -409,11 +409,9 @@ async function resolveAuthContext(headers, requestId) {
 
   try {
     // Check if auth context is already in headers (internal agent request)
-    const hasAuthHeaders = 
-      headers['x-copilot-user-id'] && 
-      headers['x-copilot-organization-id'] && 
-      headers['x-copilot-team-id'];
-    
+    const hasAuthHeaders =
+      headers['x-copilot-user-id'] && headers['x-copilot-organization-id'] && headers['x-copilot-team-id'];
+
     if (hasAuthHeaders) {
       // Use existing auth headers (from cached agent)
       authContext.userId = headers['x-copilot-user-id'];
@@ -426,17 +424,17 @@ async function resolveAuthContext(headers, requestId) {
       authContext.teamId = headers['x-copilot-team-id'];
       authContext.teamName = headers['x-copilot-team-name'];
       authContext.sessionId = headers['x-copilot-session-id'];
-      
+
       if (DEBUG) {
         log('[Auth] Using cached auth headers (internal request)', requestId);
       }
-      
+
       return { authContext };
     }
-    
+
     // Get user session from auth (frontend request with cookies)
     const session = await auth.api.getSession({ headers });
-    
+
     if (!session?.user) {
       return { error: 'Authentication required', status: 401 };
     }
@@ -446,7 +444,7 @@ async function resolveAuthContext(headers, requestId) {
     authContext.userEmail = session.user.email;
     authContext.userName = session.user.name || session.user.email;
     authContext.sessionId = session.session?.id || null;
-    
+
     // Query session metadata with organization and team info
     let sessionMeta = null;
     if (session.session?.id) {
@@ -490,33 +488,31 @@ async function resolveAuthContext(headers, requestId) {
     }
 
     if (sessionMeta?.memberRole) {
-      const roles = Array.isArray(sessionMeta.memberRole) 
-        ? sessionMeta.memberRole 
-        : [sessionMeta.memberRole];
+      const roles = Array.isArray(sessionMeta.memberRole) ? sessionMeta.memberRole : [sessionMeta.memberRole];
       authContext.memberRole = roles.filter(Boolean).join(',');
     }
-    
+
     // Auto-select organization if not set
     if (!authContext.organizationId) {
       try {
         const organizations = await auth.api.listOrganizations({ headers });
-        
+
         if (organizations?.length > 0) {
           const firstOrg = organizations[0];
           authContext.organizationId = firstOrg.id;
           authContext.organizationName = firstOrg.name;
           authContext.organizationSlug = firstOrg.slug;
-          
+
           if (DEBUG) {
             log(`[Auth] Auto-selected organization: ${firstOrg.name}`, requestId);
           }
-          
+
           // Persist as active organization
           try {
-            await pool.query(
-              'UPDATE session SET "activeOrganizationId" = $1 WHERE id = $2',
-              [firstOrg.id, session.session.id]
-            );
+            await pool.query('UPDATE session SET "activeOrganizationId" = $1 WHERE id = $2', [
+              firstOrg.id,
+              session.session.id,
+            ]);
           } catch (err) {
             if (DEBUG) {
               log(`[Auth] Could not set active organization: ${err.message}`, requestId);
@@ -529,7 +525,7 @@ async function resolveAuthContext(headers, requestId) {
         }
       }
     }
-    
+
     // Auto-select team if not set
     if (authContext.organizationId && !authContext.teamId) {
       try {
@@ -554,10 +550,10 @@ async function resolveAuthContext(headers, requestId) {
 
           // Persist as active team
           try {
-            await pool.query(
-              'UPDATE session SET "activeTeamId" = $1 WHERE id = $2',
-              [firstTeam.id, session.session.id],
-            );
+            await pool.query('UPDATE session SET "activeTeamId" = $1 WHERE id = $2', [
+              firstTeam.id,
+              session.session.id,
+            ]);
           } catch (err) {
             if (DEBUG) {
               log(`[Auth] Could not set active team: ${err.message}`, requestId);
@@ -609,8 +605,7 @@ const app = express();
     // CopilotKit Runtime Initialization
     // ========================================================================
 
-    const { runtime, defaultAgent, defaultAgentType, defaultModelType, runner } = 
-      await createCopilotKitRuntime();
+    const { runtime, defaultAgent, defaultAgentType, defaultModelType, runner } = await createCopilotKitRuntime();
 
     log('CopilotKit Runtime initialized');
     log(`Default agent: ${defaultAgentType}, Default model: ${defaultModelType}`);
@@ -623,43 +618,48 @@ const app = express();
     const honoApp = new Hono();
 
     // CORS for Hono app - matches Express CORS configuration
-    honoApp.use('*', cors({
-      origin: (origin) => {
-        // Allow requests with no origin (same-origin, Postman, curl)
-        if (!origin) return '*';
-        
-        // Always allow Chrome extensions
-        if (origin.startsWith('chrome-extension://')) return origin;
-        
-        // Allow localhost/127.0.0.1 in development
-        if (origin.startsWith('http://localhost') || 
+    honoApp.use(
+      '*',
+      cors({
+        origin: origin => {
+          // Allow requests with no origin (same-origin, Postman, curl)
+          if (!origin) return '*';
+
+          // Always allow Chrome extensions
+          if (origin.startsWith('chrome-extension://')) return origin;
+
+          // Allow localhost/127.0.0.1 in development
+          if (
+            origin.startsWith('http://localhost') ||
             origin.startsWith('https://localhost') ||
             origin.startsWith('http://127.0.0.1') ||
-            origin.startsWith('https://127.0.0.1')) {
-          return origin;
-        }
-        
-        // In production, return null to reject (or check ALLOWED_ORIGINS)
-        return null;
-      },
-      credentials: true,
-      allowHeaders: [
-        'Content-Type',
-        'Authorization',
-        'Cookie',
-        'x-request-id',
-        'x-copilot-agent-type',
-        'x-copilot-model-type',
-        'x-copilot-thread-id',
-        'x-copilot-session-id',
-        'x-copilot-user-id',
-        'x-copilot-user-email',
-        'x-copilot-organization-id',
-        'x-copilot-team-id',
-      ],
-      exposeHeaders: ['set-cookie', 'x-request-id'],
-      maxAge: 86400, // Cache preflight for 24 hours
-    }));
+            origin.startsWith('https://127.0.0.1')
+          ) {
+            return origin;
+          }
+
+          // In production, return null to reject (or check ALLOWED_ORIGINS)
+          return null;
+        },
+        credentials: true,
+        allowHeaders: [
+          'Content-Type',
+          'Authorization',
+          'Cookie',
+          'x-request-id',
+          'x-copilot-agent-type',
+          'x-copilot-model-type',
+          'x-copilot-thread-id',
+          'x-copilot-session-id',
+          'x-copilot-user-id',
+          'x-copilot-user-email',
+          'x-copilot-organization-id',
+          'x-copilot-team-id',
+        ],
+        exposeHeaders: ['set-cookie', 'x-request-id'],
+        maxAge: 86400, // Cache preflight for 24 hours
+      }),
+    );
 
     // Create CopilotKit endpoint
     const copilotEndpoint = createCopilotEndpoint({
@@ -668,9 +668,9 @@ const app = express();
     });
 
     // Mount CopilotKit endpoint with dynamic routing
-    honoApp.all('/api/copilotkit/*', async (c) => {
+    honoApp.all('/api/copilotkit/*', async c => {
       const requestId = `rt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      
+
       // Convert Hono headers to plain object for auth resolution
       const headersObj = {};
       c.req.raw.headers.forEach((value, key) => {
@@ -698,7 +698,10 @@ const app = express();
 
       // Log request with tracking for suggestion debugging
       log('=== CopilotKit Request ===', requestId);
-      log(`🔍 [RUNTIME] Agent: ${agentType} | Model: ${modelType} | Method: ${c.req.method} | Path: ${c.req.path}`, requestId);
+      log(
+        `🔍 [RUNTIME] Agent: ${agentType} | Model: ${modelType} | Method: ${c.req.method} | Path: ${c.req.path}`,
+        requestId,
+      );
       log(`🔍 [RUNTIME] Session: ${context.authContext.sessionId} | Thread: ${threadId || 'none'}`, requestId);
       if (DEBUG) {
         log(`Auth: org=${context.authContext.organizationId} team=${context.authContext.teamId}`, requestId);
@@ -707,24 +710,21 @@ const app = express();
 
       // Get or create cached agent (no mutex needed - uses per-request agent IDs)
       const { agent: cachedAgent, cached, cacheKey } = getCachedAgent(context);
-      
+
       // Use a unique agent ID for this request to avoid conflicts
       const requestAgentId = `agent_${requestId}`;
-      
-        try {
+
+      try {
         // Register the agent for this request
         runtime.agents[requestAgentId] = cachedAgent;
-        
+
         if (DEBUG) {
           log(`Agent ${cached ? 'reused' : 'created'}: ${cacheKey} -> ${requestAgentId}`, requestId);
         }
 
         // Rewrite the request URL to use our per-request agent ID
         const originalUrl = new URL(c.req.url);
-        const newPath = originalUrl.pathname.replace(
-          /\/agent\/[^/]+\//,
-          `/agent/${requestAgentId}/`
-        );
+        const newPath = originalUrl.pathname.replace(/\/agent\/[^/]+\//, `/agent/${requestAgentId}/`);
         originalUrl.pathname = newPath;
 
         // Create modified request with per-request headers
@@ -742,11 +742,11 @@ const app = express();
           try {
             const rawBody = await c.req.text();
             const bodyJson = JSON.parse(rawBody);
-            
+
             // Filter messages if they exist
             if (bodyJson.messages && Array.isArray(bodyJson.messages)) {
               const originalLength = bodyJson.messages.length;
-              
+
               // Build set of valid tool call IDs
               const validToolCallIds = new Set();
               for (const msg of bodyJson.messages) {
@@ -758,28 +758,32 @@ const app = express();
                   }
                 }
               }
-              
+
               // Filter out orphaned tool returns
               bodyJson.messages = bodyJson.messages.filter(msg => {
                 if (msg.role === 'tool' && msg.toolCallId) {
                   if (!validToolCallIds.has(msg.toolCallId)) {
                     if (DEBUG) {
-                      console.log(`[server.js] Filtering orphaned tool return ${msg.id} with toolCallId ${msg.toolCallId}`);
+                      console.log(
+                        `[server.js] Filtering orphaned tool return ${msg.id} with toolCallId ${msg.toolCallId}`,
+                      );
                     }
                     return false;
                   }
                 }
                 return true;
               });
-              
+
               if (bodyJson.messages.length !== originalLength && DEBUG) {
-                console.log(`[server.js] Filtered ${originalLength - bodyJson.messages.length} orphaned tool returns from request body`);
+                console.log(
+                  `[server.js] Filtered ${originalLength - bodyJson.messages.length} orphaned tool returns from request body`,
+                );
               }
 
               // Reorder messages so each tool result immediately follows its assistant message
               bodyJson.messages = reorderMessages(bodyJson.messages);
             }
-            
+
             // Re-serialize the filtered body
             bodyForRequest = JSON.stringify(bodyJson);
           } catch (err) {
@@ -798,10 +802,10 @@ const app = express();
 
         // Forward to CopilotKit handler
         return await copilotEndpoint.fetch(modifiedRequest);
-        } finally {
+      } finally {
         // Clean up per-request agent registration
         delete runtime.agents[requestAgentId];
-        }
+      }
     });
 
     // ========================================================================
@@ -834,7 +838,7 @@ const app = express();
 
     app.all('/api/copilotkit/*', async (req, res) => {
       const requestId = res.locals.reqId || `bridge_${Date.now()}`;
-      
+
       try {
         // Convert Express request to Fetch Request for Hono
         const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
@@ -868,24 +872,24 @@ const app = express();
         response.headers.forEach((value, key) => {
           // Skip content-encoding as Express handles this
           if (key.toLowerCase() !== 'content-encoding') {
-          res.setHeader(key, value);
+            res.setHeader(key, value);
           }
         });
 
         // Handle streaming response with proper error handling
         if (response.body) {
           const reader = response.body.getReader();
-          
+
           // Handle client disconnect
           req.on('close', () => {
             reader.cancel().catch(() => {});
           });
-          
+
           try {
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
-              
+
               // Check if client is still connected before writing
               if (!res.writableEnded) {
                 res.write(value);
@@ -912,11 +916,11 @@ const app = express();
         if (DEBUG && error.stack) {
           log(`Stack: ${error.stack}`, requestId);
         }
-        
+
         if (!res.headersSent) {
-          res.status(500).json({ 
+          res.status(500).json({
             error: 'Internal server error',
-            requestId 
+            requestId,
           });
         }
       }
@@ -946,18 +950,18 @@ const app = express();
     app.delete('/api/messages/:threadId/:messageId', async (req, res) => {
       try {
         const { threadId, messageId } = req.params;
-        
+
         if (!threadId || !messageId) {
           return res.status(400).json({ error: 'Thread ID and Message ID are required' });
         }
-        
+
         // Only PostgresAgentRunner supports deletion
         if (USE_SQLITE_RUNNER || !runner || typeof runner.deleteMessage !== 'function') {
           return res.status(501).json({ error: 'Message deletion not supported with current runner' });
         }
-        
+
         await runner.deleteMessage(threadId, messageId);
-        
+
         res.json({ success: true, messageId });
       } catch (error) {
         log(`Error deleting message: ${error.message}`, res.locals.reqId);
@@ -972,18 +976,18 @@ const app = express();
     app.delete('/api/messages/:threadId', async (req, res) => {
       try {
         const { threadId } = req.params;
-        
+
         if (!threadId) {
           return res.status(400).json({ error: 'Thread ID is required' });
         }
-        
+
         // Only PostgresAgentRunner supports deletion
         if (USE_SQLITE_RUNNER || !runner || typeof runner.deleteAllMessages !== 'function') {
           return res.status(501).json({ error: 'Message deletion not supported with current runner' });
         }
-        
+
         await runner.deleteAllMessages(threadId);
-        
+
         res.json({ success: true, threadId });
       } catch (error) {
         log(`Error deleting all messages: ${error.message}`, res.locals.reqId);
@@ -999,22 +1003,22 @@ const app = express();
       try {
         const { threadId } = req.params;
         const { messageIds } = req.body;
-        
+
         if (!threadId) {
           return res.status(400).json({ error: 'Thread ID is required' });
         }
-        
+
         if (!Array.isArray(messageIds) || messageIds.length === 0) {
           return res.status(400).json({ error: 'messageIds must be a non-empty array' });
         }
-        
+
         // Only PostgresAgentRunner supports deletion
         if (USE_SQLITE_RUNNER || !runner || typeof runner.deleteMessages !== 'function') {
           return res.status(501).json({ error: 'Message deletion not supported with current runner' });
         }
-        
+
         await runner.deleteMessages(threadId, messageIds);
-        
+
         res.json({ success: true, deletedCount: messageIds.length });
       } catch (error) {
         log(`Error bulk deleting messages: ${error.message}`, res.locals.reqId);
@@ -1084,6 +1088,8 @@ const app = express();
           limit: 500,
         });
 
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
         res.json({ threads });
       } catch (error) {
         log(`Error listing threads: ${error.message}`, res.locals.reqId);
@@ -1098,23 +1104,26 @@ const app = express();
      */
     app.delete('/api/threads/:threadId', async (req, res) => {
       try {
+        const session = await ensureAuthenticated(req, res);
+        if (!session) return;
+
         const { threadId } = req.params;
-        
+
         if (!threadId) {
           return res.status(400).json({ error: 'Thread ID is required' });
         }
-        
+
         // Only PostgresAgentRunner supports thread deletion
         if (USE_SQLITE_RUNNER || !runner || typeof runner.deleteThread !== 'function') {
           return res.status(501).json({ error: 'Thread deletion not supported with current runner' });
         }
-        
-        const deleted = await runner.deleteThread(threadId);
-        
+
+        const deleted = await runner.deleteThread(threadId, session.user.id);
+
         if (!deleted) {
           return res.status(404).json({ error: 'Thread not found' });
         }
-        
+
         res.json({ success: true, threadId });
       } catch (error) {
         log(`Error deleting thread: ${error.message}`, res.locals.reqId);
@@ -1173,7 +1182,11 @@ const app = express();
 
         const excludeRootBool = excludeRoot === 'true' || excludeRoot === '1';
         const result = await runner.getHistoryEventsBefore(
-          threadId, beforeRunId || '', beforeMsgId, limitNum, excludeRootBool
+          threadId,
+          beforeRunId || '',
+          beforeMsgId,
+          limitNum,
+          excludeRootBool,
         );
 
         res.json({
@@ -1194,50 +1207,45 @@ const app = express();
      * GET /api/runs/:runId/tool-result/:toolCallId
      * Get the full untruncated content of a tool call result or args
      * Used by the frontend to lazy-load truncated tool results
-     * 
+     *
      * Query params:
      * - eventType: 'TOOL_CALL_RESULT' or 'TOOL_CALL_ARGS' (required)
-     * 
+     *
      * Returns: { content: string | object, found: boolean }
      */
     app.get('/api/runs/:runId/tool-result/:toolCallId', async (req, res) => {
       try {
         const { runId, toolCallId } = req.params;
         const { eventType } = req.query;
-        
+
         if (!runId || !toolCallId) {
           return res.status(400).json({ error: 'Run ID and Tool Call ID are required' });
         }
-        
+
         if (!eventType || (eventType !== 'TOOL_CALL_RESULT' && eventType !== 'TOOL_CALL_ARGS')) {
           return res.status(400).json({ error: 'Event type must be TOOL_CALL_RESULT or TOOL_CALL_ARGS' });
         }
-        
+
         // Query the database for the run's events
         const pool = getPool();
-        const result = await pool.query(
-          `SELECT events FROM agent_runs WHERE run_id = $1`,
-          [runId]
-        );
-        
+        const result = await pool.query(`SELECT events FROM agent_runs WHERE run_id = $1`, [runId]);
+
         if (result.rows.length === 0) {
           return res.status(404).json({ error: 'Run not found', found: false });
         }
-        
+
         const events = result.rows[0].events || [];
-        
+
         // Find the event with the matching toolCallId and eventType
-        const targetEvent = events.find(event => 
-          event.toolCallId === toolCallId && event.type === eventType
-        );
-        
+        const targetEvent = events.find(event => event.toolCallId === toolCallId && event.type === eventType);
+
         if (!targetEvent) {
-          return res.status(404).json({ 
+          return res.status(404).json({
             error: `${eventType} event with toolCallId ${toolCallId} not found in run ${runId}`,
-            found: false 
+            found: false,
           });
         }
-        
+
         // Extract content based on event type
         let content = null;
         if (eventType === 'TOOL_CALL_RESULT') {
@@ -1247,23 +1255,22 @@ const app = express();
           // For TOOL_CALL_ARGS, check args field first, then delta field
           content = targetEvent.args !== undefined ? targetEvent.args : targetEvent.delta;
         }
-        
+
         if (content === null || content === undefined) {
-          return res.status(404).json({ 
+          return res.status(404).json({
             error: `No content found in ${eventType} event`,
-            found: false 
+            found: false,
           });
         }
-        
+
         // Return the full untruncated content
-        res.json({ 
+        res.json({
           content,
           found: true,
           eventType,
           toolCallId,
-          runId
+          runId,
         });
-        
       } catch (error) {
         log(`Error fetching tool result: ${error.message}`, res.locals.reqId);
         res.status(500).json({ error: 'Failed to fetch tool result', message: error.message });
@@ -1284,13 +1291,13 @@ const app = express();
     // ========================================================================
     // Workspace Endpoints (Personal Resources)
     // ========================================================================
-    
+
     app.use('/api/workspace', express.json({ limit: `${BODY_LIMIT_MB}mb` }), workspaceRouter);
-    
+
     // ========================================================================
     // OAuth Endpoints (Personal Connections)
     // ========================================================================
-    
+
     app.use('/api/oauth', oauthRouter);
 
     // ========================================================================
@@ -1351,7 +1358,7 @@ const app = express();
     const shutdown = async () => {
       log('');
       log('Shutting down gracefully...');
-      
+
       // Shutdown PostgresAgentRunner
       if (runner) {
         log('Shutting down PostgresAgentRunner...');
@@ -1362,12 +1369,12 @@ const app = express();
           log(`Error shutting down runner: ${error.message}`);
         }
       }
-      
+
       server.close(() => {
         log('Server closed. Goodbye!');
         process.exit(0);
       });
-      
+
       // Force exit after 10 seconds if graceful shutdown hangs
       setTimeout(() => {
         log('Forcefully shutting down...');
@@ -1379,7 +1386,7 @@ const app = express();
     process.on('SIGTERM', shutdown);
 
     // Handle unhandled errors gracefully to prevent crashes
-    process.on('uncaughtException', (error) => {
+    process.on('uncaughtException', error => {
       console.error('═══════════════════════════════════════════════════════════════════');
       console.error('Uncaught Exception - Server will continue running');
       console.error('═══════════════════════════════════════════════════════════════════');
@@ -1398,7 +1405,6 @@ const app = express();
       console.error('═══════════════════════════════════════════════════════════════════');
       // Don't exit - let server continue
     });
-
   } catch (error) {
     console.error('═══════════════════════════════════════════════════════════════════');
     console.error('Failed to initialize server');

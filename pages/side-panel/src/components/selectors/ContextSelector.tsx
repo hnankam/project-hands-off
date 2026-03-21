@@ -9,6 +9,7 @@
  * Displays indexed pages with metadata and browser tabs with embed capability.
  */
 
+import { FEATURES } from '@extension/platform';
 import { embeddingsStorage, debug } from '@extension/shared';
 import { cn } from '@extension/ui';
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
@@ -132,6 +133,8 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   onNotesWithContentChange,
   onCredentialsWithMetadataChange, // ✅ SECURITY: Changed from onCredentialsWithSecretsChange
 }) => {
+  const allowBrowserTabs = showBrowserTabs && FEATURES.browserTabs();
+
   // ============================================================================
   // STATE - Existing
   // ============================================================================
@@ -167,10 +170,13 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // Debug: Wrap onPagesChange to log all calls (using ref to avoid initialization issues)
   const selectedPageURLsRef = useRef(selectedPageURLs);
   selectedPageURLsRef.current = selectedPageURLs;
-  
-  const wrappedOnPagesChange = useCallback((newSelection: string[]) => {
-    onPagesChange(newSelection);
-  }, [onPagesChange]);
+
+  const wrappedOnPagesChange = useCallback(
+    (newSelection: string[]) => {
+      onPagesChange(newSelection);
+    },
+    [onPagesChange],
+  );
 
   // Embedding state
   const [embeddingTabs, setEmbeddingTabs] = useState<Set<number>>(new Set());
@@ -263,7 +269,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // ============================================================================
 
   const fetchBrowserTabs = useCallback(async () => {
-    if (!showBrowserTabs) return;
+    if (!allowBrowserTabs) return;
 
     setLoadingTabs(true);
     try {
@@ -363,7 +369,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
     } finally {
       setLoadingTabs(false);
     }
-  }, [showBrowserTabs]);
+  }, [allowBrowserTabs]);
 
   // ============================================================================
   // DATA FETCHING - Workspace Items
@@ -416,14 +422,18 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // INITIAL FETCH & REFRESH
   // ============================================================================
 
+  // Prefetch indexed pages + workspace when the chat session is ready (web + extension).
+  // Workspace was previously only loaded when the dropdown opened, so the trigger stayed empty until click.
   useEffect(() => {
-    fetchPages();
-  }, []);
+    if (isLoadingSession) return;
+    void fetchPages();
+    void fetchWorkspaceItems();
+  }, [isLoadingSession, sessionId, fetchPages, fetchWorkspaceItems]);
 
   useEffect(() => {
     if (isOpen) {
       fetchPages();
-      if (showBrowserTabs) {
+      if (allowBrowserTabs) {
         fetchBrowserTabs();
       }
       fetchWorkspaceItems();
@@ -433,7 +443,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
     } else {
       setSearchQuery('');
     }
-  }, [isOpen, fetchPages, fetchBrowserTabs, showBrowserTabs, fetchWorkspaceItems]);
+  }, [isOpen, fetchPages, fetchBrowserTabs, allowBrowserTabs, fetchWorkspaceItems]);
 
   // ============================================================================
   // DROPDOWN POSITION
@@ -1384,7 +1394,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
             </div>
 
             {/* View Mode Tabs */}
-            {(showBrowserTabs || onNotesChange || onCredentialsChange) && (
+            {(allowBrowserTabs || onNotesChange || onCredentialsChange) && (
               <div
                 className={cn(
                   'flex items-center justify-center gap-1 border-b px-2 py-1.5',
@@ -1394,7 +1404,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                   'all',
                   ...(onNotesChange || onCredentialsChange ? ['workspace'] : []),
                   'indexed',
-                  ...(showBrowserTabs ? ['tabs'] : []),
+                  ...(allowBrowserTabs ? ['tabs'] : []),
                 ].map(mode => (
                   <button
                     key={mode}
@@ -1420,7 +1430,13 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
             )}
 
             {/* Content */}
-            <div className="min-h-[200px] flex-1 overflow-y-auto">
+            <div
+              className="recent-sessions-scroll min-h-[200px] flex-1 overflow-y-auto overscroll-contain"
+              style={
+                {
+                  '--table-scroll-bg': isLight ? '#f9fafb' : '#151C24',
+                } as React.CSSProperties
+              }>
               {loading && loadingTabs ? (
                 <div className="flex items-center justify-center py-6">
                   <div className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>Loading...</div>
@@ -1498,7 +1514,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                           {filteredPages.length > 0 && (
                             <button
                               type="button"
-                              onClick={(e) => {
+                              onClick={e => {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 handleSelectAllIndexed();
@@ -1616,7 +1632,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                             <button
                               type="button"
                               key={page.pageURL}
-                              onClick={(e) => {
+                              onClick={e => {
                                 if (!isDeleting) {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -1791,7 +1807,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                   )}
 
                   {/* BROWSER TABS SECTION */}
-                  {showBrowserTabs && (viewMode === 'all' || viewMode === 'tabs') && (
+                  {allowBrowserTabs && (viewMode === 'all' || viewMode === 'tabs') && (
                     <>
                       {/* Section Header */}
                       <div
@@ -2052,7 +2068,9 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                                     onClick={handleSelectAllNotes}
                                     className={cn(
                                       'flex items-center gap-1 text-[10px] font-medium transition-colors',
-                                      isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300',
+                                      isLight
+                                        ? 'text-blue-600 hover:text-blue-700'
+                                        : 'text-blue-400 hover:text-blue-300',
                                     )}>
                                     <div
                                       className={cn(
@@ -2164,7 +2182,9 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                                     onClick={handleSelectAllCredentials}
                                     className={cn(
                                       'flex items-center gap-1 text-[10px] font-medium transition-colors',
-                                      isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300',
+                                      isLight
+                                        ? 'text-blue-600 hover:text-blue-700'
+                                        : 'text-blue-400 hover:text-blue-300',
                                     )}>
                                     <div
                                       className={cn(
@@ -2375,7 +2395,7 @@ const TabItem: React.FC<TabItemProps> = ({
   return (
     <button
       type="button"
-      onClick={(e) => {
+      onClick={e => {
         e.stopPropagation();
         handleClick(e);
       }}

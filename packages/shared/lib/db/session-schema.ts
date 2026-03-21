@@ -1,6 +1,6 @@
 /**
  * SurrealDB Schema for Session Storage
- * 
+ *
  * Separates session metadata from message data to avoid massive writes
  * on simple operations like switching active sessions.
  */
@@ -82,7 +82,7 @@ export interface SessionMetadata {
   selectedNoteIds?: string[]; // Selected workspace note IDs
   selectedCredentialIds?: string[]; // Selected workspace credential IDs
   configPanelOpen?: boolean; // Config panel (plans/graphs/context) visibility
-  configPanelTab?: 'context' | 'plans' | 'graphs' | 'sub-agents'; // Active tab when panel was open
+  configPanelTab?: 'context' | 'plans' | 'graphs' | 'preview' | 'sub-agents'; // Active tab when panel was open
 }
 
 export interface SessionUsageLastRecord {
@@ -173,7 +173,7 @@ export interface PlanInstance {
 /**
  * Unified agent state - flat structure with multi-instance support.
  * Matches backend AgentState model exactly.
- * 
+ *
  * Multiple plans and graphs can be active simultaneously.
  * Each instance is self-contained with its own name, status, and metadata.
  */
@@ -186,4 +186,3 @@ export interface SessionAgentState {
   /** Session-level deferred tool requests */
   deferred_tool_requests?: unknown;
 }
-

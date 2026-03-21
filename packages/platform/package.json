@@ -1,0 +1,27 @@
+{
+  "name": "@extension/platform",
+  "version": "0.5.0",
+  "description": "Extension vs web platform detection and feature flags",
+  "type": "module",
+  "private": true,
+  "sideEffects": false,
+  "files": [
+    "dist/**"
+  ],
+  "types": "index.mts",
+  "main": "dist/index.mjs",
+  "scripts": {
+    "clean:bundle": "rimraf dist",
+    "clean:node_modules": "pnpx rimraf node_modules",
+    "clean:turbo": "rimraf .turbo",
+    "clean": "pnpm clean:bundle && pnpm clean:node_modules && pnpm clean:turbo",
+    "ready": "tsc -b",
+    "postinstall": "pnpm ready",
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@extension/tsconfig": "workspace:*",
+    "@types/chrome": "^0.0.323"
+  }
+}

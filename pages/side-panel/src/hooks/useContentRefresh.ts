@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { FEATURES } from '@extension/platform';
 import { debug } from '@extension/shared';
 
 interface UseContentRefreshProps {
@@ -27,18 +28,20 @@ export const useContentRefresh = ({
   fetchFreshPageContent,
   setIsPanelInteractive,
   isPanelInteractive,
-  currentTabId
+  currentTabId,
 }: UseContentRefreshProps) => {
-  
   /**
    * Query current tab via extension messaging.
    * Returns tab ID and title, or null values if unavailable.
    */
   const getCurrentTab = useCallback(async (): Promise<{ tabId: number | null; title: string | null }> => {
+    if (!FEATURES.browserTabs()) {
+      return { tabId: null, title: null };
+    }
     try {
-      const response = await new Promise<any>((resolve) => {
+      const response = await new Promise<any>(resolve => {
         try {
-          chrome.runtime.sendMessage({ type: 'getCurrentTab' }, (res) => resolve(res));
+          chrome.runtime.sendMessage({ type: 'getCurrentTab' }, res => resolve(res));
         } catch (err) {
           debug.warn('[useContentRefresh] sendMessage failed:', err);
           resolve(null);
@@ -60,18 +63,23 @@ export const useContentRefresh = ({
    */
   const triggerManualRefresh = useCallback(async () => {
     debug.log('[useContentRefresh] Manual refresh requested');
-    
+
+    if (!FEATURES.browserTabs()) {
+      debug.log('[useContentRefresh] Skipping refresh (not in extension)');
+      return;
+    }
+
     // Mark panel as interactive if needed
     if (setIsPanelInteractive && !isPanelInteractive) {
       setIsPanelInteractive(true);
       debug.log('[useContentRefresh] Marking panel as interactive');
     }
-    
+
     // Get the tab to refresh - prefer the tracked currentTabId, fallback to querying
     try {
       let tabId: number | null = null;
       let title: string | null = null;
-      
+
       if (currentTabId != null) {
         // Use the tracked tab ID (doesn't change when agent opens new tabs)
         tabId = currentTabId;
@@ -84,17 +92,17 @@ export const useContentRefresh = ({
         title = result.title;
         debug.log('[useContentRefresh] Queried for active tab:', tabId, title);
       }
-      
+
       if (tabId != null) {
         // Update tab state
         const safeTitle = title || '';
         setCurrentTabId(tabId);
         setCurrentTabTitle(safeTitle);
         setTabTitleVersion?.(prev => prev + 1); // Force UI update (if provided)
-        
+
         // Clear cache to force fresh fetch
         contentCacheRef.current.delete(String(tabId));
-        
+
         // Fetch fresh content immediately (no delay!)
         await fetchFreshPageContent(true, tabId);
       } else {
@@ -113,11 +121,10 @@ export const useContentRefresh = ({
     setIsPanelInteractive,
     isPanelInteractive,
     currentTabId,
-    getCurrentTab
+    getCurrentTab,
   ]);
-  
+
   return {
-    triggerManualRefresh
+    triggerManualRefresh,
   };
 };
-

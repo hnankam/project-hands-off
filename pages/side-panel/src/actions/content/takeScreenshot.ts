@@ -1,7 +1,8 @@
 import { debug as baseDebug } from '@extension/shared';
-import { COPIOLITKIT_CONFIG, API_CONFIG} from '../../constants';
+import { COPIOLITKIT_CONFIG, API_CONFIG } from '../../constants';
 import { ensureFirebase, uploadDataUrlToStorage, type FirebaseConfig } from '../../utils/firebaseStorage';
 import { authClient } from '../../lib/auth-client';
+import { assertExtensionContext } from '@src/utils/extensionOnly';
 
 // ============================================================================
 // DEBUG UTILITIES
@@ -119,10 +120,7 @@ function getBase64SizeKB(dataUrl: string): number {
  * Downscale and compress a data URL to meet size/dimension targets.
  * Prefers JPEG for large payloads to avoid bloat.
  */
-async function optimizeDataUrl(
-  dataUrl: string,
-  options: OptimizeOptions
-): Promise<OptimizeResult> {
+async function optimizeDataUrl(dataUrl: string, options: OptimizeOptions): Promise<OptimizeResult> {
   const { targetFormat, maxDimension, maxKB, startQuality, minQuality } = options;
 
   // Load image
@@ -142,7 +140,7 @@ async function optimizeDataUrl(
   // Create canvas for optimization
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
-  
+
   if (!ctx) {
     // Fallback: return original if canvas not available
     return {
@@ -163,9 +161,7 @@ async function optimizeDataUrl(
     canvas.height = outH;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, outW, outH);
-    return outputFormat === 'jpeg'
-      ? canvas.toDataURL('image/jpeg', quality)
-      : canvas.toDataURL('image/png');
+    return outputFormat === 'jpeg' ? canvas.toDataURL('image/jpeg', quality) : canvas.toDataURL('image/png');
   };
 
   let optimized = encode();
@@ -215,38 +211,38 @@ async function optimizeDataUrl(
  */
 async function uploadAndBuildManifest(
   optimized: OptimizeResult,
-  userId?: string
+  userId?: string,
 ): Promise<{ hostedUrl?: string; attachmentJson: string }> {
   let hostedUrl: string | undefined;
-  
+
   try {
     const firebaseConfig = COPIOLITKIT_CONFIG.FIREBASE;
-    
+
     if (COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS && firebaseConfig?.storageBucket) {
       // Require authentication for screenshot uploads
       if (!userId) {
         debug.warn('[Screenshot] User not authenticated, skipping upload');
         return { hostedUrl, attachmentJson: '' };
       }
-      
+
       const storage = ensureFirebase(firebaseConfig as FirebaseConfig);
       const ext = optimized.outputFormat === 'jpeg' ? 'jpg' : 'png';
       const timestamp = Date.now();
       const filename = `${timestamp}-${Math.random().toString(36).slice(2)}.${ext}`;
-      
+
       // Always store in user's workspace/screenshots folder
       const path = `workspace/${userId}/screenshots/${filename}`;
-      
+
       const contentType = optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png';
-      
+
       hostedUrl = await uploadDataUrlToStorage(
         storage,
         path,
         optimized.dataUrl,
         contentType,
-        firebaseConfig as FirebaseConfig
+        firebaseConfig as FirebaseConfig,
       );
-      
+
       // Register screenshot in workspace if userId is available and upload succeeded
       if (hostedUrl && userId) {
         try {
@@ -287,12 +283,14 @@ async function uploadAndBuildManifest(
   // Build attachment JSON in new format expected by backend
   // Format: {"text": "message", "attachments": [...]}
   const attachmentJson = hostedUrl
-    ? buildAttachmentJson([{
-        name: `screenshot.${optimized.outputFormat === 'jpeg' ? 'jpg' : 'png'}`,
-        type: optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
-        size: Math.round(optimized.sizeKB * 1024),
-        url: hostedUrl,
-      }])
+    ? buildAttachmentJson([
+        {
+          name: `screenshot.${optimized.outputFormat === 'jpeg' ? 'jpg' : 'png'}`,
+          type: optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
+          size: Math.round(optimized.sizeKB * 1024),
+          url: hostedUrl,
+        },
+      ])
     : '';
 
   return { hostedUrl, attachmentJson };
@@ -305,13 +303,13 @@ async function uploadAndBuildManifest(
 function buildAttachmentJson(items: AttachmentManifestItem[]): string {
   // Note: Backend normalizes both 'filename' and 'name', 'mimeType' and 'type'
   return JSON.stringify({
-    text: '',  // Empty text, the base message is separate
+    text: '', // Empty text, the base message is separate
     attachments: items.map(item => ({
       url: item.url,
-      filename: item.name,  // Backend normalizes to 'name'
-      mimeType: item.type,  // Backend normalizes to 'type'
+      filename: item.name, // Backend normalizes to 'name'
+      mimeType: item.type, // Backend normalizes to 'type'
       size: item.size,
-    }))
+    })),
   });
 }
 
@@ -350,15 +348,15 @@ function getOptimizeOptions(format: 'png' | 'jpeg', quality: number): OptimizeOp
 
 /**
  * Take a screenshot of the current tab's visible viewport.
- * 
+ *
  * Note: Full page screenshots are not currently supported due to Chrome API limitations.
  * The `captureFullPage` parameter is reserved for future implementation.
- * 
+ *
  * @param captureFullPage - Reserved for future use (currently captures viewport only)
  * @param format - Image format: 'png' or 'jpeg' (default: 'jpeg' for smaller file size)
  * @param quality - JPEG quality 0-100, only applies if format is 'jpeg' (default: 25)
  * @returns Promise with status and screenshot info
- * 
+ *
  * @example
  * ```ts
  * const result = await handleTakeScreenshot(false, 'jpeg', 50);
@@ -370,9 +368,10 @@ function getOptimizeOptions(format: 'png' | 'jpeg', quality: number): OptimizeOp
 export async function handleTakeScreenshot(
   captureFullPage: boolean = false,
   format: 'png' | 'jpeg' = 'jpeg',
-  quality: number = 25
+  quality: number = 25,
 ): Promise<TakeScreenshotResult> {
   try {
+    assertExtensionContext('Take screenshot');
     debug.log('[Screenshot] Taking screenshot:', { captureFullPage, format, quality });
 
     // Get the current user session for workspace integration
@@ -390,7 +389,7 @@ export async function handleTakeScreenshot(
     // Get the current active tab
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     const tab = tabs[0];
-    
+
     if (!tab?.id || !tab?.windowId) {
       return {
         status: 'error',
@@ -426,7 +425,7 @@ export async function handleTakeScreenshot(
     let message: string;
     if (attachmentJson) {
       const jsonData = JSON.parse(attachmentJson);
-      jsonData.text = baseMessage;  // Add the base message to the JSON
+      jsonData.text = baseMessage; // Add the base message to the JSON
       message = JSON.stringify(jsonData);
     } else {
       message = baseMessage;
@@ -451,7 +450,7 @@ export async function handleTakeScreenshot(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     debug.error('[Screenshot] Error taking screenshot:', errorMessage);
-    
+
     return {
       status: 'error',
       message: `Error: ${errorMessage}`,

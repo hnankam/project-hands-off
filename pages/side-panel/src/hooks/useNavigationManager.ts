@@ -1,6 +1,6 @@
 /**
  * Navigation Manager Hook
- * 
+ *
  * Consolidates all navigation-related logic including:
  * - Page navigation (home, sessions, admin)
  * - URL hash synchronization
@@ -10,13 +10,23 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { debug } from '@extension/shared';
+import { lastVisitedPageStorage } from '@extension/storage';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
 export type PageType = 'home' | 'sessions' | 'admin';
-export type AdminTab = 'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'tools' | 'skills' | 'agents' | 'usage';
+export type AdminTab =
+  | 'organizations'
+  | 'teams'
+  | 'users'
+  | 'providers'
+  | 'models'
+  | 'tools'
+  | 'skills'
+  | 'agents'
+  | 'usage';
 
 export type OAuthProvider = 'google' | 'microsoft' | 'github';
 
@@ -47,19 +57,20 @@ export interface NavigationActions {
 /** Valid page types for navigation and storage */
 const VALID_PAGES: readonly PageType[] = ['home', 'sessions', 'admin'] as const;
 
-/** Storage key for persisting last visited page */
-const LAST_VISITED_PAGE_KEY = 'lastVisitedPage';
-
 /** Hash route patterns for page matching */
 const HASH_ROUTES = {
   HOME: '#/home',
   SESSIONS: '#/sessions',
   ADMIN: '#/admin',
+  LOGIN: '#/login',
   INVITATION: '#/accept-invitation/',
   RESET_PASSWORD: '#/reset-password',
   OAUTH: '#/oauth/',
   SSO: '#/sso',
 } as const;
+
+/** Canonical URL when the sign-in UI is shown (hash-based routing; pathname should stay `/` on web). */
+export const LOGIN_HASH_ROUTE = HASH_ROUTES.LOGIN;
 
 /** Valid OAuth providers */
 const VALID_OAUTH_PROVIDERS: readonly OAuthProvider[] = ['google', 'microsoft', 'github'] as const;
@@ -81,10 +92,15 @@ function matchesRoute(hash: string, route: string): boolean {
  * Returns null if no valid page route is found.
  */
 function getPageFromHash(hash: string): PageType | null {
+  if (matchesRoute(hash, HASH_ROUTES.LOGIN)) return null;
   if (matchesRoute(hash, HASH_ROUTES.ADMIN)) return 'admin';
   if (matchesRoute(hash, HASH_ROUTES.SESSIONS)) return 'sessions';
   if (matchesRoute(hash, HASH_ROUTES.HOME)) return 'home';
   return null;
+}
+
+function isLoginHash(hash: string): boolean {
+  return hash === HASH_ROUTES.LOGIN || hash.startsWith(`${HASH_ROUTES.LOGIN}?`);
 }
 
 /**
@@ -110,12 +126,12 @@ function getResetPasswordToken(): string | null {
   const urlParams = new URLSearchParams(window.location.search);
   const queryToken = urlParams.get('token');
   if (queryToken) return queryToken;
-  
+
   // Check hash-based route (for in-app navigation)
   const hash = window.location.hash;
   const tokenMatch = hash.match(/reset-password\?token=([a-zA-Z0-9_-]+)/);
   if (tokenMatch) return tokenMatch[1];
-  
+
   return null;
 }
 
@@ -125,19 +141,19 @@ function getResetPasswordToken(): string | null {
 
 /**
  * Navigation Manager Hook
- * 
+ *
  * Manages application navigation state, URL hash synchronization,
- * and persistence of navigation state to chrome.storage.
- * 
+ * and persistence via @extension/storage (chrome.storage or localStorage on web).
+ *
  * Features:
  * - Page navigation with hash synchronization
  * - Automatic restoration of last visited page
  * - Hash change listening and routing
  * - Invitation flow support
- * - State persistence to chrome.storage.local
- * 
+ * - State persistence (extension or web storage)
+ *
  * @returns Navigation state and actions
- * 
+ *
  * @example
  * ```tsx
  * const {
@@ -146,7 +162,7 @@ function getResetPasswordToken(): string | null {
  *   navigateToSessions,
  *   navigateToAdmin
  * } = useNavigationManager();
- * 
+ *
  * // Navigate to admin panel
  * navigateToAdmin('teams');
  * ```
@@ -163,7 +179,7 @@ export function useNavigationManager(): NavigationState & NavigationActions {
   const [oauthProvider, setOAuthProvider] = useState<OAuthProvider | null>(null);
   const [ssoEmail, setSSOEmail] = useState<string | null>(null);
   const [isPageRestored, setIsPageRestored] = useState(false);
-  
+
   // ============================================================================
   // NAVIGATION HANDLERS
   // ============================================================================
@@ -173,20 +189,20 @@ export function useNavigationManager(): NavigationState & NavigationActions {
     setActivePage('home');
     window.location.hash = HASH_ROUTES.HOME;
   }, []);
-  
+
   const navigateToSessions = useCallback(() => {
     debug.log('[NavigationManager] Navigating to sessions');
     setActivePage('sessions');
     window.location.hash = HASH_ROUTES.SESSIONS;
   }, []);
-  
+
   const navigateToAdmin = useCallback((tab: AdminTab = 'organizations') => {
     debug.log('[NavigationManager] Navigating to admin:', tab);
     setAdminInitialTab(tab);
     setActivePage('admin');
     window.location.hash = HASH_ROUTES.ADMIN;
   }, []);
-  
+
   // ============================================================================
   // EFFECTS
   // ============================================================================
@@ -196,7 +212,7 @@ export function useNavigationManager(): NavigationState & NavigationActions {
     const restoreLastPage = async () => {
       try {
         const hash = window.location.hash;
-        
+
         // Check for reset password token first (can come from query string or hash)
         const token = getResetPasswordToken();
         if (token) {
@@ -205,18 +221,17 @@ export function useNavigationManager(): NavigationState & NavigationActions {
           setIsPageRestored(true);
           return;
         }
-        
+
         // If there's already a hash route, let the hash checker handle it
         if (hash && (getPageFromHash(hash) || hasInvitationRoute(hash) || hasResetPasswordRoute(hash))) {
           debug.log('[NavigationManager] Hash route detected, skipping restoration:', hash);
           setIsPageRestored(true);
           return;
         }
-        
+
         // Otherwise, restore from storage
-        const result = await chrome.storage.local.get([LAST_VISITED_PAGE_KEY]);
-        const storedPage = result[LAST_VISITED_PAGE_KEY];
-        
+        const storedPage = await lastVisitedPageStorage.get();
+
         if (storedPage && VALID_PAGES.includes(storedPage as PageType)) {
           debug.log('[NavigationManager] Restoring last visited page:', storedPage);
           setActivePage(storedPage as PageType);
@@ -229,29 +244,29 @@ export function useNavigationManager(): NavigationState & NavigationActions {
         setIsPageRestored(true);
       }
     };
-    
+
     restoreLastPage();
   }, []);
-  
+
   // Save current page to storage whenever it changes
   useEffect(() => {
     if (!isPageRestored) return; // Don't save during initial restoration
-    
+
     debug.log('[NavigationManager] Saving last visited page:', activePage);
-    chrome.storage.local.set({ [LAST_VISITED_PAGE_KEY]: activePage }).catch((error) => {
+    void lastVisitedPageStorage.set(activePage).catch((error: unknown) => {
       debug.error('[NavigationManager] Failed to save last page:', error);
     });
   }, [activePage, isPageRestored]);
-  
+
   // Handle URL hash changes and routing
   useEffect(() => {
     if (!isPageRestored) return; // Wait for page restoration before checking hash
-    
+
     const checkHash = () => {
       const hash = window.location.hash;
-      
+
       debug.log('[NavigationManager] Checking hash:', hash);
-      
+
       // Check for SSO route first (#/sso?email=...)
       if (hash.startsWith(HASH_ROUTES.SSO)) {
         const urlParams = new URLSearchParams(hash.split('?')[1] || '');
@@ -262,7 +277,7 @@ export function useNavigationManager(): NavigationState & NavigationActions {
           return;
         }
       }
-      
+
       // Check for OAuth route (#/oauth/{provider})
       const oauthMatch = hash.match(/oauth\/(google|microsoft|github)/);
       if (oauthMatch) {
@@ -273,7 +288,7 @@ export function useNavigationManager(): NavigationState & NavigationActions {
           return;
         }
       }
-      
+
       // Check for reset password token
       const token = getResetPasswordToken();
       if (token) {
@@ -281,7 +296,12 @@ export function useNavigationManager(): NavigationState & NavigationActions {
         setResetPasswordToken(token);
         return;
       }
-      
+
+      // Sign-in screen hash — no in-app page mapping
+      if (isLoginHash(hash)) {
+        return;
+      }
+
       // Check for #/accept-invitation/{invitationId}
       const invitationMatch = hash.match(/accept-invitation\/([a-zA-Z0-9_-]+)/);
       if (invitationMatch) {
@@ -289,7 +309,7 @@ export function useNavigationManager(): NavigationState & NavigationActions {
         setInvitationId(invitationMatch[1]);
         return;
       }
-      
+
       // Check for page routes using utility function
       const page = getPageFromHash(hash);
       if (page) {
@@ -297,15 +317,15 @@ export function useNavigationManager(): NavigationState & NavigationActions {
         setActivePage(page);
       }
     };
-    
+
     // Run initial check
     checkHash();
-    
+
     // Listen for hash changes
     window.addEventListener('hashchange', checkHash);
     return () => window.removeEventListener('hashchange', checkHash);
   }, [isPageRestored]);
-  
+
   // ============================================================================
   // RETURN
   // ============================================================================
@@ -327,4 +347,3 @@ export function useNavigationManager(): NavigationState & NavigationActions {
     setSSOEmail,
   };
 }
-

@@ -7,6 +7,7 @@ import { DropdownMenu, DropdownMenuItem, cn } from '@extension/ui';
 import { useState, useEffect } from 'react';
 import type React from 'react';
 import { API_CONFIG } from '../../constants';
+import { ModalCloseButton } from './ModalCloseButton';
 
 interface SlackMessage {
   ts: string;
@@ -260,26 +261,7 @@ export const SlackItemsModal: React.FC<SlackItemsModalProps> = ({
             <h2 className={cn('text-base font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
               Select Slack Messages
             </h2>
-            <button
-              onClick={onClose}
-              className={cn(
-                'rounded-md p-0.5 transition-colors',
-                isLight
-                  ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                  : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-              )}>
-              <svg
-                width="14"
-                height="14"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round">
-                <path d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <ModalCloseButton onClick={onClose} isLight={isLight} />
           </div>
 
           {/* Content Header */}
@@ -381,7 +363,14 @@ export const SlackItemsModal: React.FC<SlackItemsModalProps> = ({
 
           {/* Content */}
           <div className="flex-1 overflow-hidden px-4 py-1.5">
-            <div className="h-full overflow-y-auto pr-2 pb-4" style={{ maxHeight: 'calc(85vh - 200px)' }}>
+            <div
+              className="recent-sessions-scroll h-full overflow-y-auto overscroll-contain pr-2 pb-4"
+              style={
+                {
+                  maxHeight: 'calc(85vh - 200px)',
+                  '--table-scroll-bg': isLight ? '#f9fafb' : '#151C24',
+                } as React.CSSProperties
+              }>
               {loading ? (
                 <div className={cn('py-8 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
                   Loading messages...
@@ -531,7 +520,13 @@ export const SlackItemsModal: React.FC<SlackItemsModalProps> = ({
                             className={cn('border-t px-3 pt-1 pb-2', isLight ? 'border-gray-100' : 'border-gray-700')}>
                             {isThread && threadContents[message.ts] ? (
                               // Display thread with all replies
-                              <div className="max-h-96 space-y-2 overflow-y-auto">
+                              <div
+                                className="recent-sessions-scroll max-h-96 space-y-2 overflow-y-auto overscroll-contain"
+                                style={
+                                  {
+                                    '--table-scroll-bg': isLight ? '#f9fafb' : '#151C24',
+                                  } as React.CSSProperties
+                                }>
                                 {threadContents[message.ts].map((threadMsg: any, idx: number) => {
                                   const isParent = idx === 0;
                                   return (
@@ -588,9 +583,14 @@ export const SlackItemsModal: React.FC<SlackItemsModalProps> = ({
                               <>
                                 <div
                                   className={cn(
-                                    'max-h-96 overflow-y-auto rounded p-3 text-[12px] break-words whitespace-pre-wrap',
+                                    'recent-sessions-scroll max-h-96 overflow-y-auto overscroll-contain rounded p-3 text-[12px] break-words whitespace-pre-wrap',
                                     isLight ? 'bg-gray-50 text-gray-800' : 'bg-gray-800 text-gray-300',
-                                  )}>
+                                  )}
+                                  style={
+                                    {
+                                      '--table-scroll-bg': isLight ? '#f9fafb' : '#1f2937',
+                                    } as React.CSSProperties
+                                  }>
                                   {message.text || '[No text content]'}
                                 </div>
 

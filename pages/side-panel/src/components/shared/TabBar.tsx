@@ -1,6 +1,6 @@
 /**
  * TabBar
- * 
+ *
  * A reusable horizontal tab bar with localStorage persistence.
  */
 
@@ -51,9 +51,7 @@ export function TabBar<T extends string = string>({
   const [tabsOverflow, setTabsOverflow] = useState(false);
 
   // Normalize tabs to TabConfig format
-  const normalizedTabs: TabConfig<T>[] = tabs.map(tab => 
-    typeof tab === 'string' ? { key: tab as T } : tab
-  );
+  const normalizedTabs: TabConfig<T>[] = tabs.map(tab => (typeof tab === 'string' ? { key: tab as T } : tab));
 
   // Filter out hidden tabs
   const visibleTabs = normalizedTabs.filter(tab => !tab.hidden);
@@ -80,7 +78,7 @@ export function TabBar<T extends string = string>({
   // Auto-scroll to active tab
   useEffect(() => {
     const activeTabElement = tabRefs.current.get(activeTab);
-    
+
     if (activeTabElement && containerRef.current) {
       setTimeout(() => {
         activeTabElement.scrollIntoView({
@@ -103,9 +101,12 @@ export function TabBar<T extends string = string>({
     }
   }, [activeTab, storageKey]);
 
-  const handleTabClick = useCallback((tab: T) => {
-    onTabChange(tab);
-  }, [onTabChange]);
+  const handleTabClick = useCallback(
+    (tab: T) => {
+      onTabChange(tab);
+    },
+    [onTabChange],
+  );
 
   const getTabLabel = (tab: TabConfig<T>): string => {
     return tab.label || tab.key.charAt(0).toUpperCase() + tab.key.slice(1);
@@ -114,22 +115,20 @@ export function TabBar<T extends string = string>({
   return (
     <div
       className={cn(
-        'flex items-center justify-center gap-2 px-2 py-1 border-t border-b h-[34px]',
-        isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700',
+        'flex h-[37px] min-h-[37px] items-center justify-center gap-2 border-t border-b px-2 py-1',
+        isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
         className,
-      )}
-    >
+      )}>
       <div
         ref={containerRef}
         className={cn(
-          'flex items-center gap-1 overflow-x-auto session-tabs-scroll',
+          'session-tabs-scroll flex items-center gap-1 overflow-x-auto',
           centerWhenFit && !tabsOverflow && 'justify-center',
-        )}
-      >
+        )}>
         {visibleTabs.map(tab => (
           <button
             key={tab.key}
-            ref={(el) => {
+            ref={el => {
               if (el) {
                 tabRefs.current.set(tab.key, el);
               } else {
@@ -139,20 +138,19 @@ export function TabBar<T extends string = string>({
             onClick={() => !tab.disabled && handleTabClick(tab.key)}
             disabled={tab.disabled}
             className={cn(
-              'flex-shrink-0 px-3 py-1 text-xs font-medium rounded transition-colors capitalize',
+              'flex-shrink-0 rounded px-3 py-1 text-xs font-medium capitalize transition-colors',
               tab.disabled
                 ? isLight
-                  ? 'text-gray-400 cursor-not-allowed'
-                  : 'text-gray-600 cursor-not-allowed'
+                  ? 'cursor-not-allowed text-gray-400'
+                  : 'cursor-not-allowed text-gray-600'
                 : activeTab === tab.key
-                ? isLight
-                  ? 'bg-gray-200 text-gray-700'
-                  : 'bg-gray-700 text-[#bcc1c7]'
-                : isLight
-                  ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-[#bcc1c7]',
-            )}
-          >
+                  ? isLight
+                    ? 'bg-gray-200 text-gray-700'
+                    : 'bg-gray-700 text-[#bcc1c7]'
+                  : isLight
+                    ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
+                    : 'text-gray-400 hover:bg-gray-800 hover:text-[#bcc1c7]',
+            )}>
             {getTabLabel(tab)}
           </button>
         ))}
@@ -162,4 +160,3 @@ export function TabBar<T extends string = string>({
 }
 
 export default TabBar;
-

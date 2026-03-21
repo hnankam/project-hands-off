@@ -1,4 +1,5 @@
 import { createStorage, StorageEnum } from '../base/index.js';
+import { getChromeOrWebLocalJsonRecord, setChromeOrWebLocalJsonRecord } from '../base/web-storage.js';
 
 // Generate random but intelligible session names
 // Note: Kept separate from @extension/shared to avoid circular dependency
@@ -6,57 +7,211 @@ import { createStorage, StorageEnum } from '../base/index.js';
 const generateSessionName = (): string => {
   const adjectives = [
     // Speed & Efficiency
-    'Quick', 'Swift', 'Rapid', 'Agile', 'Efficient', 'Streamlined', 'Nimble', 'Express',
+    'Quick',
+    'Swift',
+    'Rapid',
+    'Agile',
+    'Efficient',
+    'Streamlined',
+    'Nimble',
+    'Express',
     // Intelligence & Insight
-    'Smart', 'Bright', 'Clever', 'Wise', 'Sharp', 'Keen', 'Astute', 'Brilliant',
+    'Smart',
+    'Bright',
+    'Clever',
+    'Wise',
+    'Sharp',
+    'Keen',
+    'Astute',
+    'Brilliant',
     // Quality & Excellence
-    'Prime', 'Elite', 'Premium', 'Superior', 'Excellent', 'Optimal', 'Perfect', 'Refined',
+    'Prime',
+    'Elite',
+    'Premium',
+    'Superior',
+    'Excellent',
+    'Optimal',
+    'Perfect',
+    'Refined',
     // Innovation & Creativity
-    'Creative', 'Innovative', 'Inventive', 'Original', 'Novel', 'Fresh', 'Modern', 'Advanced',
+    'Creative',
+    'Innovative',
+    'Inventive',
+    'Original',
+    'Novel',
+    'Fresh',
+    'Modern',
+    'Advanced',
     // Strength & Impact
-    'Bold', 'Strong', 'Robust', 'Powerful', 'Dynamic', 'Vital', 'Solid', 'Sturdy',
+    'Bold',
+    'Strong',
+    'Robust',
+    'Powerful',
+    'Dynamic',
+    'Vital',
+    'Solid',
+    'Sturdy',
     // Clarity & Precision
-    'Clear', 'Precise', 'Focused', 'Distinct', 'Exact', 'Accurate', 'Crisp', 'Defined',
+    'Clear',
+    'Precise',
+    'Focused',
+    'Distinct',
+    'Exact',
+    'Accurate',
+    'Crisp',
+    'Defined',
     // Style & Presentation
-    'Elegant', 'Sleek', 'Polished', 'Sophisticated', 'Professional', 'Refined', 'Stylish', 'Classic',
+    'Elegant',
+    'Sleek',
+    'Polished',
+    'Sophisticated',
+    'Professional',
+    'Refined',
+    'Stylish',
+    'Classic',
     // Vision & Ambition
-    'Stellar', 'Epic', 'Grand', 'Noble', 'Visionary', 'Ambitious', 'Strategic', 'Forward',
+    'Stellar',
+    'Epic',
+    'Grand',
+    'Noble',
+    'Visionary',
+    'Ambitious',
+    'Strategic',
+    'Forward',
     // Energy & Motion
-    'Active', 'Lively', 'Vivid', 'Energetic', 'Vibrant', 'Animated', 'Spirited', 'Brisk',
+    'Active',
+    'Lively',
+    'Vivid',
+    'Energetic',
+    'Vibrant',
+    'Animated',
+    'Spirited',
+    'Brisk',
     // Calm & Balance
-    'Calm', 'Steady', 'Balanced', 'Stable', 'Composed', 'Harmonious', 'Serene', 'Poised'
+    'Calm',
+    'Steady',
+    'Balanced',
+    'Stable',
+    'Composed',
+    'Harmonious',
+    'Serene',
+    'Poised',
   ];
-  
+
   const nouns = [
     // Work & Projects
-    'Project', 'Task', 'Assignment', 'Initiative', 'Undertaking', 'Endeavor', 'Enterprise', 'Venture',
+    'Project',
+    'Task',
+    'Assignment',
+    'Initiative',
+    'Undertaking',
+    'Endeavor',
+    'Enterprise',
+    'Venture',
     // Planning & Strategy
-    'Plan', 'Strategy', 'Blueprint', 'Roadmap', 'Framework', 'Scheme', 'Approach', 'Method',
+    'Plan',
+    'Strategy',
+    'Blueprint',
+    'Roadmap',
+    'Framework',
+    'Scheme',
+    'Approach',
+    'Method',
     // Goals & Objectives
-    'Goal', 'Objective', 'Target', 'Milestone', 'Achievement', 'Outcome', 'Result', 'Deliverable',
+    'Goal',
+    'Objective',
+    'Target',
+    'Milestone',
+    'Achievement',
+    'Outcome',
+    'Result',
+    'Deliverable',
     // Process & Workflow
-    'Flow', 'Process', 'Workflow', 'Pipeline', 'Sequence', 'Cycle', 'Routine', 'Procedure',
+    'Flow',
+    'Process',
+    'Workflow',
+    'Pipeline',
+    'Sequence',
+    'Cycle',
+    'Routine',
+    'Procedure',
     // Ideas & Concepts
-    'Idea', 'Concept', 'Notion', 'Vision', 'Insight', 'Thought', 'Perspective', 'Angle',
+    'Idea',
+    'Concept',
+    'Notion',
+    'Vision',
+    'Insight',
+    'Thought',
+    'Perspective',
+    'Angle',
     // Creation & Development
-    'Draft', 'Sketch', 'Prototype', 'Design', 'Build', 'Creation', 'Development', 'Implementation',
+    'Draft',
+    'Sketch',
+    'Prototype',
+    'Design',
+    'Build',
+    'Creation',
+    'Development',
+    'Implementation',
     // Research & Analysis
-    'Research', 'Study', 'Analysis', 'Investigation', 'Exploration', 'Examination', 'Assessment', 'Review',
+    'Research',
+    'Study',
+    'Analysis',
+    'Investigation',
+    'Exploration',
+    'Examination',
+    'Assessment',
+    'Review',
     // Sessions & Meetings
-    'Session', 'Meeting', 'Discussion', 'Consultation', 'Conference', 'Workshop', 'Briefing', 'Sync',
+    'Session',
+    'Meeting',
+    'Discussion',
+    'Consultation',
+    'Conference',
+    'Workshop',
+    'Briefing',
+    'Sync',
     // Journey & Progress
-    'Journey', 'Path', 'Quest', 'Mission', 'Expedition', 'Campaign', 'Sprint', 'Marathon',
+    'Journey',
+    'Path',
+    'Quest',
+    'Mission',
+    'Expedition',
+    'Campaign',
+    'Sprint',
+    'Marathon',
     // Focus & Attention
-    'Focus', 'Scope', 'Domain', 'Area', 'Field', 'Zone', 'Sector', 'Space',
+    'Focus',
+    'Scope',
+    'Domain',
+    'Area',
+    'Field',
+    'Zone',
+    'Sector',
+    'Space',
     // Communication & Content
-    'Query', 'Topic', 'Subject', 'Thread', 'Dialog', 'Exchange', 'Discourse', 'Report',
+    'Query',
+    'Topic',
+    'Subject',
+    'Thread',
+    'Dialog',
+    'Exchange',
+    'Discourse',
+    'Report',
     // Organization & Structure
-    'Module', 'Component', 'Section', 'Segment', 'Phase', 'Stage', 'Chapter', 'Unit'
+    'Module',
+    'Component',
+    'Section',
+    'Segment',
+    'Phase',
+    'Stage',
+    'Chapter',
+    'Unit',
   ];
-  
+
   const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
   const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
-  
+
   return `${randomAdjective} ${randomNoun}`;
 };
 
@@ -65,9 +220,9 @@ const generateSessionName = (): string => {
 export type CopilotMessage = any; // Will be properly typed when used with @copilotkit types
 
 export interface UsageStats {
-  request: number;      // Total input tokens
-  response: number;     // Total output tokens
-  total: number;        // Total tokens
+  request: number; // Total input tokens
+  response: number; // Total output tokens
+  total: number; // Total tokens
   requestCount: number; // Number of requests
 }
 
@@ -75,7 +230,7 @@ export interface AgentStepState {
   sessionId?: string;
   steps: {
     description: string;
-    status: "pending" | "running" | "completed" | "failed" | "deleted";
+    status: 'pending' | 'running' | 'completed' | 'failed' | 'deleted';
   }[];
 }
 
@@ -134,20 +289,20 @@ export const sessionStorage: SessionStorageType = {
       // Look for the most recent session with a selected model
       let lastSelectedAgent = 'general'; // Default agent
       let lastSelectedModel = 'claude-4.5-haiku'; // Default model
-      
+
       if (currentState.sessions.length > 0) {
         // Sort sessions by timestamp (most recent first)
         const sortedSessions = [...currentState.sessions].sort((a, b) => b.timestamp - a.timestamp);
-        
+
         // Find the first session with a selected model
         const sessionWithModel = sortedSessions.find(s => s.selectedModel);
-        
+
         if (sessionWithModel) {
           lastSelectedAgent = sessionWithModel.selectedAgent || lastSelectedAgent;
           lastSelectedModel = sessionWithModel.selectedModel || lastSelectedModel;
         }
       }
-      
+
       const newSession: SessionType = {
         id: `session-${Date.now()}`,
         title,
@@ -201,7 +356,7 @@ export const sessionStorage: SessionStorageType = {
       if (currentState.currentSessionId === sessionId) {
         // Find the last open session to make it active
         const lastOpenSession = updatedSessions.filter(s => s.isOpen).pop();
-        
+
         if (lastOpenSession) {
           newCurrentSessionId = lastOpenSession.id;
           // Update the isActive status for the new active session
@@ -215,20 +370,20 @@ export const sessionStorage: SessionStorageType = {
           // Find the last selected agent and model from existing sessions
           let lastSelectedAgent = 'general'; // Default agent
           let lastSelectedModel = 'claude-4.5-haiku'; // Default model
-          
+
           if (updatedSessions.length > 0) {
             // Sort sessions by timestamp (most recent first)
             const sortedSessions = [...updatedSessions].sort((a, b) => b.timestamp - a.timestamp);
-            
+
             // Find the first session with a selected model
             const sessionWithModel = sortedSessions.find(s => s.selectedModel);
-            
+
             if (sessionWithModel) {
               lastSelectedAgent = sessionWithModel.selectedAgent || lastSelectedAgent;
               lastSelectedModel = sessionWithModel.selectedModel || lastSelectedModel;
             }
           }
-          
+
           const newSession: SessionType = {
             id: `session-${Date.now()}`,
             title: generateSessionName(),
@@ -239,12 +394,12 @@ export const sessionStorage: SessionStorageType = {
             selectedAgent: lastSelectedAgent,
             selectedModel: lastSelectedModel,
           };
-          
+
           newCurrentSessionId = newSession.id;
           updatedSessions.push(newSession);
         }
       }
-      
+
       return {
         sessions: updatedSessions,
         currentSessionId: newCurrentSessionId,
@@ -265,13 +420,12 @@ export const sessionStorage: SessionStorageType = {
     });
   },
   deleteSession: async (sessionId: string) => {
-    // Clean up chat messages for this session
+    // Clean up chat messages for this session (chrome.storage or localStorage on web)
     const CHAT_STORAGE_KEY = 'copilot-chat-messages';
     try {
-      const result = await chrome.storage.local.get([CHAT_STORAGE_KEY]);
-      const storedData = result[CHAT_STORAGE_KEY] || {};
+      const storedData = await getChromeOrWebLocalJsonRecord(CHAT_STORAGE_KEY);
       delete storedData[sessionId];
-      await chrome.storage.local.set({ [CHAT_STORAGE_KEY]: storedData });
+      await setChromeOrWebLocalJsonRecord(CHAT_STORAGE_KEY, storedData);
     } catch (error) {
       console.error('[SessionStorage] Failed to clean up chat data:', error);
     }
@@ -297,7 +451,7 @@ export const sessionStorage: SessionStorageType = {
   updateSessionTitle: async (sessionId: string, title: string) => {
     await storage.set(currentState => {
       const updatedSessions = currentState.sessions.map(session =>
-        session.id === sessionId ? { ...session, title } : session
+        session.id === sessionId ? { ...session, title } : session,
       );
 
       return {
@@ -309,7 +463,7 @@ export const sessionStorage: SessionStorageType = {
   updateSessionAgentAndModel: async (sessionId: string, agent: string, model: string) => {
     await storage.set(currentState => {
       const updatedSessions = currentState.sessions.map(session =>
-        session.id === sessionId ? { ...session, selectedAgent: agent, selectedModel: model } : session
+        session.id === sessionId ? { ...session, selectedAgent: agent, selectedModel: model } : session,
       );
 
       return {
@@ -321,7 +475,7 @@ export const sessionStorage: SessionStorageType = {
   updateUsageStats: async (sessionId: string, usage: UsageStats) => {
     await storage.set(currentState => {
       const updatedSessions = currentState.sessions.map(session =>
-        session.id === sessionId ? { ...session, usageStats: usage } : session
+        session.id === sessionId ? { ...session, usageStats: usage } : session,
       );
 
       return {
@@ -333,14 +487,14 @@ export const sessionStorage: SessionStorageType = {
   getUsageStats: (sessionId: string) => {
     const currentState = storage.getSnapshot();
     if (!currentState) return null;
-    
+
     const session = currentState.sessions.find(s => s.id === sessionId);
     return session?.usageStats || null;
   },
   updateAgentStepState: async (sessionId: string, agentStepState: AgentStepState) => {
     await storage.set(currentState => {
       const updatedSessions = currentState.sessions.map(session =>
-        session.id === sessionId ? { ...session, agentStepState } : session
+        session.id === sessionId ? { ...session, agentStepState } : session,
       );
 
       return {
@@ -352,14 +506,14 @@ export const sessionStorage: SessionStorageType = {
   getAgentStepState: (sessionId: string) => {
     const currentState = storage.getSnapshot();
     if (!currentState) return null;
-    
+
     const session = currentState.sessions.find(s => s.id === sessionId);
     return session?.agentStepState || null;
   },
   updateAllMessages: async (sessionId: string, messages: CopilotMessage[]) => {
     await storage.set(currentState => {
       const updatedSessions = currentState.sessions.map(session =>
-        session.id === sessionId ? { ...session, allMessages: messages } : session
+        session.id === sessionId ? { ...session, allMessages: messages } : session,
       );
 
       return {
@@ -371,7 +525,7 @@ export const sessionStorage: SessionStorageType = {
   getAllMessages: (sessionId: string) => {
     const currentState = storage.getSnapshot();
     if (!currentState) return [];
-    
+
     const session = currentState.sessions.find(s => s.id === sessionId);
     return session?.allMessages || [];
   },

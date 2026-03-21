@@ -1,10 +1,12 @@
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@extension/ui';
 import { useStorage } from '@extension/shared';
 import { themeStorage, preferencesStorage, type ChatFontSize } from '@extension/storage';
 import { API_CONFIG } from '../../constants';
 import { useExploreAccordion } from '../../context/ExploreAccordionContext';
+import { ModalCloseButton } from './ModalCloseButton';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -153,15 +155,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const groupedTools = useMemo(() => {
     const grouped: Record<string, ToolDefinition[]> = {};
-    const mcpServerGroups: Record<string, { server: NonNullable<ToolDefinition['mcpServer']>; tools: ToolDefinition[] }> = {};
-    
+    const mcpServerGroups: Record<
+      string,
+      { server: NonNullable<ToolDefinition['mcpServer']>; tools: ToolDefinition[] }
+    > = {};
+
     tools.forEach(tool => {
       const key = (tool?.source || 'custom').toLowerCase();
       if (!grouped[key]) {
         grouped[key] = [];
       }
       grouped[key].push(tool);
-      
+
       // Group MCP tools by server
       if (key === 'mcp') {
         if (tool.mcpServer) {
@@ -191,7 +196,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }
       }
     });
-    
+
     return { grouped, mcpServerGroups };
   }, [tools]);
 
@@ -233,7 +238,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const formatToolName = useCallback((value: string) => {
     if (!value) return 'Untitled Tool';
-    const cleaned = value.replace(/^(corp-|mcp_|builtin_)/, '').replace(/_/g, ' ').trim();
+    const cleaned = value
+      .replace(/^(corp-|mcp_|builtin_)/, '')
+      .replace(/_/g, ' ')
+      .trim();
     if (!cleaned) return value;
     return cleaned
       .split(' ')
@@ -252,131 +260,105 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   }, [canFetchTools, fetchTools, hasFetchedTools, toolsExpanded]);
 
-  return (
+  /** Portal to body so backdrop stacks above SessionsPanel (z-[55]) — modals inside chat column are capped by parent z-50 */
+  const modalTree = (
     <>
       {/* Backdrop - conditionally rendered */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-[10000] backdrop-blur-sm"
-          onClick={onClose}
-        />
-      )}
+      {isOpen && <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm" onClick={onClose} />}
 
       {/* Modal - Always mounted, visibility controlled with CSS */}
-      <div 
+      <div
         className={cn(
           'fixed inset-0 z-[10001] flex items-center justify-center p-4 transition-opacity',
-          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        )}
-      >
+          isOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
+        )}>
         <div
           className={cn(
             'w-full max-w-sm rounded-lg shadow-xl',
-            isLight
-              ? 'bg-gray-50 border border-gray-200'
-              : 'bg-[#151C24] border border-gray-700'
+            isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
           )}
-          onClick={(e) => e.stopPropagation()}
-        >
+          onClick={e => e.stopPropagation()}>
           {/* Header */}
           <div
             className={cn(
-              'flex items-center justify-between px-3 py-2 border-b',
-              isLight ? 'border-gray-200' : 'border-gray-700'
-            )}
-          >
-            <h2
-              className={cn(
-                'text-sm font-semibold',
-                isLight ? 'text-gray-900' : 'text-gray-100'
-              )}
-            >
-              Settings
-            </h2>
-            <button
-              onClick={onClose}
-              className={cn(
-                'p-0.5 rounded-md transition-colors',
-                isLight
-                  ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
-              )}
-            >
-              <svg
-                width="14"
-                height="14"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+              'flex items-center justify-between border-b px-3 py-2',
+              isLight ? 'border-gray-200' : 'border-gray-700',
+            )}>
+            <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>Settings</h2>
+            <ModalCloseButton onClick={onClose} isLight={isLight} />
           </div>
 
           {/* Content */}
-          <div className="px-3 py-3 space-y-3">
+          <div
+            className="recent-sessions-scroll max-h-[min(85vh,36rem)] space-y-3 overflow-y-auto overscroll-contain px-3 py-3"
+            style={
+              {
+                '--table-scroll-bg': isLight ? '#f9fafb' : '#151C24',
+              } as React.CSSProperties
+            }>
             {/* Theme Selection */}
             <div className="space-y-1.5">
-              <label
-                className={cn(
-                  'text-xs font-medium',
-                  isLight ? 'text-gray-900' : 'text-gray-100'
-                )}
-              >
-                Theme
-              </label>
+              <label className={cn('text-xs font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>Theme</label>
               <div className="flex gap-1.5">
                 <button
                   onClick={() => themeStorage.setTheme('light')}
                   className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
+                    'flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs transition-colors',
                     theme === 'light'
                       ? 'bg-blue-500 text-white'
                       : isLight
-                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
-                  )}
-                >
+                        ? 'border border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'border border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600',
+                  )}>
                   <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
+                    />
                   </svg>
                   <span>Light</span>
                 </button>
-                
+
                 <button
                   onClick={() => themeStorage.setTheme('dark')}
                   className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
+                    'flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs transition-colors',
                     theme === 'dark'
                       ? 'bg-blue-500 text-white'
                       : isLight
-                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
-                  )}
-                >
+                        ? 'border border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'border border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600',
+                  )}>
                   <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
+                    />
                   </svg>
                   <span>Dark</span>
                 </button>
-                
+
                 <button
                   onClick={() => themeStorage.setTheme('system')}
                   className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
+                    'flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs transition-colors',
                     theme === 'system'
                       ? 'bg-blue-500 text-white'
                       : isLight
-                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
-                  )}
-                >
+                        ? 'border border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'border border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600',
+                  )}>
                   <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                    />
                   </svg>
                   <span>System</span>
                 </button>
@@ -388,62 +370,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             {/* Font Size Selection */}
             <div className="space-y-1.5">
-              <label
-                className={cn(
-                  'text-xs font-medium',
-                  isLight ? 'text-gray-900' : 'text-gray-100'
-                )}
-              >
+              <label className={cn('text-xs font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
                 Chat Font Size
               </label>
               <div className="flex gap-1.5">
                 <button
                   onClick={() => preferencesStorage.setChatFontSize('small')}
                   className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
+                    'flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs transition-colors',
                     chatFontSize === 'small'
                       ? 'bg-blue-500 text-white'
                       : isLight
-                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
-                  )}
-                >
+                        ? 'border border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'border border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600',
+                  )}>
                   <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
                   </svg>
                   <span>Small</span>
                 </button>
-                
+
                 <button
                   onClick={() => preferencesStorage.setChatFontSize('medium')}
                   className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
+                    'flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs transition-colors',
                     chatFontSize === 'medium'
                       ? 'bg-blue-500 text-white'
                       : isLight
-                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
-                  )}
-                >
+                        ? 'border border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'border border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600',
+                  )}>
                   <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                   </svg>
                   <span>Medium</span>
                 </button>
-                
+
                 <button
                   onClick={() => preferencesStorage.setChatFontSize('large')}
                   className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
+                    'flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs transition-colors',
                     chatFontSize === 'large'
                       ? 'bg-blue-500 text-white'
                       : isLight
-                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
-                  )}
-                >
+                        ? 'border border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'border border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600',
+                  )}>
                   <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 6h16M4 10h16M4 14h16M4 18h16"
+                    />
                   </svg>
                   <span>Large</span>
                 </button>
@@ -458,17 +437,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex-1">
                 <label
                   htmlFor="show-suggestions"
-                  className="text-xs font-medium cursor-pointer"
-                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-                >
+                  className="cursor-pointer text-xs font-medium"
+                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}>
                   Show Suggestions
                 </label>
-                <p
-                  className={cn(
-                    'text-xs mt-0.5',
-                    isLight ? 'text-gray-500' : 'text-gray-400'
-                  )}
-                >
+                <p className={cn('mt-0.5 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                   Display contextual suggestions
                 </p>
               </div>
@@ -478,19 +451,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 aria-checked={showSuggestions}
                 onClick={() => onShowSuggestionsChange(!showSuggestions)}
                 className={cn(
-                  'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 ml-3',
+                  'relative ml-3 inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-1 focus:outline-none',
                   showSuggestions
                     ? 'bg-blue-600 focus:ring-blue-500'
                     : isLight
-                    ? 'bg-gray-200 focus:ring-gray-300'
-                    : 'bg-gray-600 focus:ring-gray-500'
-                )}
-              >
+                      ? 'bg-gray-200 focus:ring-gray-300'
+                      : 'bg-gray-600 focus:ring-gray-500',
+                )}>
                 <span
                   aria-hidden="true"
                   className={cn(
                     'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                    showSuggestions ? 'translate-x-4' : 'translate-x-0'
+                    showSuggestions ? 'translate-x-4' : 'translate-x-0',
                   )}
                 />
               </button>
@@ -504,17 +476,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex-1">
                 <label
                   htmlFor="show-thought-blocks"
-                  className="text-xs font-medium cursor-pointer"
-                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-                >
+                  className="cursor-pointer text-xs font-medium"
+                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}>
                   Show Thought Blocks
                 </label>
-                <p
-                  className={cn(
-                    'text-xs mt-0.5',
-                    isLight ? 'text-gray-500' : 'text-gray-400'
-                  )}
-                >
+                <p className={cn('mt-0.5 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                   Reveal the assistant's hidden reasoning
                 </p>
               </div>
@@ -524,19 +490,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 aria-checked={showThoughtBlocks}
                 onClick={() => onShowThoughtBlocksChange(!showThoughtBlocks)}
                 className={cn(
-                  'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 ml-3',
+                  'relative ml-3 inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-1 focus:outline-none',
                   showThoughtBlocks
                     ? 'bg-blue-600 focus:ring-blue-500'
                     : isLight
-                    ? 'bg-gray-200 focus:ring-gray-300'
-                    : 'bg-gray-600 focus:ring-gray-500'
-                )}
-              >
+                      ? 'bg-gray-200 focus:ring-gray-300'
+                      : 'bg-gray-600 focus:ring-gray-500',
+                )}>
                 <span
                   aria-hidden="true"
                   className={cn(
                     'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                    showThoughtBlocks ? 'translate-x-4' : 'translate-x-0'
+                    showThoughtBlocks ? 'translate-x-4' : 'translate-x-0',
                   )}
                 />
               </button>
@@ -550,17 +515,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div className="flex-1">
                     <label
                       htmlFor="grouped-tool-view"
-                      className="text-xs font-medium cursor-pointer"
-                      style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-                    >
+                      className="cursor-pointer text-xs font-medium"
+                      style={{ color: isLight ? '#374151' : '#bcc1c7' }}>
                       Grouped Tool View
                     </label>
-                    <p
-                      className={cn(
-                        'text-xs mt-0.5',
-                        isLight ? 'text-gray-500' : 'text-gray-400'
-                      )}
-                    >
+                    <p className={cn('mt-0.5 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                       {exploreAccordion.enabled ? 'Grouped' : 'Original'} view for tool calls
                     </p>
                   </div>
@@ -570,19 +529,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     aria-checked={exploreAccordion.enabled}
                     onClick={exploreAccordion.toggle}
                     className={cn(
-                      'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 ml-3',
+                      'relative ml-3 inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-offset-1 focus:outline-none',
                       exploreAccordion.enabled
                         ? 'bg-blue-600 focus:ring-blue-500'
                         : isLight
-                        ? 'bg-gray-200 focus:ring-gray-300'
-                        : 'bg-gray-600 focus:ring-gray-500'
-                    )}
-                  >
+                          ? 'bg-gray-200 focus:ring-gray-300'
+                          : 'bg-gray-600 focus:ring-gray-500',
+                    )}>
                     <span
                       aria-hidden="true"
                       className={cn(
                         'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                        exploreAccordion.enabled ? 'translate-x-4' : 'translate-x-0'
+                        exploreAccordion.enabled ? 'translate-x-4' : 'translate-x-0',
                       )}
                     />
                   </button>
@@ -598,17 +556,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex-1">
                 <label
                   htmlFor="available-tools-toggle"
-                  className="text-xs font-medium cursor-pointer"
-                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-                >
+                  className="cursor-pointer text-xs font-medium"
+                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}>
                   Available Tools
                 </label>
-                <p
-                  className={cn(
-                    'text-xs mt-0.5',
-                    isLight ? 'text-gray-500' : 'text-gray-400'
-                  )}
-                >
+                <p className={cn('mt-0.5 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                   Tools registered for the selected agent and model
                 </p>
               </div>
@@ -617,20 +569,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 type="button"
                 onClick={handleToggleTools}
                 className={cn(
-                  'flex items-center gap-2 ml-3 transition-colors',
+                  'ml-3 flex items-center gap-2 transition-colors',
                   isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-300 hover:text-white',
-                )}
-              >
+                )}>
                 {toolsLoading ? (
-                  <svg className="h-4 w-4 animate-spin text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
+                  <svg
+                    className="h-4 w-4 animate-spin text-blue-500"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path
                       className="opacity-75"
                       fill="currentColor"
@@ -640,10 +588,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 ) : (
                   <span
                     className={cn(
-                      'text-[10px] font-medium px-1.5 py-0.5 rounded',
+                      'rounded px-1.5 py-0.5 text-[10px] font-medium',
                       isLight ? 'bg-gray-200 text-gray-700' : 'bg-gray-800 text-gray-300',
-                    )}
-                  >
+                    )}>
                     {totalToolCount}
                   </span>
                 )}
@@ -655,8 +602,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
-                  strokeWidth={2}
-                >
+                  strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
                 </svg>
               </button>
@@ -665,20 +611,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {toolsExpanded && (
               <div className="mt-2">
                 {!canFetchTools ? (
-                  <div className={cn('rounded-md border px-3 py-2 text-xs', isLight ? 'border-gray-200 bg-gray-50 text-gray-600' : 'border-gray-700 bg-gray-800/50 text-gray-400')}>
+                  <div
+                    className={cn(
+                      'rounded-md border px-3 py-2 text-xs',
+                      isLight
+                        ? 'border-gray-200 bg-gray-50 text-gray-600'
+                        : 'border-gray-700 bg-gray-800/50 text-gray-400',
+                    )}>
                     Select an agent, model, organization, and team to view available tools.
                   </div>
                 ) : toolsLoading ? (
-                  <div className={cn('rounded-md border px-3 py-2 flex items-center gap-2 text-xs', isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-gray-800/50')}>
-                    <svg className="h-4 w-4 animate-spin text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
+                  <div
+                    className={cn(
+                      'flex items-center gap-2 rounded-md border px-3 py-2 text-xs',
+                      isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-gray-800/50',
+                    )}>
+                    <svg
+                      className="h-4 w-4 animate-spin text-blue-500"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path
                         className="opacity-75"
                         fill="currentColor"
@@ -688,28 +641,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>Loading tools...</span>
                   </div>
                 ) : toolsError ? (
-                  <div className={cn('rounded-md border px-3 py-2 text-xs', isLight ? 'border-red-200 bg-red-50 text-red-700' : 'border-red-800 bg-red-900/20 text-red-300')}>
+                  <div
+                    className={cn(
+                      'rounded-md border px-3 py-2 text-xs',
+                      isLight ? 'border-red-200 bg-red-50 text-red-700' : 'border-red-800 bg-red-900/20 text-red-300',
+                    )}>
                     {toolsError}
                   </div>
                 ) : totalToolCount === 0 ? (
-                  <div className={cn('rounded-md border px-3 py-2 text-xs', isLight ? 'border-gray-200 bg-gray-50 text-gray-600' : 'border-gray-700 bg-gray-800/50 text-gray-400')}>
+                  <div
+                    className={cn(
+                      'rounded-md border px-3 py-2 text-xs',
+                      isLight
+                        ? 'border-gray-200 bg-gray-50 text-gray-600'
+                        : 'border-gray-700 bg-gray-800/50 text-gray-400',
+                    )}>
                     No tools are currently registered for this agent.
                   </div>
                 ) : (
                   <div
                     className={cn(
                       'rounded-md border',
-                      isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
-                    )}
-                  >
+                      isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
+                    )}>
                     {/* Tool Categories */}
-                    <div 
-                      className="recent-sessions-scroll max-h-[320px] overflow-y-auto rounded-md"
-                      style={{
-                        scrollbarWidth: 'thin',
-                        scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
-                      }}
-                    >
+                    <div
+                      className="recent-sessions-scroll max-h-[320px] overflow-y-auto overscroll-contain rounded-md"
+                      style={
+                        {
+                          '--table-scroll-bg': isLight ? '#ffffff' : '#151C24',
+                        } as React.CSSProperties
+                      }>
                       {tools.length === 0 ? (
                         <div className={cn('px-3 py-2 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                           No tools available
@@ -724,9 +686,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             const toolCount = categoryTools.length;
 
                             return (
-                              <div key={type} className={cn('border-b last:border-b-0', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                              <div
+                                key={type}
+                                className={cn(
+                                  'border-b last:border-b-0',
+                                  isLight ? 'border-gray-200' : 'border-gray-700',
+                                )}>
                                 {/* Category Header */}
-                                <div className={cn('sticky top-0 z-10 flex items-center justify-between gap-2 px-2 py-1.5', isLight ? 'bg-white' : 'bg-[#151C24]')}>
+                                <div
+                                  className={cn(
+                                    'sticky top-0 z-10 flex items-center justify-between gap-2 px-2 py-1.5',
+                                    isLight ? 'bg-white' : 'bg-[#151C24]',
+                                  )}>
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -736,49 +707,58 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                       }));
                                     }}
                                     className={cn(
-                                      'flex items-center gap-1.5 text-xs font-medium transition-colors text-left',
-                                      isLight ? 'text-gray-700 hover:text-gray-700' : 'text-gray-300 hover:text-[#bcc1c7]'
-                                    )}
-                                  >
+                                      'flex items-center gap-1.5 text-left text-xs font-medium transition-colors',
+                                      isLight
+                                        ? 'text-gray-700 hover:text-gray-700'
+                                        : 'text-gray-300 hover:text-[#bcc1c7]',
+                                    )}>
                                     <svg
-                                      className={cn('w-3 h-3 transition-transform', isExpanded && 'rotate-90')}
+                                      className={cn('h-3 w-3 transition-transform', isExpanded && 'rotate-90')}
                                       fill="none"
                                       stroke="currentColor"
                                       viewBox="0 0 24 24"
-                                      strokeWidth={2}
-                                    >
+                                      strokeWidth={2}>
                                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                                     </svg>
                                     <span>{sourceStyles(type).label}</span>
                                   </button>
-                                  <span className={cn('text-[10px] flex-shrink-0', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                  <span
+                                    className={cn(
+                                      'flex-shrink-0 text-[10px]',
+                                      isLight ? 'text-gray-500' : 'text-gray-400',
+                                    )}>
                                     {toolCount} {toolCount === 1 ? 'tool' : 'tools'}
                                   </span>
                                 </div>
 
                                 {/* Category Tools */}
                                 {isExpanded && type !== 'mcp' && (
-                                  <div 
-                                    className="recent-sessions-scroll overflow-x-auto"
-                                    style={{
-                                      scrollbarWidth: 'thin',
-                                      scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
-                                    }}
-                                  >
+                                  <div
+                                    className="recent-sessions-scroll overflow-x-auto overscroll-contain"
+                                    style={
+                                      {
+                                        '--table-scroll-bg': isLight ? '#ffffff' : '#151C24',
+                                      } as React.CSSProperties
+                                    }>
                                     {categoryTools.map((tool, index) => (
                                       <div
                                         key={`${tool.name}-${index}`}
                                         className={cn(
-                                          'flex items-center gap-2 w-full px-3 py-1.5 text-xs transition-colors',
+                                          'flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors',
                                           isLight
                                             ? 'text-gray-700 hover:bg-gray-100'
-                                            : 'text-gray-200 hover:bg-gray-700'
-                                        )}
-                                      >
-                                        <div className={cn(
-                                          'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 bg-blue-600 border-blue-600'
+                                            : 'text-gray-200 hover:bg-gray-700',
                                         )}>
-                                          <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                                        <div
+                                          className={cn(
+                                            'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded border border-blue-600 bg-blue-600',
+                                          )}>
+                                          <svg
+                                            className="h-2 w-2 text-white"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                            strokeWidth={3}>
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                           </svg>
                                         </div>
@@ -786,8 +766,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                           <span className="font-medium">{formatToolName(tool.name)}</span>
                                           {tool.description && (
                                             <>
-                                              <span className={cn('flex-shrink-0', isLight ? 'text-gray-400' : 'text-gray-500')}>|</span>
-                                              <span className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                              <span
+                                                className={cn(
+                                                  'flex-shrink-0',
+                                                  isLight ? 'text-gray-400' : 'text-gray-500',
+                                                )}>
+                                                |
+                                              </span>
+                                              <span
+                                                className={cn(
+                                                  'text-[10px]',
+                                                  isLight ? 'text-gray-500' : 'text-gray-400',
+                                                )}>
                                                 {tool.description}
                                               </span>
                                             </>
@@ -801,92 +791,131 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 {/* MCP Server Groups */}
                                 {isExpanded && type === 'mcp' && (
                                   <div>
-                                    {Object.values(groupedTools.mcpServerGroups).map(({ server, tools: serverTools }) => {
-                                      if (serverTools.length === 0) return null;
+                                    {Object.values(groupedTools.mcpServerGroups).map(
+                                      ({ server, tools: serverTools }) => {
+                                        if (serverTools.length === 0) return null;
 
-                                      const isServerExpanded = expandedMcpServers.has(server.id);
+                                        const isServerExpanded = expandedMcpServers.has(server.id);
 
-                                      return (
-                                        <div key={server.id} className={cn('border-t', isLight ? 'border-gray-200' : 'border-gray-700')}>
-                                          {/* MCP Server Header */}
-                                          <div className={cn('sticky top-0 z-10 flex items-center gap-2 pl-6 pr-4 py-1.5', isLight ? 'bg-white' : 'bg-[#151C24]')}>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setExpandedMcpServers(prev => {
-                                                  const next = new Set(prev);
-                                                  if (next.has(server.id)) {
-                                                    next.delete(server.id);
-                                                  } else {
-                                                    next.add(server.id);
-                                                  }
-                                                  return next;
-                                                });
-                                              }}
-                                              className={cn('flex-shrink-0', isLight ? 'text-gray-500' : 'text-gray-400')}
-                                            >
-                                              <svg
-                                                className={cn('w-3 h-3 transition-transform', isServerExpanded && 'rotate-90')}
-                                                fill="none"
-                                                stroke="currentColor"
-                                                viewBox="0 0 24 24"
-                                                strokeWidth={2.5}
-                                              >
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                                              </svg>
-                                            </button>
-                                            <span className={cn('flex-1 text-[11px] font-medium truncate', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                              {server.displayName}
-                                            </span>
-                                            <span className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                                              {serverTools.length} {serverTools.length === 1 ? 'tool' : 'tools'}
-                                            </span>
-                                          </div>
-
-                                          {/* MCP Server Tools */}
-                                          {isServerExpanded && (
-                                            <div 
-                                              className="recent-sessions-scroll overflow-x-auto"
-                                              style={{
-                                                scrollbarWidth: 'thin',
-                                                scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
-                                              }}
-                                            >
-                                              {serverTools.map((tool, index) => (
-                                                <div
-                                                  key={`${tool.name}-${index}`}
+                                        return (
+                                          <div
+                                            key={server.id}
+                                            className={cn('border-t', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                                            {/* MCP Server Header */}
+                                            <div
+                                              className={cn(
+                                                'sticky top-0 z-10 flex items-center gap-2 py-1.5 pr-4 pl-6',
+                                                isLight ? 'bg-white' : 'bg-[#151C24]',
+                                              )}>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setExpandedMcpServers(prev => {
+                                                    const next = new Set(prev);
+                                                    if (next.has(server.id)) {
+                                                      next.delete(server.id);
+                                                    } else {
+                                                      next.add(server.id);
+                                                    }
+                                                    return next;
+                                                  });
+                                                }}
+                                                className={cn(
+                                                  'flex-shrink-0',
+                                                  isLight ? 'text-gray-500' : 'text-gray-400',
+                                                )}>
+                                                <svg
                                                   className={cn(
-                                                    'flex items-center gap-2 w-full pl-12 pr-3 py-1.5 text-xs transition-colors',
-                                                    isLight
-                                                      ? 'text-gray-700 hover:bg-gray-100'
-                                                      : 'text-gray-200 hover:bg-gray-700'
+                                                    'h-3 w-3 transition-transform',
+                                                    isServerExpanded && 'rotate-90',
                                                   )}
-                                                >
-                                                  <div className={cn(
-                                                    'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 bg-blue-600 border-blue-600'
-                                                  )}>
-                                                    <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                    </svg>
-                                                  </div>
-                                                  <div className="flex items-center gap-1.5 whitespace-nowrap">
-                                                    <span className="font-medium">{formatToolName(tool.name)}</span>
-                                                    {tool.description && (
-                                                      <>
-                                                        <span className={cn('flex-shrink-0', isLight ? 'text-gray-400' : 'text-gray-500')}>|</span>
-                                                        <span className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                                                          {tool.description}
-                                                        </span>
-                                                      </>
-                                                    )}
-                                                  </div>
-                                                </div>
-                                              ))}
+                                                  fill="none"
+                                                  stroke="currentColor"
+                                                  viewBox="0 0 24 24"
+                                                  strokeWidth={2.5}>
+                                                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                                </svg>
+                                              </button>
+                                              <span
+                                                className={cn(
+                                                  'flex-1 truncate text-[11px] font-medium',
+                                                  isLight ? 'text-gray-600' : 'text-gray-400',
+                                                )}>
+                                                {server.displayName}
+                                              </span>
+                                              <span
+                                                className={cn(
+                                                  'text-[10px]',
+                                                  isLight ? 'text-gray-500' : 'text-gray-500',
+                                                )}>
+                                                {serverTools.length} {serverTools.length === 1 ? 'tool' : 'tools'}
+                                              </span>
                                             </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
+
+                                            {/* MCP Server Tools */}
+                                            {isServerExpanded && (
+                                              <div
+                                                className="recent-sessions-scroll overflow-x-auto overscroll-contain"
+                                                style={
+                                                  {
+                                                    '--table-scroll-bg': isLight ? '#ffffff' : '#151C24',
+                                                  } as React.CSSProperties
+                                                }>
+                                                {serverTools.map((tool, index) => (
+                                                  <div
+                                                    key={`${tool.name}-${index}`}
+                                                    className={cn(
+                                                      'flex w-full items-center gap-2 py-1.5 pr-3 pl-12 text-xs transition-colors',
+                                                      isLight
+                                                        ? 'text-gray-700 hover:bg-gray-100'
+                                                        : 'text-gray-200 hover:bg-gray-700',
+                                                    )}>
+                                                    <div
+                                                      className={cn(
+                                                        'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded border border-blue-600 bg-blue-600',
+                                                      )}>
+                                                      <svg
+                                                        className="h-2 w-2 text-white"
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        viewBox="0 0 24 24"
+                                                        strokeWidth={3}>
+                                                        <path
+                                                          strokeLinecap="round"
+                                                          strokeLinejoin="round"
+                                                          d="M5 13l4 4L19 7"
+                                                        />
+                                                      </svg>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                                      <span className="font-medium">{formatToolName(tool.name)}</span>
+                                                      {tool.description && (
+                                                        <>
+                                                          <span
+                                                            className={cn(
+                                                              'flex-shrink-0',
+                                                              isLight ? 'text-gray-400' : 'text-gray-500',
+                                                            )}>
+                                                            |
+                                                          </span>
+                                                          <span
+                                                            className={cn(
+                                                              'text-[10px]',
+                                                              isLight ? 'text-gray-500' : 'text-gray-400',
+                                                            )}>
+                                                            {tool.description}
+                                                          </span>
+                                                        </>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      },
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -908,17 +937,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex-1">
                 <label
                   htmlFor="shared-contexts-toggle"
-                  className="text-xs font-medium cursor-pointer"
-                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-                >
+                  className="cursor-pointer text-xs font-medium"
+                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}>
                   Shared Contexts
                 </label>
-                <p
-                  className={cn(
-                    'text-xs mt-0.5',
-                    isLight ? 'text-gray-500' : 'text-gray-400'
-                  )}
-                >
+                <p className={cn('mt-0.5 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                   Context data shared with the agent
                 </p>
               </div>
@@ -927,16 +950,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 type="button"
                 onClick={() => setContextsExpanded(!contextsExpanded)}
                 className={cn(
-                  'flex items-center gap-2 ml-3 transition-colors',
-                  isLight ? 'text-gray-600 hover:text-gray-700' : 'text-gray-400 hover:text-[#bcc1c7]'
-                )}
-              >
+                  'ml-3 flex items-center gap-2 transition-colors',
+                  isLight ? 'text-gray-600 hover:text-gray-700' : 'text-gray-400 hover:text-[#bcc1c7]',
+                )}>
                 <span
                   className={cn(
-                    'text-[10px] font-medium px-1.5 py-0.5 rounded',
+                    'rounded px-1.5 py-0.5 text-[10px] font-medium',
                     isLight ? 'bg-gray-200 text-gray-700' : 'bg-gray-800 text-gray-300',
-                  )}
-                >
+                  )}>
                   {(() => {
                     // Calculate sum of selected items: notes + credentials + pages
                     let count = 0;
@@ -956,8 +977,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
-                  strokeWidth={2}
-                >
+                  strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
                 </svg>
               </button>
@@ -968,16 +988,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div
                   className={cn(
                     'rounded-md border',
-                    isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
-                  )}
-                >
-                  <div 
-                    className="recent-sessions-scroll max-h-[320px] overflow-y-auto rounded-md"
-                    style={{
-                      scrollbarWidth: 'thin',
-                      scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
-                    }}
-                  >
+                    isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
+                  )}>
+                  <div
+                    className="recent-sessions-scroll max-h-[320px] overflow-y-auto overscroll-contain rounded-md"
+                    style={
+                      {
+                        '--table-scroll-bg': isLight ? '#ffffff' : '#151C24',
+                      } as React.CSSProperties
+                    }>
                     {/* Multi-page Context */}
                     <div className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
                       <button
@@ -993,17 +1012,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             return next;
                           });
                         }}
-                        className={cn('w-full px-3 py-2 text-left transition-colors', isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50')}
-                      >
+                        className={cn(
+                          'w-full px-3 py-2 text-left transition-colors',
+                          isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50',
+                        )}>
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <svg
-                              className={cn('w-3 h-3 flex-shrink-0 transition-transform', expandedContexts.has('multiPage') && 'rotate-90')}
+                              className={cn(
+                                'h-3 w-3 flex-shrink-0 transition-transform',
+                                expandedContexts.has('multiPage') && 'rotate-90',
+                              )}
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
-                              strokeWidth={2.5}
-                            >
+                              strokeWidth={2.5}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                             </svg>
                             <div className={cn('text-xs font-medium', isLight ? 'text-gray-800' : 'text-gray-200')}>
@@ -1013,7 +1036,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           {(() => {
                             const pageCount = sharedContexts?.multiPageMetadata?.selectedPages?.count ?? 0;
                             return pageCount > 0 ? (
-                              <span className={cn('text-[10px] flex-shrink-0', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              <span
+                                className={cn(
+                                  'flex-shrink-0 text-[10px]',
+                                  isLight ? 'text-gray-500' : 'text-gray-400',
+                                )}>
                                 {pageCount} {pageCount === 1 ? 'page' : 'pages'}
                               </span>
                             ) : null;
@@ -1021,17 +1048,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                       </button>
                       {expandedContexts.has('multiPage') && (
-                        <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
-                          <pre className={cn(
-                            'recent-sessions-scroll text-[10px] p-2 rounded overflow-x-auto',
-                            isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
-                          )}
-                          style={{
-                            scrollbarWidth: 'thin',
-                            scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
-                          }}
-                          >
-                            {JSON.stringify(sharedContexts?.multiPageMetadata || { note: 'No data available' }, null, 2)}
+                        <div className={cn('px-3 pt-2 pb-3', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
+                          <pre
+                            className={cn(
+                              'recent-sessions-scroll overflow-x-auto overscroll-contain rounded p-2 text-[10px]',
+                              isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300',
+                            )}
+                            style={
+                              {
+                                '--table-scroll-bg': isLight ? '#f3f4f6' : '#111827',
+                              } as React.CSSProperties
+                            }>
+                            {JSON.stringify(
+                              sharedContexts?.multiPageMetadata || { note: 'No data available' },
+                              null,
+                              2,
+                            )}
                           </pre>
                         </div>
                       )}
@@ -1052,16 +1084,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             return next;
                           });
                         }}
-                        className={cn('w-full px-3 py-2 text-left transition-colors', isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50')}
-                      >
+                        className={cn(
+                          'w-full px-3 py-2 text-left transition-colors',
+                          isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50',
+                        )}>
                         <div className="flex items-center gap-2">
                           <svg
-                            className={cn('w-3 h-3 flex-shrink-0 transition-transform', expandedContexts.has('user') && 'rotate-90')}
+                            className={cn(
+                              'h-3 w-3 flex-shrink-0 transition-transform',
+                              expandedContexts.has('user') && 'rotate-90',
+                            )}
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
-                            strokeWidth={2.5}
-                          >
+                            strokeWidth={2.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                           </svg>
                           <div className={cn('text-xs font-medium', isLight ? 'text-gray-800' : 'text-gray-200')}>
@@ -1070,16 +1106,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                       </button>
                       {expandedContexts.has('user') && (
-                        <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
-                          <pre className={cn(
-                            'recent-sessions-scroll text-[10px] p-2 rounded overflow-x-auto',
-                            isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
-                          )}
-                          style={{
-                            scrollbarWidth: 'thin',
-                            scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
-                          }}
-                          >
+                        <div className={cn('px-3 pt-2 pb-3', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
+                          <pre
+                            className={cn(
+                              'recent-sessions-scroll overflow-x-auto overscroll-contain rounded p-2 text-[10px]',
+                              isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300',
+                            )}
+                            style={
+                              {
+                                '--table-scroll-bg': isLight ? '#f3f4f6' : '#111827',
+                              } as React.CSSProperties
+                            }>
                             {JSON.stringify(sharedContexts?.userContext || { note: 'No data available' }, null, 2)}
                           </pre>
                         </div>
@@ -1101,16 +1138,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             return next;
                           });
                         }}
-                        className={cn('w-full px-3 py-2 text-left transition-colors', isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50')}
-                      >
+                        className={cn(
+                          'w-full px-3 py-2 text-left transition-colors',
+                          isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50',
+                        )}>
                         <div className="flex items-center gap-2">
                           <svg
-                            className={cn('w-3 h-3 flex-shrink-0 transition-transform', expandedContexts.has('workspace') && 'rotate-90')}
+                            className={cn(
+                              'h-3 w-3 flex-shrink-0 transition-transform',
+                              expandedContexts.has('workspace') && 'rotate-90',
+                            )}
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
-                            strokeWidth={2.5}
-                          >
+                            strokeWidth={2.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                           </svg>
                           <div className={cn('text-xs font-medium', isLight ? 'text-gray-800' : 'text-gray-200')}>
@@ -1119,16 +1160,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                       </button>
                       {expandedContexts.has('workspace') && (
-                        <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
-                          <pre className={cn(
-                            'recent-sessions-scroll text-[10px] p-2 rounded overflow-x-auto',
-                            isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
-                          )}
-                          style={{
-                            scrollbarWidth: 'thin',
-                            scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
-                          }}
-                          >
+                        <div className={cn('px-3 pt-2 pb-3', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
+                          <pre
+                            className={cn(
+                              'recent-sessions-scroll overflow-x-auto overscroll-contain rounded p-2 text-[10px]',
+                              isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300',
+                            )}
+                            style={
+                              {
+                                '--table-scroll-bg': isLight ? '#f3f4f6' : '#111827',
+                              } as React.CSSProperties
+                            }>
                             {JSON.stringify(sharedContexts?.workspaceContext || { note: 'No data available' }, null, 2)}
                           </pre>
                         </div>
@@ -1151,44 +1193,55 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               return next;
                             });
                           }}
-                          className={cn('w-full px-3 py-2 text-left transition-colors', isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50')}
-                        >
+                          className={cn(
+                            'w-full px-3 py-2 text-left transition-colors',
+                            isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50',
+                          )}>
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
                               <svg
-                                className={cn('w-3 h-3 flex-shrink-0 transition-transform', expandedContexts.has('notes') && 'rotate-90')}
+                                className={cn(
+                                  'h-3 w-3 flex-shrink-0 transition-transform',
+                                  expandedContexts.has('notes') && 'rotate-90',
+                                )}
                                 fill="none"
                                 stroke="currentColor"
                                 viewBox="0 0 24 24"
-                                strokeWidth={2.5}
-                              >
+                                strokeWidth={2.5}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                               </svg>
                               <div className={cn('text-xs font-medium', isLight ? 'text-gray-800' : 'text-gray-200')}>
                                 Selected Notes Context
                               </div>
                             </div>
-                            <span className={cn('text-[10px] flex-shrink-0', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                              {sharedContexts.selectedNotes.length} {sharedContexts.selectedNotes.length === 1 ? 'note' : 'notes'}
+                            <span
+                              className={cn('flex-shrink-0 text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              {sharedContexts.selectedNotes.length}{' '}
+                              {sharedContexts.selectedNotes.length === 1 ? 'note' : 'notes'}
                             </span>
                           </div>
                         </button>
                         {expandedContexts.has('notes') && (
-                          <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
-                            <pre className={cn(
-                              'recent-sessions-scroll text-[10px] p-2 rounded overflow-x-auto',
-                              isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
-                            )}
-                            style={{
-                              scrollbarWidth: 'thin',
-                              scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
-                            }}
-                            >
-                              {JSON.stringify(sharedContexts.selectedNotes.map(note => ({
-                                id: note.id,
-                                title: note.title,
-                                content: note.content,
-                              })), null, 2)}
+                          <div className={cn('px-3 pt-2 pb-3', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
+                            <pre
+                              className={cn(
+                                'recent-sessions-scroll overflow-x-auto overscroll-contain rounded p-2 text-[10px]',
+                                isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300',
+                              )}
+                              style={
+                                {
+                                  '--table-scroll-bg': isLight ? '#f3f4f6' : '#111827',
+                                } as React.CSSProperties
+                              }>
+                              {JSON.stringify(
+                                sharedContexts.selectedNotes.map(note => ({
+                                  id: note.id,
+                                  title: note.title,
+                                  content: note.content,
+                                })),
+                                null,
+                                2,
+                              )}
                             </pre>
                           </div>
                         )}
@@ -1211,45 +1264,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               return next;
                             });
                           }}
-                          className={cn('w-full px-3 py-2 text-left transition-colors', isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50')}
-                        >
+                          className={cn(
+                            'w-full px-3 py-2 text-left transition-colors',
+                            isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50',
+                          )}>
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
                               <svg
-                                className={cn('w-3 h-3 flex-shrink-0 transition-transform', expandedContexts.has('credentials') && 'rotate-90')}
+                                className={cn(
+                                  'h-3 w-3 flex-shrink-0 transition-transform',
+                                  expandedContexts.has('credentials') && 'rotate-90',
+                                )}
                                 fill="none"
                                 stroke="currentColor"
                                 viewBox="0 0 24 24"
-                                strokeWidth={2.5}
-                              >
+                                strokeWidth={2.5}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                               </svg>
                               <div className={cn('text-xs font-medium', isLight ? 'text-gray-800' : 'text-gray-200')}>
                                 Selected Credentials Context
                               </div>
                             </div>
-                            <span className={cn('text-[10px] flex-shrink-0', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                              {sharedContexts.selectedCredentials.length} {sharedContexts.selectedCredentials.length === 1 ? 'credential' : 'credentials'}
+                            <span
+                              className={cn('flex-shrink-0 text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              {sharedContexts.selectedCredentials.length}{' '}
+                              {sharedContexts.selectedCredentials.length === 1 ? 'credential' : 'credentials'}
                             </span>
                           </div>
                         </button>
                         {expandedContexts.has('credentials') && (
-                          <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
-                            <pre className={cn(
-                              'recent-sessions-scroll text-[10px] p-2 rounded overflow-x-auto',
-                              isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
-                            )}
-                            style={{
-                              scrollbarWidth: 'thin',
-                              scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
-                            }}
-                            >
-                              {JSON.stringify(sharedContexts.selectedCredentials.map(cred => ({
-                                id: cred.id,
-                                name: cred.name,
-                                type: cred.type,
-                                key: cred.key,
-                              })), null, 2)}
+                          <div className={cn('px-3 pt-2 pb-3', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
+                            <pre
+                              className={cn(
+                                'recent-sessions-scroll overflow-x-auto overscroll-contain rounded p-2 text-[10px]',
+                                isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300',
+                              )}
+                              style={
+                                {
+                                  '--table-scroll-bg': isLight ? '#f3f4f6' : '#111827',
+                                } as React.CSSProperties
+                              }>
+                              {JSON.stringify(
+                                sharedContexts.selectedCredentials.map(cred => ({
+                                  id: cred.id,
+                                  name: cred.name,
+                                  type: cred.type,
+                                  key: cred.key,
+                                  ...(cred.description != null && String(cred.description).trim()
+                                    ? { description: String(cred.description).trim() }
+                                    : {}),
+                                })),
+                                null,
+                                2,
+                              )}
                             </pre>
                           </div>
                         )}
@@ -1264,19 +1331,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Footer */}
           <div
             className={cn(
-              'flex items-center justify-end gap-2 px-3 py-2 border-t',
-              isLight ? 'border-gray-200' : 'border-gray-700'
-            )}
-          >
+              'flex items-center justify-end gap-2 border-t px-3 py-2',
+              isLight ? 'border-gray-200' : 'border-gray-700',
+            )}>
             <button
               onClick={onClose}
               className={cn(
-                'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                isLight
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              )}
-            >
+                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                isLight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-600 text-white hover:bg-blue-700',
+              )}>
               Done
             </button>
           </div>
@@ -1284,5 +1347,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       </div>
     </>
   );
-};
 
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  return createPortal(modalTree, document.body);
+};

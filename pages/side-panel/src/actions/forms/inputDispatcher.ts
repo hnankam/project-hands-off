@@ -6,6 +6,7 @@
  */
 
 import { debug as baseDebug } from '@extension/shared';
+import { assertExtensionContext } from '@src/utils/extensionOnly';
 import { InputDataResult, InputHandlerOptions, InputType, InputHandler } from './types';
 
 // Import all specialized handlers
@@ -456,9 +457,13 @@ export class InputDispatcher {
         return currentRoot.querySelector(elementSelector) as HTMLElement;
       }
 
-      function findElement(
-        sel: string,
-      ): { element: HTMLElement; foundInShadowDOM: boolean; shadowHostInfo: string; inputType: string; tagName: string } | null {
+      function findElement(sel: string): {
+        element: HTMLElement;
+        foundInShadowDOM: boolean;
+        shadowHostInfo: string;
+        inputType: string;
+        tagName: string;
+      } | null {
         const element = querySelectorWithShadowDOM(sel);
         const foundInShadowDOM = sel.includes(' >> ');
         const shadowHostInfo = foundInShadowDOM ? sel.split(' >> ')[0].trim() : '';
@@ -640,10 +645,7 @@ export class InputDispatcher {
           };
 
           // Start animation with appropriate delay
-          setTimeout(
-            animateCursor,
-            isNewCursor ? animation.CURSOR_DELAY_NEW_MS : animation.CURSOR_DELAY_EXISTING_MS,
-          );
+          setTimeout(animateCursor, isNewCursor ? animation.CURSOR_DELAY_NEW_MS : animation.CURSOR_DELAY_EXISTING_MS);
         } catch (error) {
           console.error('[ContentScript] Error moving cursor:', error);
         }
@@ -870,9 +872,8 @@ export class InputDispatcher {
           await new Promise(resolve => setTimeout(resolve, animation.FOCUS_DELAY_MS));
 
           const container =
-            dropdownElement.closest(
-              '[data-slot="form-item"], .dropdown, .select, [role="listbox"], [role="menu"]',
-            ) || dropdownElement.parentElement;
+            dropdownElement.closest('[data-slot="form-item"], .dropdown, .select, [role="listbox"], [role="menu"]') ||
+            dropdownElement.parentElement;
 
           const allOptions: Array<{ element: Element; text: string }> = [];
           const foundElements = new Set<Element>();
@@ -1367,5 +1368,6 @@ export async function handleInputData(
   clearFirst: boolean = true,
   moveCursor: boolean = true,
 ): Promise<InputDataResult> {
+  assertExtensionContext('Form input');
   return inputDispatcher.handleInputData(cssSelector, value, clearFirst, moveCursor);
 }

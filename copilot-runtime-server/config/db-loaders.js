@@ -1,7 +1,7 @@
 /**
  * Database loaders for runtime server configuration
  * Loads providers, models, and agents from PostgreSQL database
- * 
+ *
  * Multi-tenancy design:
  * - organizationId is OPTIONAL for server startup (loads global config)
  * - organizationId should be PROVIDED for all runtime requests (tenant-specific config)
@@ -36,12 +36,12 @@ function buildTenancyFilters(organizationId, teamId, tableAlias, joinTable, reso
   const params = [];
   let whereClause = '';
   let teamClause = '';
-  
+
   if (organizationId) {
     // Scoped to specific organization
     whereClause = `WHERE ${tableAlias}.organization_id = $1`;
     params.push(organizationId);
-    
+
     if (teamId !== null && teamId !== undefined) {
       // Filter items that are either org-wide or assigned to this team
       teamClause = `AND (
@@ -59,7 +59,7 @@ function buildTenancyFilters(organizationId, teamId, tableAlias, joinTable, reso
     whereClause = '';
     teamClause = '';
   }
-  
+
   return { whereClause, teamClause, params };
 }
 
@@ -68,7 +68,7 @@ function buildTenancyFilters(organizationId, teamId, tableAlias, joinTable, reso
  */
 function calculateSpecificity(item) {
   const hasTeams = item.teams && Array.isArray(item.teams) && item.teams.length > 0;
-  return hasTeams ? 2 : (item.organization_id ? 1 : 0);
+  return hasTeams ? 2 : item.organization_id ? 1 : 0;
 }
 
 /**
@@ -79,7 +79,13 @@ function calculateSpecificity(item) {
  */
 export async function loadProvidersFromDb({ organizationId = null, teamId = null } = {}) {
   const providerMap = new Map();
-  const { whereClause, teamClause, params } = buildTenancyFilters(organizationId, teamId, 'p', 'provider_teams', 'provider_id');
+  const { whereClause, teamClause, params } = buildTenancyFilters(
+    organizationId,
+    teamId,
+    'p',
+    'provider_teams',
+    'provider_id',
+  );
 
   const result = await query(
     `
@@ -142,7 +148,7 @@ export async function loadProvidersFromDb({ organizationId = null, teamId = null
  */
 export async function loadModelsFromDb() {
   const models = [];
-  
+
   const result = await query(`
     SELECT 
       m.model_key,
@@ -166,7 +172,7 @@ export async function loadModelsFromDb() {
     WHERE m.deleted_at IS NULL AND p.deleted_at IS NULL
     ORDER BY m.enabled DESC, m.model_key
   `);
-  
+
   for (const row of result.rows) {
     const modelConfig = {
       key: row.model_key,
@@ -178,16 +184,16 @@ export async function loadModelsFromDb() {
       organization_id: row.organization_id,
       teams: row.teams || [],
       updated_at: row.updated_at,
-      created_at: row.created_at
+      created_at: row.created_at,
     };
 
     if (row.model_settings_override) {
       modelConfig.model_settings = row.model_settings_override;
     }
-    
+
     models.push(modelConfig);
   }
-  
+
   return models;
 }
 
@@ -196,7 +202,7 @@ export async function loadModelsFromDb() {
  */
 export async function loadAgentsFromDb() {
   const agents = [];
-  
+
   const result = await query(`
     SELECT 
       a.id,
@@ -231,7 +237,7 @@ export async function loadAgentsFromDb() {
       a.enabled
     ORDER BY a.enabled DESC, a.agent_type
   `);
-  
+
   for (const row of result.rows) {
     agents.push({
       type: row.agent_type,
@@ -242,11 +248,12 @@ export async function loadAgentsFromDb() {
       organization_id: row.organization_id,
       teams: row.teams || [],
       enabled: row.enabled,
-      allowed_models: Array.isArray(row.model_keys) && row.model_keys.length > 0 ? row.model_keys.filter(Boolean) : null,
-      allowed_tools: Array.isArray(row.tool_keys) && row.tool_keys.length > 0 ? row.tool_keys.filter(Boolean) : null
+      allowed_models:
+        Array.isArray(row.model_keys) && row.model_keys.length > 0 ? row.model_keys.filter(Boolean) : null,
+      allowed_tools: Array.isArray(row.tool_keys) && row.tool_keys.length > 0 ? row.tool_keys.filter(Boolean) : null,
     });
   }
-  
+
   return agents;
 }
 
@@ -259,14 +266,14 @@ export async function loadDefaultsFromDb() {
   const agentResult = await query(`
     SELECT agent_type FROM agents WHERE enabled = true AND deleted_at IS NULL ORDER BY agent_type LIMIT 1
   `);
-  
+
   const modelResult = await query(`
     SELECT model_key FROM models WHERE enabled = true AND deleted_at IS NULL ORDER BY model_key LIMIT 1
   `);
-  
+
   return {
     default_agent: agentResult.rows[0]?.agent_type,
-    default_model: modelResult.rows[0]?.model_key
+    default_model: modelResult.rows[0]?.model_key,
   };
 }
 
@@ -284,7 +291,13 @@ export async function getModelsConfigFromDb({ organizationId = null, teamId = nu
   }
 
   try {
-    const { whereClause, teamClause, params } = buildTenancyFilters(organizationId, teamId, 'm', 'model_teams', 'model_id');
+    const { whereClause, teamClause, params } = buildTenancyFilters(
+      organizationId,
+      teamId,
+      'm',
+      'model_teams',
+      'model_id',
+    );
 
     const { rows: modelRows } = await query(
       `
@@ -335,19 +348,19 @@ export async function getModelsConfigFromDb({ organizationId = null, teamId = nu
       teams: row.teams || [],
       model_settings: row.model_settings_override || null,
       updated_at: row.updated_at,
-      created_at: row.created_at
+      created_at: row.created_at,
     }));
 
     const [providers, defaults] = await Promise.all([
       loadProvidersFromDb({ organizationId, teamId }),
-      loadDefaultsFromDb()
+      loadDefaultsFromDb(),
     ]);
 
     const config = {
       providers,
       models,
       default_agent: defaults.default_agent,
-      default_model: defaults.default_model
+      default_model: defaults.default_model,
     };
 
     _dbCache[cacheKey] = config;
@@ -358,6 +371,56 @@ export async function getModelsConfigFromDb({ organizationId = null, teamId = nu
     console.error('[DB] Error loading models configuration:', error.message);
     throw error;
   }
+}
+
+/**
+ * @param {unknown} meta - agents.metadata JSON
+ * @returns {object[]} required_workspace_credentials array (may be empty)
+ */
+function requiredWorkspaceCredentialsFromAgentMetadata(meta) {
+  const m = meta && typeof meta === 'object' ? meta : null;
+  const rwc = m?.required_workspace_credentials;
+  return Array.isArray(rwc) ? rwc : [];
+}
+
+/**
+ * Collect auxiliary agent row UUIDs from metadata.auxiliary_agents (built-in slots + custom).
+ * @param {unknown} auxiliaryAgents
+ * @returns {string[]}
+ */
+function collectAuxiliaryAgentIds(auxiliaryAgents) {
+  if (!auxiliaryAgents || typeof auxiliaryAgents !== 'object') return [];
+  const ids = [];
+  const builtinKeys = ['image_generation', 'web_search', 'code_execution', 'url_context', 'memory'];
+  for (const k of builtinKeys) {
+    const block = auxiliaryAgents[k];
+    const aid = block?.agent_id;
+    if (typeof aid === 'string' && aid.trim()) ids.push(aid.trim());
+  }
+  if (Array.isArray(auxiliaryAgents.custom)) {
+    for (const c of auxiliaryAgents.custom) {
+      const aid = c?.agent_id;
+      if (typeof aid === 'string' && aid.trim()) ids.push(aid.trim());
+    }
+  }
+  return [...new Set(ids)];
+}
+
+/**
+ * Merge this agent's required_workspace_credentials with those of agents referenced in auxiliary_agents.
+ * @param {object} row - agent row from DB (id, metadata)
+ * @param {Map<string, object[]>} rwcByAgentId - agent UUID -> credential requirement objects
+ */
+function mergedRequiredWorkspaceCredentialsForAgent(row, rwcByAgentId) {
+  const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : null;
+  const primary = requiredWorkspaceCredentialsFromAgentMetadata(meta);
+  const merged = [...primary];
+  const auxIds = collectAuxiliaryAgentIds(meta?.auxiliary_agents);
+  for (const id of auxIds) {
+    const extra = rwcByAgentId.get(id);
+    if (extra && extra.length > 0) merged.push(...extra);
+  }
+  return merged.length > 0 ? merged : null;
 }
 
 /**
@@ -374,7 +437,13 @@ export async function getAgentsConfigFromDb({ organizationId = null, teamId = nu
   }
 
   try {
-    const { whereClause, teamClause, params } = buildTenancyFilters(organizationId, teamId, 'a', 'agent_teams', 'agent_id');
+    const { whereClause, teamClause, params } = buildTenancyFilters(
+      organizationId,
+      teamId,
+      'a',
+      'agent_teams',
+      'agent_id',
+    );
 
     const { rows: agentRows } = await query(
       `
@@ -388,6 +457,7 @@ export async function getAgentsConfigFromDb({ organizationId = null, teamId = nu
         a.enabled,
         a.updated_at,
         a.created_at,
+        a.metadata,
         array_remove(array_agg(DISTINCT m.model_key), NULL) AS model_keys,
         array_remove(array_agg(DISTINCT tl.tool_key), NULL) AS tool_keys,
         COALESCE(
@@ -411,7 +481,8 @@ export async function getAgentsConfigFromDb({ organizationId = null, teamId = nu
         a.organization_id,
         a.enabled,
         a.updated_at,
-        a.created_at
+        a.created_at,
+        a.metadata
       ORDER BY a.enabled DESC, a.agent_type
       `,
       params,
@@ -426,20 +497,32 @@ export async function getAgentsConfigFromDb({ organizationId = null, teamId = nu
       }
     }
 
-    const agents = Array.from(scopedAgents.values()).map(({ row }) => ({
-      type: row.agent_type,
-      name: row.agent_name,
-      description: row.description || '',
-      prompt: row.prompt_template,
-      endpoint_pattern: '/agent/{agent_type}/{model}',
-      organization_id: row.organization_id,
-      teams: row.teams || [],
-      enabled: row.enabled,
-      updated_at: row.updated_at,
-      created_at: row.created_at,
-      allowed_models: Array.isArray(row.model_keys) && row.model_keys.length > 0 ? row.model_keys.filter(Boolean) : null,
-      allowed_tools: Array.isArray(row.tool_keys) && row.tool_keys.length > 0 ? row.tool_keys.filter(Boolean) : null
-    }));
+    /** @type {Map<string, object[]>} */
+    const rwcByAgentId = new Map();
+    for (const r of agentRows) {
+      const list = requiredWorkspaceCredentialsFromAgentMetadata(r.metadata);
+      rwcByAgentId.set(r.id, list);
+    }
+
+    const agents = Array.from(scopedAgents.values()).map(({ row }) => {
+      const required_workspace_credentials = mergedRequiredWorkspaceCredentialsForAgent(row, rwcByAgentId);
+      return {
+        type: row.agent_type,
+        name: row.agent_name,
+        description: row.description || '',
+        prompt: row.prompt_template,
+        endpoint_pattern: '/agent/{agent_type}/{model}',
+        organization_id: row.organization_id,
+        teams: row.teams || [],
+        enabled: row.enabled,
+        updated_at: row.updated_at,
+        created_at: row.created_at,
+        allowed_models:
+          Array.isArray(row.model_keys) && row.model_keys.length > 0 ? row.model_keys.filter(Boolean) : null,
+        allowed_tools: Array.isArray(row.tool_keys) && row.tool_keys.length > 0 ? row.tool_keys.filter(Boolean) : null,
+        required_workspace_credentials,
+      };
+    });
 
     const config = { agents };
 
@@ -452,4 +535,3 @@ export async function getAgentsConfigFromDb({ organizationId = null, teamId = nu
     throw error;
   }
 }
-

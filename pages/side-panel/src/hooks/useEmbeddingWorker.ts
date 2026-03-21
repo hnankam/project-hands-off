@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { FEATURES } from '@extension/platform';
 import { debug } from '@extension/shared';
 
 interface UseEmbeddingWorkerOptions {
@@ -22,11 +23,11 @@ interface EmbeddingState {
 /**
  * React hook for using embeddings via background service worker.
  * Provides methods to initialize the embedding service and generate embeddings.
- * 
+ *
  * @param options - Configuration options
  * @param options.autoInitialize - Whether to automatically initialize on mount (default: false)
  * @param options.onProgress - Callback for progress updates
- * 
+ *
  * @returns Object containing:
  *   - isInitialized: boolean - Whether embedding service is ready
  *   - isInitializing: boolean - Whether initialization is in progress
@@ -37,7 +38,7 @@ interface EmbeddingState {
  *   - embedPageContent: Function to embed page content directly
  *   - embedPageContentForTab: Function to embed content for a specific tab
  *   - embedTexts: Function to generate embeddings for multiple texts
- * 
+ *
  * @example
  * ```tsx
  * const {
@@ -46,7 +47,7 @@ interface EmbeddingState {
  *   embedPageContent,
  *   embedTexts
  * } = useEmbeddingWorker({ autoInitialize: true });
- * 
+ *
  * // Later...
  * const embeddings = await embedTexts(['hello', 'world']);
  * ```
@@ -54,16 +55,20 @@ interface EmbeddingState {
 export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
   const { autoInitialize = false, onProgress } = options;
 
-  const [state, setState] = useState<EmbeddingState>({
-    isInitialized: false,
+  const [state, setState] = useState<EmbeddingState>(() => ({
+    isInitialized: !FEATURES.embeddingWorker(),
     isInitializing: false,
     isProcessing: false,
     error: null,
     progress: null,
-  });
+  }));
 
   // Initialize embedding service in background - using onMessage pattern
   const initialize = useCallback(() => {
+    if (!FEATURES.embeddingWorker()) {
+      return Promise.resolve();
+    }
+
     if (state.isInitialized || state.isInitializing) {
       debug.log('[useEmbeddingWorker] Already initialized or initializing');
       return Promise.resolve();
@@ -156,6 +161,10 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
   // Generate embedding for page content - Direct message passing (no storage)
   const embedPageContent = useCallback(
     async (content: any): Promise<any> => {
+      if (!FEATURES.embeddingWorker()) {
+        throw new Error('Page embeddings require the browser extension');
+      }
+
       if (!state.isInitialized) {
         throw new Error('Embedding service not initialized');
       }
@@ -260,7 +269,11 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
           })
           .then(() => {
             const sendDuration = (performance.now() - sendStartTime).toFixed(0);
-            debug.log('[useEmbeddingWorker] Request sent, waiting for result... (serialization took', sendDuration, 'ms)');
+            debug.log(
+              '[useEmbeddingWorker] Request sent, waiting for result... (serialization took',
+              sendDuration,
+              'ms)',
+            );
           })
           .catch(e => {
             clearTimeout(timeoutHandle);
@@ -278,6 +291,10 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
   // This avoids main-thread freeze from structured cloning in the side panel.
   const embedPageContentForTab = useCallback(
     async (tabId: number, contentTimestamp?: number): Promise<any> => {
+      if (!FEATURES.embeddingWorker()) {
+        throw new Error('Tab embeddings require the browser extension');
+      }
+
       if (!state.isInitialized) {
         throw new Error('Embedding service not initialized');
       }
@@ -287,7 +304,7 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
 
       return new Promise((resolve, reject) => {
         const requestId = `embed_tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
+
         // Timeout after 60 seconds
         const timeoutHandle = setTimeout(() => {
           chrome.runtime.onMessage.removeListener(resultListener);
@@ -348,6 +365,10 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
   // Generate embeddings for multiple texts - using onMessage pattern
   const embedTexts = useCallback(
     (texts: string[]): Promise<number[][]> => {
+      if (!FEATURES.embeddingWorker()) {
+        throw new Error('Text embeddings require the browser extension');
+      }
+
       if (!state.isInitialized) {
         throw new Error('Embedding service not initialized');
       }
@@ -374,11 +395,7 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
             chrome.runtime.onMessage.removeListener(responseListener);
 
             if (message.success) {
-              debug.log(
-                '[useEmbeddingWorker] Batch embeddings generated:',
-                message.embeddings.length,
-                'embeddings',
-              );
+              debug.log('[useEmbeddingWorker] Batch embeddings generated:', message.embeddings.length, 'embeddings');
               setState(prev => ({ ...prev, isProcessing: false }));
               resolve(message.embeddings as number[][]);
             } else {

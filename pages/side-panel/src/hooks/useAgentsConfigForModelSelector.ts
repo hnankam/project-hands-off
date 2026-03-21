@@ -1,8 +1,19 @@
 import { useState, useEffect } from 'react';
 import { API_CONFIG } from '../constants';
 
-/** Minimal agent shape for ModelSelector allowed-models filtering */
-export type AgentConfigEntry = { id: string; allowedModels?: string[] | null };
+/** Agent row from GET /api/config/agents (subset used by chat UI) */
+export type AgentConfigEntry = {
+  id: string;
+  allowedModels?: string[] | null;
+  /** From agent metadata; chat UI warning only (not sent to pydantic backend as instructions) */
+  requiredWorkspaceCredentials?: RequiredWorkspaceCredentialMeta[] | null;
+};
+
+export type RequiredWorkspaceCredentialMeta = {
+  credential_type?: string;
+  type?: string;
+  description?: string;
+};
 
 /**
  * Fetches /api/config/agents once (credentials included) for ModelSelector's allowedModels.

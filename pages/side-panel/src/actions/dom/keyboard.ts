@@ -1,4 +1,5 @@
 import { debug as baseDebug } from '@extension/shared';
+import { assertExtensionContext } from '@src/utils/extensionOnly';
 
 // ============================================================================
 // CONSTANTS
@@ -146,7 +147,7 @@ function formatKeystroke(stroke: Keystroke): string {
  */
 function createRequestSignature(req: KeystrokeSequenceRequest): string {
   const keysPart = req.sequence
-    .map((k) => {
+    .map(k => {
       const mods = [k.ctrl && 'C', k.meta && 'M', k.alt && 'A', k.shift && 'S'].filter(Boolean).join('');
       return `${mods}${k.key}${k.repeat || 1}`;
     })
@@ -164,6 +165,7 @@ function createRequestSignature(req: KeystrokeSequenceRequest): string {
  * @returns Promise with status and execution details
  */
 export async function handleKeystrokeSequence(req: KeystrokeSequenceRequest): Promise<KeystrokeResult> {
+  assertExtensionContext('Keyboard input');
   // Validate input early
   if (!req || !Array.isArray(req.sequence) || req.sequence.length === 0) {
     return { status: 'error', message: 'Empty keystroke sequence' };
@@ -190,7 +192,10 @@ export async function handleKeystrokeSequence(req: KeystrokeSequenceRequest): Pr
 
   // If an identical request is in-flight (within timeout), reuse it
   if (existingLock && lockAge < HANDLER_LOCK_TIMEOUT_MS) {
-    debug.log(`${LOG_PREFIX}:${callId}`, `DUPLICATE REQUEST BLOCKED - Reusing existing execution (lock age: ${lockAge}ms)`);
+    debug.log(
+      `${LOG_PREFIX}:${callId}`,
+      `DUPLICATE REQUEST BLOCKED - Reusing existing execution (lock age: ${lockAge}ms)`,
+    );
     return existingLock.promise;
   }
 
@@ -204,12 +209,13 @@ export async function handleKeystrokeSequence(req: KeystrokeSequenceRequest): Pr
   }
 
   // Create execution promise with cleanup in finally block
-  const executionPromise = executeKeystrokeSequenceInternal(req, formattedKeys, requestSignature, callId)
-    .finally(() => {
+  const executionPromise = executeKeystrokeSequenceInternal(req, formattedKeys, requestSignature, callId).finally(
+    () => {
       // Always clean up the lock after execution completes (success or error)
       lockMap.delete(requestSignature);
       debug.log(`${LOG_PREFIX}:${callId}`, 'Lock released after execution');
-    });
+    },
+  );
 
   // Store the promise to prevent duplicate execution
   const lockTimestamp = Date.now();
@@ -239,7 +245,7 @@ async function executeKeystrokeSequenceInternal(
   req: KeystrokeSequenceRequest,
   formattedKeys: string,
   requestSignature: string,
-  callId: string
+  callId: string,
 ): Promise<KeystrokeResult> {
   try {
     // Focus target if provided - using ISOLATED world to match keystroke execution
@@ -263,12 +269,12 @@ async function executeKeystrokeSequenceInternal(
 
             const el = ((): Element | null => {
               if (!selector.includes(' >> ')) return document.querySelector(selector);
-              const [shadowPath, leafSelector] = selector.split(' >> ').map((s) => s.trim());
+              const [shadowPath, leafSelector] = selector.split(' >> ').map(s => s.trim());
               const segments = shadowPath
                 .split(' > ')
-                .map((s) => s.trim())
+                .map(s => s.trim())
                 .filter(Boolean)
-                .filter((s) => s !== 'document');
+                .filter(s => s !== 'document');
               let root: Document | ShadowRoot = document;
               for (const seg of segments) {
                 const host = root.querySelector(seg);
@@ -378,7 +384,7 @@ async function executeKeystrokeSequenceInternal(
             win.__copilotKeyLog?.push(entry);
             console.log('[Copilot][KeyLog]', entry);
           };
-          (['keydown', 'keypress', 'keyup'] as const).forEach((evt) => {
+          (['keydown', 'keypress', 'keyup'] as const).forEach(evt => {
             window.addEventListener(evt, capture(evt), true);
           });
         }
@@ -412,7 +418,7 @@ async function executeKeystrokeSequenceInternal(
         // Fallback cleanup after timeout (in case immediate cleanup fails)
         const cleanupTimer = setTimeout(cleanup, lockTimeout);
 
-        const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+        const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
         let dispatched = 0;
         const normalizeKey = (key: string) => (key.length === 1 ? key : key); // keep named keys intact
 
@@ -435,7 +441,8 @@ async function executeKeystrokeSequenceInternal(
                 composed: true,
               };
 
-              const target = (document.activeElement as HTMLElement | null) || document.body || document.documentElement;
+              const target =
+                (document.activeElement as HTMLElement | null) || document.body || document.documentElement;
               const dispatchKeyEvent = (type: 'keydown' | 'keypress' | 'keyup') => {
                 console.log('[Copilot][DispatchEvent]', { type, key, time: performance.now() });
                 const event = new KeyboardEvent(type, initCommon);
@@ -476,7 +483,7 @@ async function executeKeystrokeSequenceInternal(
                         composed: true,
                         data: key,
                         inputType: 'insertText',
-                      })
+                      }),
                     );
                     dispatched += 1;
                   } else if (ae.isContentEditable) {
@@ -527,7 +534,12 @@ async function executeKeystrokeSequenceInternal(
     const executed = exec?.[0]?.result ?? 0;
     debug.log(`${LOG_PREFIX}:${callId}`, `Successfully executed: ${formattedKeys}`);
     debug.log(`${LOG_PREFIX}:${callId}`, `Total keyboard events dispatched: ${executed}`);
-    return { status: 'success', message: `Keystrokes executed: ${formattedKeys}`, executed, target: req.targetSelector };
+    return {
+      status: 'success',
+      message: `Keystrokes executed: ${formattedKeys}`,
+      executed,
+      target: req.targetSelector,
+    };
   } catch (error) {
     debug.error(LOG_PREFIX, 'Error executing keystrokes:', error);
     return { status: 'error', message: error instanceof Error ? error.message : 'Unknown error' };

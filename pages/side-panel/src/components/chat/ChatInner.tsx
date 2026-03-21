@@ -164,17 +164,21 @@ const SelectedCredentialsContext: React.FC<{ credentials: any[] }> = ({ credenti
     description: `Available credentials for API calls. The user has explicitly selected these credentials for use in this session.
       
       IMPORTANT SECURITY NOTES:
-      - You can see credential metadata (ID, name, type, key identifier) but NOT the actual passwords/secrets
+      - You can see credential metadata (ID, name, type, key identifier, optional user-written description) but NOT the actual passwords/secrets
       - Never ask the user for credential values - they are securely stored server-side
       - The backend will handle authentication automatically when you use the credential
       
-      The 'key' field contains public identifiers only (like username, API key ID) - never the actual secret.`,
+      The 'key' field contains public identifiers only (like username, API key ID) - never the actual secret.
+      The 'description' field (when present) is user-provided context about how or where to use this credential.`,
     value: {
       selectedCredentials: credentials.map(cred => ({
         id: cred.id,
         name: cred.name,
         type: cred.type,
         key: cred.key, // Public identifier only (username, API key ID, etc.)
+        ...(cred.description != null && String(cred.description).trim()
+          ? { description: String(cred.description).trim() }
+          : {}),
         // ✅ SECURITY: password/secret field removed - never sent to LLM
       })),
     },

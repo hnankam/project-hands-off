@@ -1,12 +1,17 @@
 /**
  * Session Storage Database Service
- * 
+ *
  * High-performance session management using SurrealDB/IndexedDB
  * Replaces chrome.storage.local for session data to avoid massive writes
  */
 
 import type { DBWorkerClient } from './db-worker-client.js';
-import { initializeSessionSchema, type SessionMetadata, type SessionUsageStats, type SessionAgentState } from './session-schema.js';
+import {
+  initializeSessionSchema,
+  type SessionMetadata,
+  type SessionUsageStats,
+  type SessionAgentState,
+} from './session-schema.js';
 import { debug } from '../utils/debug.js';
 
 // Helper to maintain compatibility with existing log calls
@@ -33,29 +38,29 @@ export class SessionStorageDB {
   private currentUserId: string | null = null;
   private syncKeyPrefix = 'session_storage_sync_';
   private windowId: string; // Unique ID for this window instance to filter self-notifications
-  
+
   // Short-lived cache for getSession to prevent redundant DB queries during rapid access
   private sessionCache: Map<string, { data: SessionMetadata | null; timestamp: number }> = new Map();
   private readonly SESSION_CACHE_TTL = 3000; // 3 second cache TTL (increased from 2000ms for faster tab switches)
-  
+
   // Notification batching to prevent spam
   private notificationBatchTimer: NodeJS.Timeout | null = null;
   private pendingNotifications = new Set<string>(); // Track event types to batch
   private readonly NOTIFICATION_BATCH_DELAY = 100; // Batch notifications within 100ms window
-  
+
   constructor() {
     // Generate a unique window ID for this instance to filter self-notifications
     this.windowId = `window_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     // log('[SessionStorageDB] Window ID initialized:', this.windowId);
   }
-  
+
   /**
    * Clear session cache entry (call after writes)
    */
   private invalidateSessionCache(sessionId: string): void {
     this.sessionCache.delete(sessionId);
   }
-  
+
   /**
    * Clear entire session cache
    */
@@ -78,13 +83,14 @@ export class SessionStorageDB {
       };
     }
 
-    const sessionId = typeof row.sessionId === 'string'
-      ? row.sessionId
-      : typeof row.id === 'string'
-        ? row.id
-        : typeof row.id === 'object' && row.id?.id
-          ? String(row.id.id)
-          : '';
+    const sessionId =
+      typeof row.sessionId === 'string'
+        ? row.sessionId
+        : typeof row.id === 'string'
+          ? row.id
+          : typeof row.id === 'object' && row.id?.id
+            ? String(row.id.id)
+            : '';
 
     const timestamp = typeof row.timestamp === 'number' ? row.timestamp : Date.now();
     const createdAt = typeof row.createdAt === 'number' ? row.createdAt : timestamp;
@@ -105,11 +111,12 @@ export class SessionStorageDB {
       selectedAgent: row.selectedAgent ?? undefined,
       selectedModel: row.selectedModel ?? undefined,
       // Plan expanded state may be stored as boolean or integer (1/0)
-      planExpanded: typeof row.planExpanded === 'boolean'
-        ? row.planExpanded
-        : typeof row.planExpanded === 'number'
-          ? row.planExpanded === 1
-          : undefined,
+      planExpanded:
+        typeof row.planExpanded === 'boolean'
+          ? row.planExpanded
+          : typeof row.planExpanded === 'number'
+            ? row.planExpanded === 1
+            : undefined,
       // Selected context page URLs
       selectedPageURLs: Array.isArray(row.selectedPageURLs) ? row.selectedPageURLs : undefined,
       // Selected workspace items
@@ -117,7 +124,9 @@ export class SessionStorageDB {
       selectedCredentialIds: Array.isArray(row.selectedCredentialIds) ? row.selectedCredentialIds : undefined,
       // Config panel state
       configPanelOpen: row.configPanelOpen === true,
-      configPanelTab: ['context', 'plans', 'graphs', 'sub-agents'].includes(row.configPanelTab) ? row.configPanelTab : 'context',
+      configPanelTab: ['context', 'plans', 'graphs', 'preview', 'sub-agents'].includes(row.configPanelTab)
+        ? row.configPanelTab
+        : 'context',
     };
   }
 
@@ -135,11 +144,11 @@ export class SessionStorageDB {
   setCurrentUserId(userId: string | null): void {
     const previousUserId = this.currentUserId;
     this.currentUserId = userId;
-    
+
     if (previousUserId !== userId) {
-      // log('[SessionStorageDB:setCurrentUserId] User ID changed:', { 
-      //   from: previousUserId || 'null', 
-      //   to: userId || 'null' 
+      // log('[SessionStorageDB:setCurrentUserId] User ID changed:', {
+      //   from: previousUserId || 'null',
+      //   to: userId || 'null'
       // });
       // Notify listeners so UI can refetch sessions for the new user immediately
       // This avoids transient empty states before ensureCurrentSessionForActiveUser completes
@@ -234,7 +243,7 @@ export class SessionStorageDB {
         debug.error('[SessionStorageDB] Listener error:', error);
       }
     });
-    
+
     // Also notify other windows via chrome.storage.local (cross-window sync)
     this.notifyOtherWindows(event);
   }
@@ -251,28 +260,27 @@ export class SessionStorageDB {
 
     // Add to pending notifications
     this.pendingNotifications.add(event.type);
-    
+
     // If timer already exists, just accumulate events
     if (this.notificationBatchTimer) {
       return;
     }
-    
+
     // Start batch timer
     this.notificationBatchTimer = setTimeout(async () => {
       this.notificationBatchTimer = null;
-      
+
       // Get unique event types to send
       const eventsToSend = Array.from(this.pendingNotifications);
       this.pendingNotifications.clear();
-      
+
       try {
         // Send batched notifications
         for (const eventType of eventsToSend) {
           const syncKey = `${this.syncKeyPrefix}${eventType}`;
-          const sessionId = eventType === 'sessionChanged' || eventType === 'messagesUpdated' 
-            ? (event as any).sessionId 
-            : undefined;
-          
+          const sessionId =
+            eventType === 'sessionChanged' || eventType === 'messagesUpdated' ? (event as any).sessionId : undefined;
+
           const syncData = {
             timestamp: Date.now(),
             event: eventType,
@@ -282,7 +290,7 @@ export class SessionStorageDB {
           };
 
           await chrome.storage.local.set({ [syncKey]: syncData });
-          
+
           // Log only if multiple events or specific sessionId
           if (eventsToSend.length > 1 || sessionId) {
             const logData = {
@@ -321,22 +329,22 @@ export class SessionStorageDB {
       await this.initialize(false);
     }
     const worker = this.getWorker();
-    
+
     // Require userId to be set
     if (!this.currentUserId) {
       // log('[SessionStorageDB:getAllSessions] No userId set - returning empty array. Call setCurrentUserId() first.');
       return [];
     }
-    
+
     // log('[SessionStorageDB:getAllSessions] Querying sessions for userId:', this.currentUserId);
-    
+
     // Only return sessions matching the current user
     const query = 'SELECT * FROM session_metadata WHERE userId = $userId ORDER BY createdAt ASC;';
     const params = { userId: this.currentUserId };
-    
+
     const result = await worker.query<any[]>(query, params);
     const rows = result[0] || [];
-    
+
     const short = (value: unknown, fallback: string = 'unknown') => {
       if (typeof value === 'string') {
         return value.slice(0, 12);
@@ -354,7 +362,7 @@ export class SessionStorageDB {
 
     // Reduced logging - only log count, not full session list (reduces noise)
     // log(`[SessionStorageDB:getAllSessions] Found ${rows.length} sessions for user ${this.currentUserId}`);
-    
+
     return rows.map((row: any) => this.normalizeSession(row));
   }
 
@@ -366,18 +374,18 @@ export class SessionStorageDB {
     // Check cache first
     const cached = this.sessionCache.get(sessionId);
     const now = Date.now();
-    if (cached && (now - cached.timestamp) < this.SESSION_CACHE_TTL) {
+    if (cached && now - cached.timestamp < this.SESSION_CACHE_TTL) {
       // Return cached result (cache hit - no DB query needed)
       // Commented out to reduce log noise - cache hits are very frequent
       // log(`[AGENT_MODEL_SYNC] CACHE HIT for session ${sessionId.slice(0, 8)} (age: ${now - cached.timestamp}ms)`);
       return cached.data;
     }
-    
-     const worker = this.getWorker();
-     // log(`[AGENT_MODEL_SYNC] DB QUERY - Getting session metadata for ${sessionId.slice(0, 8)}...`);
-     const result = await worker.query<any[]>(
+
+    const worker = this.getWorker();
+    // log(`[AGENT_MODEL_SYNC] DB QUERY - Getting session metadata for ${sessionId.slice(0, 8)}...`);
+    const result = await worker.query<any[]>(
       'SELECT * FROM session_metadata WHERE sessionId = $sessionId OR id = $sessionId LIMIT 1;',
-      { sessionId }
+      { sessionId },
     );
     if (!result[0]?.length) {
       // log(`[AGENT_MODEL_SYNC] DB QUERY - No metadata found for session ${sessionId.slice(0, 8)}`);
@@ -390,7 +398,7 @@ export class SessionStorageDB {
     //   agent: normalized.selectedAgent,
     //   model: normalized.selectedModel,
     // });
-    
+
     // Cache the result
     this.sessionCache.set(sessionId, { data: normalized, timestamp: now });
     return normalized;
@@ -421,12 +429,10 @@ export class SessionStorageDB {
       await this.initialize(false);
     }
     const worker = this.getWorker();
-    
+
     try {
-    const result = await worker.query<any[]>(
-      'SELECT sessionId FROM current_session LIMIT 1;'
-    );
-    const currentId = result[0]?.[0]?.sessionId || null;
+      const result = await worker.query<any[]>('SELECT sessionId FROM current_session LIMIT 1;');
+      const currentId = result[0]?.[0]?.sessionId || null;
 
       // If sessionId is null or empty string, treat as no current session
       // This handles cases where the record exists but has NULL sessionId (shouldn't happen after fix, but handle gracefully)
@@ -443,35 +449,35 @@ export class SessionStorageDB {
 
       if (!this.currentUserId) {
         return currentId;
-    }
-
-    const session = await this.getSession(currentId);
-    if (!session) {
-      // log('[SessionStorageDB:getCurrentSessionId] Stored current session not found, clearing pointer');
-      await this.setCurrentSessionId(null);
-      return null;
-    }
-
-    if (session.userId !== this.currentUserId) {
-      // log('[SessionStorageDB:getCurrentSessionId] Current session belongs to different user. Clearing and selecting fallback.', {
-      //   storedSessionId: currentId.slice(0, 12) + '...',
-      //   sessionUserId: session.userId,
-      //   currentUserId: this.currentUserId,
-      // });
-      await this.setCurrentSessionId(null);
-      const sessions = await this.getAllSessions();
-      if (sessions.length > 0) {
-        await this.setActiveSession(sessions[0].id);
-        return sessions[0].id;
       }
-      return null;
-    }
 
-    return session.id;
+      const session = await this.getSession(currentId);
+      if (!session) {
+        // log('[SessionStorageDB:getCurrentSessionId] Stored current session not found, clearing pointer');
+        await this.setCurrentSessionId(null);
+        return null;
+      }
+
+      if (session.userId !== this.currentUserId) {
+        // log('[SessionStorageDB:getCurrentSessionId] Current session belongs to different user. Clearing and selecting fallback.', {
+        //   storedSessionId: currentId.slice(0, 12) + '...',
+        //   sessionUserId: session.userId,
+        //   currentUserId: this.currentUserId,
+        // });
+        await this.setCurrentSessionId(null);
+        const sessions = await this.getAllSessions();
+        if (sessions.length > 0) {
+          await this.setActiveSession(sessions[0].id);
+          return sessions[0].id;
+        }
+        return null;
+      }
+
+      return session.id;
     } catch (error: any) {
       // Handle database errors gracefully (e.g., NULL sessionId in record)
       // log('[SessionStorageDB:getCurrentSessionId] Error getting current session ID:', error?.message || error);
-      
+
       // If error is about NULL sessionId, try to clean up the invalid record
       if (error?.message?.includes('NULL') || error?.message?.includes('null')) {
         try {
@@ -481,7 +487,7 @@ export class SessionStorageDB {
           // log('[SessionStorageDB:getCurrentSessionId] Cleanup after error failed (non-critical):', cleanupError);
         }
       }
-      
+
       return null;
     }
   }
@@ -491,14 +497,16 @@ export class SessionStorageDB {
    * Requires userId to be set (either in metadata or via setCurrentUserId)
    */
   async addSession(metadata: Omit<SessionMetadata, 'id' | 'timestamp' | 'createdAt'>): Promise<SessionMetadata> {
-     const worker = this.getWorker();
- 
+    const worker = this.getWorker();
+
     // Determine userId - prefer metadata.userId, fallback to currentUserId
     const userId = metadata.userId ?? this.currentUserId;
-    
+
     // Require userId
     if (!userId) {
-      const error = new Error('[SessionStorageDB:addSession] Cannot create session: userId is required. Call setCurrentUserId() first or pass userId in metadata.');
+      const error = new Error(
+        '[SessionStorageDB:addSession] Cannot create session: userId is required. Call setCurrentUserId() first or pass userId in metadata.',
+      );
       // log(error.message);
       throw error;
     }
@@ -509,13 +517,13 @@ export class SessionStorageDB {
     //   selectedAgent: metadata.selectedAgent,
     //   selectedModel: metadata.selectedModel,
     // });
- 
+
     const sessionId = `session-${Date.now()}`;
     const now = Date.now();
-    
+
     // Remove userId from metadata to avoid duplication
     const { userId: _metadataUserId, ...metadataWithoutUserId } = metadata;
-    
+
     const newSessionRecord = {
       sessionId,
       id: sessionId,
@@ -524,32 +532,28 @@ export class SessionStorageDB {
       userId,
       ...metadataWithoutUserId,
     };
- 
-     // Deactivate all other sessions for this user only
+
+    // Deactivate all other sessions for this user only
     //  log('[SessionStorageDB:addSession] Deactivating other sessions for user:', userId);
-     await worker.query(
-       'UPDATE session_metadata SET isActive = false WHERE isActive = true AND userId = $userId;', 
-       { userId }
-     );
- 
+    await worker.query('UPDATE session_metadata SET isActive = false WHERE isActive = true AND userId = $userId;', {
+      userId,
+    });
+
     // Create new session metadata
-    await worker.query(
-      'CREATE session_metadata CONTENT $newSession;',
-      { newSession: newSessionRecord }
-    );
- 
-     // Set as current session
+    await worker.query('CREATE session_metadata CONTENT $newSession;', { newSession: newSessionRecord });
+
+    // Set as current session
     await this.setCurrentSessionId(sessionId);
- 
+
     this.notify({ type: 'sessionsUpdated' });
     this.notify({ type: 'sessionChanged', sessionId });
- 
+
     // log('[SessionStorageDB:addSession] Successfully created new session:', {
     //   sessionId: sessionId.slice(0, 12) + '...',
     //   title: metadata.title,
     //   userId,
     // });
-    
+
     return this.normalizeSession(newSessionRecord);
   }
 
@@ -569,6 +573,7 @@ export class SessionStorageDB {
       const response = await fetch(`${apiBaseUrl}/api/threads`, {
         method: 'GET',
         credentials: 'include',
+        cache: 'no-store',
       });
       if (!response.ok) {
         debug.error('[SessionStorageDB:syncSessionsFromBackend] API error:', response.status);
@@ -581,7 +586,7 @@ export class SessionStorageDB {
       }
       const worker = this.getWorker();
       const existing = await this.getAllSessions();
-      const existingIds = new Set(existing.map((s) => s.id));
+      const existingIds = new Set(existing.map(s => s.id));
       let synced = 0;
       const toAdd: Array<{
         thread_id: string;
@@ -616,7 +621,10 @@ export class SessionStorageDB {
           userId: t.user_id ?? userId,
           title,
           isActive: false,
-          isOpen: true,
+          // Keep restored rows archived until the user opens them — avoids mounting many
+          // ChatSessionContainers / agent runs that can re-create agent_threads via ON CONFLICT
+          // right after a hard DELETE.
+          isOpen: false,
           selectedAgent: agent,
           selectedModel: model,
         };
@@ -628,11 +636,11 @@ export class SessionStorageDB {
         if (firstId) {
           await worker.query(
             'UPDATE session_metadata SET isActive = false WHERE isActive = true AND userId = $userId;',
-            { userId }
+            { userId },
           );
           await worker.query(
             'UPDATE session_metadata SET isActive = true, isOpen = true WHERE sessionId = $id OR id = $id;',
-            { id: firstId }
+            { id: firstId },
           );
           await this.setCurrentSessionId(firstId);
         }
@@ -666,7 +674,9 @@ export class SessionStorageDB {
 
     // Verify session belongs to current user
     if (this.currentUserId && session.userId !== this.currentUserId) {
-      const error = new Error(`[SessionStorageDB:setActiveSession] Session ${sessionId} belongs to different user. Session userId: ${session.userId}, Current userId: ${this.currentUserId}`);
+      const error = new Error(
+        `[SessionStorageDB:setActiveSession] Session ${sessionId} belongs to different user. Session userId: ${session.userId}, Current userId: ${this.currentUserId}`,
+      );
       log(error.message);
       throw error;
     }
@@ -679,15 +689,21 @@ export class SessionStorageDB {
 
     // Update in a single transaction - only deactivate sessions for the same user
     if (this.currentUserId) {
-      await worker.query(`
+      await worker.query(
+        `
         UPDATE session_metadata SET isActive = false WHERE isActive = true AND userId = $userId;
         UPDATE session_metadata SET isActive = true, isOpen = true WHERE sessionId = $id OR id = $id;
-      `, { id: sessionId, userId: this.currentUserId });
+      `,
+        { id: sessionId, userId: this.currentUserId },
+      );
     } else {
-    await worker.query(`
+      await worker.query(
+        `
       UPDATE session_metadata SET isActive = false WHERE isActive = true;
       UPDATE session_metadata SET isActive = true, isOpen = true WHERE sessionId = $id OR id = $id;
-    `, { id: sessionId });
+    `,
+        { id: sessionId },
+      );
     }
 
     // Update current session ID
@@ -705,7 +721,7 @@ export class SessionStorageDB {
 
     await worker.query(
       'UPDATE session_metadata SET isOpen = false, isActive = false WHERE sessionId = $id OR id = $id;',
-      { id: sessionId }
+      { id: sessionId },
     );
 
     // If this was the current session, find a new one
@@ -739,11 +755,11 @@ export class SessionStorageDB {
           log('[SessionStorageDB:closeSession] Cannot create new session: No userId set');
           return;
         }
-        
+
         const adjectives = ['Quick', 'Bright', 'Smart', 'Swift', 'Creative'];
         const nouns = ['Task', 'Project', 'Query', 'Session', 'Work'];
         const title = `${adjectives[Math.floor(Math.random() * adjectives.length)]} ${nouns[Math.floor(Math.random() * nouns.length)]}`;
-        
+
         // Get agent/model/context from the session we're closing to carry over to new session
         const closedSession = await this.getSession(sessionId);
         const carryOver = closedSession
@@ -752,10 +768,12 @@ export class SessionStorageDB {
               selectedModel: closedSession.selectedModel || 'claude-4.5-haiku',
               ...(closedSession.selectedPageURLs?.length && { selectedPageURLs: closedSession.selectedPageURLs }),
               ...(closedSession.selectedNoteIds?.length && { selectedNoteIds: closedSession.selectedNoteIds }),
-              ...(closedSession.selectedCredentialIds?.length && { selectedCredentialIds: closedSession.selectedCredentialIds }),
+              ...(closedSession.selectedCredentialIds?.length && {
+                selectedCredentialIds: closedSession.selectedCredentialIds,
+              }),
             }
           : {};
-        
+
         const newSession = await this.addSession({
           title,
           userId: this.currentUserId,
@@ -801,7 +819,7 @@ export class SessionStorageDB {
           method: 'DELETE',
           credentials: 'include',
         });
-        
+
         if (!response.ok && response.status !== 404) {
           // 404 is OK (thread might not exist), but other errors should be logged
           const error = await response.json().catch(() => ({ error: 'Failed to delete thread' }));
@@ -815,11 +833,14 @@ export class SessionStorageDB {
     }
 
     // Delete from all frontend tables
-    await worker.query(`
+    await worker.query(
+      `
       DELETE FROM session_metadata WHERE sessionId = $id OR id = $id;
       DELETE FROM session_usage WHERE sessionId = $id;
       DELETE FROM session_agent_state WHERE sessionId = $id;
-    `, { id: sessionId });
+    `,
+      { id: sessionId },
+    );
 
     // If this was the current session, set a new one
     if (isCurrentSession) {
@@ -844,7 +865,7 @@ export class SessionStorageDB {
     const worker = this.getWorker();
     await worker.query(
       'UPDATE session_metadata SET title = $title, timestamp = $timestamp WHERE sessionId = $id OR id = $id;',
-      { id: sessionId, title, timestamp: Date.now() }
+      { id: sessionId, title, timestamp: Date.now() },
     );
     this.invalidateSessionCache(sessionId);
     this.notify({ type: 'sessionsUpdated' });
@@ -875,15 +896,24 @@ export class SessionStorageDB {
    * Update session agent and model
    */
   async updateSessionAgentAndModel(sessionId: string, agent: string, model: string): Promise<void> {
+    const existing = await this.getSession(sessionId);
+    if (
+      existing &&
+      (existing.selectedAgent ?? '') === (agent ?? '') &&
+      (existing.selectedModel ?? '') === (model ?? '')
+    ) {
+      return;
+    }
+
     const worker = this.getWorker();
     // log(`[AGENT_MODEL_SYNC] DB UPDATE - Updating agent/model for session ${sessionId}:`, { agent, model });
     const result = await worker.query(
       'UPDATE session_metadata SET selectedAgent = $agent, selectedModel = $model, timestamp = $timestamp WHERE sessionId = $id OR id = $id;',
-      { id: sessionId, agent, model, timestamp: Date.now() }
+      { id: sessionId, agent, model, timestamp: Date.now() },
     );
     // log(`[AGENT_MODEL_SYNC] DB UPDATE RESULT for session ${sessionId}:`, result);
     this.invalidateSessionCache(sessionId);
-    // REMOVED: this.notify({ type: 'sessionsUpdated' }); 
+    // REMOVED: this.notify({ type: 'sessionsUpdated' });
     // This notification was causing a feedback loop - the component saves, which triggers notification,
     // which updates currentSession prop, which triggers another save
   }
@@ -895,7 +925,7 @@ export class SessionStorageDB {
     const worker = this.getWorker();
     await worker.query(
       'UPDATE session_metadata SET planExpanded = $planExpanded, timestamp = $timestamp WHERE sessionId = $id OR id = $id;',
-      { id: sessionId, planExpanded: planExpanded ? 1 : 0, timestamp: Date.now() }
+      { id: sessionId, planExpanded: planExpanded ? 1 : 0, timestamp: Date.now() },
     );
     this.invalidateSessionCache(sessionId);
   }
@@ -904,10 +934,16 @@ export class SessionStorageDB {
    * Update session selected page URLs (context selector)
    */
   async updateSessionPageURLs(sessionId: string, selectedPageURLs: string[]): Promise<void> {
+    const existing = await this.getSession(sessionId);
+    const prev = existing?.selectedPageURLs ?? [];
+    if (prev.length === selectedPageURLs.length && prev.every((u, i) => u === selectedPageURLs[i])) {
+      return;
+    }
+
     const worker = this.getWorker();
     await worker.query(
       'UPDATE session_metadata SET selectedPageURLs = $selectedPageURLs WHERE sessionId = $id OR id = $id;',
-      { id: sessionId, selectedPageURLs }
+      { id: sessionId, selectedPageURLs },
     );
     this.invalidateSessionCache(sessionId);
     this.notify({ type: 'sessionChanged', sessionId });
@@ -915,16 +951,30 @@ export class SessionStorageDB {
 
   /**
    * Update session config panel state (open/closed and active tab)
+   * Skips the DB write (and session list timestamp bump) when values are unchanged — avoids
+   * spurious updates when React re-runs persistence after tab focus / remount with the same state.
    */
   async updateSessionConfigPanel(
     sessionId: string,
     configPanelOpen: boolean,
-    configPanelTab: 'context' | 'plans' | 'graphs' | 'sub-agents'
+    configPanelTab: 'context' | 'plans' | 'graphs' | 'preview' | 'sub-agents',
   ): Promise<void> {
+    const existing = await this.getSession(sessionId);
+    if (existing) {
+      const openMatches = existing.configPanelOpen === configPanelOpen;
+      const tabExisting = existing.configPanelTab ?? 'context';
+      const tabMatches = tabExisting === configPanelTab;
+      if (openMatches && tabMatches) {
+        return;
+      }
+    }
+
     const worker = this.getWorker();
+    // Do not touch session_metadata.timestamp — config panel is UI prefs, not chat activity.
+    // Switching sessions can apply layout overrides that differ from DB without user intent.
     await worker.query(
-      'UPDATE session_metadata SET configPanelOpen = $configPanelOpen, configPanelTab = $configPanelTab, timestamp = $timestamp WHERE sessionId = $id OR id = $id;',
-      { id: sessionId, configPanelOpen, configPanelTab, timestamp: Date.now() }
+      'UPDATE session_metadata SET configPanelOpen = $configPanelOpen, configPanelTab = $configPanelTab WHERE sessionId = $id OR id = $id;',
+      { id: sessionId, configPanelOpen, configPanelTab },
     );
     this.invalidateSessionCache(sessionId);
     this.notify({ type: 'sessionChanged', sessionId });
@@ -934,14 +984,25 @@ export class SessionStorageDB {
    * Update session selected workspace items (notes and credentials)
    */
   async updateSessionWorkspaceItems(
-    sessionId: string, 
-    selectedNoteIds: string[], 
-    selectedCredentialIds: string[]
+    sessionId: string,
+    selectedNoteIds: string[],
+    selectedCredentialIds: string[],
   ): Promise<void> {
+    const existing = await this.getSession(sessionId);
+    const prevNotes = existing?.selectedNoteIds ?? [];
+    const prevCreds = existing?.selectedCredentialIds ?? [];
+    const notesMatch =
+      prevNotes.length === selectedNoteIds.length && prevNotes.every((id, i) => id === selectedNoteIds[i]);
+    const credsMatch =
+      prevCreds.length === selectedCredentialIds.length && prevCreds.every((id, i) => id === selectedCredentialIds[i]);
+    if (notesMatch && credsMatch) {
+      return;
+    }
+
     const worker = this.getWorker();
     await worker.query(
       'UPDATE session_metadata SET selectedNoteIds = $selectedNoteIds, selectedCredentialIds = $selectedCredentialIds WHERE sessionId = $id OR id = $id;',
-      { id: sessionId, selectedNoteIds, selectedCredentialIds }
+      { id: sessionId, selectedNoteIds, selectedCredentialIds },
     );
     this.invalidateSessionCache(sessionId);
     this.notify({ type: 'sessionChanged', sessionId });
@@ -960,10 +1021,9 @@ export class SessionStorageDB {
    */
   async getUsageStats(sessionId: string): Promise<SessionUsageStats | null> {
     const worker = this.getWorker();
-    const result = await worker.query<any[]>(
-      'SELECT * FROM session_usage WHERE sessionId = $id LIMIT 1;',
-      { id: sessionId }
-    );
+    const result = await worker.query<any[]>('SELECT * FROM session_usage WHERE sessionId = $id LIMIT 1;', {
+      id: sessionId,
+    });
     return (result[0]?.[0] || null) as SessionUsageStats | null;
   }
 
@@ -973,38 +1033,37 @@ export class SessionStorageDB {
    */
   async updateUsageStats(sessionId: string, stats: Omit<SessionUsageStats, 'sessionId'>): Promise<void> {
     const worker = this.getWorker();
-    
-    const existing = await worker.query<any[]>(
-      'SELECT * FROM session_usage WHERE sessionId = $id LIMIT 1;',
-      { id: sessionId }
-    );
+
+    const existing = await worker.query<any[]>('SELECT * FROM session_usage WHERE sessionId = $id LIMIT 1;', {
+      id: sessionId,
+    });
 
     // Check if incoming stats are all zeros
-    const incomingTotal = stats.total || (stats.request + stats.response);
+    const incomingTotal = stats.total || stats.request + stats.response;
     const incomingHasData = incomingTotal > 0 || stats.requestCount > 0;
-    
+
     // Check if existing stats have data
     const existingRecord = existing[0]?.[0];
-    const existingTotal = existingRecord 
-      ? (existingRecord.total ?? 0) || ((existingRecord.request ?? 0) + (existingRecord.response ?? 0))
+    const existingTotal = existingRecord
+      ? (existingRecord.total ?? 0) || (existingRecord.request ?? 0) + (existingRecord.response ?? 0)
       : 0;
     const existingHasData = existingTotal > 0 || (existingRecord?.requestCount ?? 0) > 0;
-    
+
     // GUARD: Never overwrite existing non-zero stats with zeros
     if (existingHasData && !incomingHasData) {
       // console.warn(`[SessionStorageDB] Blocked attempt to overwrite usage stats with zeros for session ${sessionId}`);
       return;
     }
-    
+
     // GUARD: Never overwrite with lower values (cumulative stats should only grow)
     if (existingTotal > incomingTotal) {
       // console.warn(`[SessionStorageDB] Blocked attempt to overwrite usage stats with lower values for session ${sessionId}: existing=${existingTotal}, incoming=${incomingTotal}`);
       return;
     }
 
-    // Check if there's actual new activity (usage increased)
-    const existingRequestCount = existingRecord?.requestCount ?? 0;
-    const hasNewActivity = incomingTotal > existingTotal || stats.requestCount > existingRequestCount;
+    // Only treat increased token totals as "new activity" for session list ordering.
+    // requestCount alone can fluctuate on reconnect / stream re-hydration without new messages.
+    const hasNewActivity = incomingTotal > existingTotal;
 
     const payload = {
       req: stats.request,
@@ -1025,26 +1084,26 @@ export class SessionStorageDB {
 
     if (existing[0]?.length > 0) {
       if (hasLastUsage) {
-      await worker.query(
-        'UPDATE session_usage SET request = $req, response = $res, total = $tot, requestCount = $cnt, lastUsage = $last WHERE sessionId = $id;',
-        { id: sessionId, ...payload }
-      );
-    } else {
+        await worker.query(
+          'UPDATE session_usage SET request = $req, response = $res, total = $tot, requestCount = $cnt, lastUsage = $last WHERE sessionId = $id;',
+          { id: sessionId, ...payload },
+        );
+      } else {
         await worker.query(
           'UPDATE session_usage SET request = $req, response = $res, total = $tot, requestCount = $cnt, lastUsage = NONE WHERE sessionId = $id;',
-          { id: sessionId, ...payload }
+          { id: sessionId, ...payload },
         );
       }
     } else {
       if (hasLastUsage) {
-      await worker.query(
-        'CREATE session_usage CONTENT { sessionId: $id, request: $req, response: $res, total: $tot, requestCount: $cnt, lastUsage: $last };',
-        { id: sessionId, ...payload }
-      );
+        await worker.query(
+          'CREATE session_usage CONTENT { sessionId: $id, request: $req, response: $res, total: $tot, requestCount: $cnt, lastUsage: $last };',
+          { id: sessionId, ...payload },
+        );
       } else {
         await worker.query(
           'CREATE session_usage CONTENT { sessionId: $id, request: $req, response: $res, total: $tot, requestCount: $cnt };',
-          { id: sessionId, ...payload }
+          { id: sessionId, ...payload },
         );
       }
     }
@@ -1052,10 +1111,10 @@ export class SessionStorageDB {
     // Only update session timestamp when there's actual new activity (message sent/received)
     // This prevents timestamp updates when re-saving hydrated data on session open
     if (hasNewActivity) {
-    await worker.query(
-      'UPDATE session_metadata SET timestamp = $timestamp WHERE sessionId = $id OR id = $id;',
-      { id: sessionId, timestamp: Date.now() }
-    );
+      await worker.query('UPDATE session_metadata SET timestamp = $timestamp WHERE sessionId = $id OR id = $id;', {
+        id: sessionId,
+        timestamp: Date.now(),
+      });
     }
 
     this.notify({ type: 'sessionsUpdated' });
@@ -1070,10 +1129,9 @@ export class SessionStorageDB {
    */
   async getAgentState(sessionId: string): Promise<SessionAgentState | null> {
     const worker = this.getWorker();
-    const result = await worker.query<any[]>(
-      'SELECT * FROM session_agent_state WHERE sessionId = $id LIMIT 1;',
-      { id: sessionId }
-    );
+    const result = await worker.query<any[]>('SELECT * FROM session_agent_state WHERE sessionId = $id LIMIT 1;', {
+      id: sessionId,
+    });
     const row = result[0]?.[0] || null;
     const state = row as SessionAgentState | null;
     const planIds = state?.plans ? Object.keys(state.plans) : [];
@@ -1091,11 +1149,10 @@ export class SessionStorageDB {
    */
   async updateAgentState(sessionId: string, state: Omit<SessionAgentState, 'sessionId'>): Promise<void> {
     const worker = this.getWorker();
-    
-    const existing = await worker.query<any[]>(
-      'SELECT * FROM session_agent_state WHERE sessionId = $id LIMIT 1;',
-      { id: sessionId }
-    );
+
+    const existing = await worker.query<any[]>('SELECT * FROM session_agent_state WHERE sessionId = $id LIMIT 1;', {
+      id: sessionId,
+    });
 
     // Build update payload with flat structure (multi-instance support)
     const payload: Record<string, any> = {
@@ -1109,7 +1166,7 @@ export class SessionStorageDB {
       plansCount: planIds.length,
       planIds,
     });
-    
+
     // Include deferred tool requests if present
     if (state.deferred_tool_requests !== undefined) {
       payload.deferred_tool_requests = state.deferred_tool_requests;
@@ -1121,21 +1178,21 @@ export class SessionStorageDB {
       if (state.deferred_tool_requests !== undefined) {
         setClauses.push('deferred_tool_requests = $deferred_tool_requests');
       }
-      
-      await worker.query(
-        `UPDATE session_agent_state SET ${setClauses.join(', ')} WHERE sessionId = $id;`,
-        { id: sessionId, ...payload }
-      );
+
+      await worker.query(`UPDATE session_agent_state SET ${setClauses.join(', ')} WHERE sessionId = $id;`, {
+        id: sessionId,
+        ...payload,
+      });
     } else {
       // Create new record with flat structure
       await worker.query(
         'CREATE session_agent_state CONTENT { sessionId: $id, plans: $plans, graphs: $graphs, deferred_tool_requests: $deferred_tool_requests };',
-        { 
-          id: sessionId, 
-          plans: payload.plans, 
+        {
+          id: sessionId,
+          plans: payload.plans,
           graphs: payload.graphs,
-          deferred_tool_requests: payload.deferred_tool_requests || null
-        }
+          deferred_tool_requests: payload.deferred_tool_requests || null,
+        },
       );
     }
   }
@@ -1149,18 +1206,21 @@ export class SessionStorageDB {
    */
   private async setCurrentSessionId(sessionId: string | null): Promise<void> {
     const worker = this.getWorker();
-    
+
     if (sessionId === null) {
       // When setting to null, delete the record entirely instead of creating one with NULL
       // This prevents database errors when querying for sessionId
       await worker.query('DELETE current_session;');
       // log('[SessionStorageDB:setCurrentSessionId] Cleared current session (set to null)');
     } else {
-    // Delete all existing records and create a new one (single record table)
-    await worker.query(`
+      // Delete all existing records and create a new one (single record table)
+      await worker.query(
+        `
       DELETE current_session;
       CREATE current_session CONTENT { sessionId: $sid };
-    `, { sid: sessionId });
+    `,
+        { sid: sessionId },
+      );
       // log('[SessionStorageDB:setCurrentSessionId] Set current session:', sessionId.slice(0, 12) + '...');
     }
   }
@@ -1199,4 +1259,3 @@ export class SessionStorageDB {
 
 // Export singleton instance
 export const sessionStorageDB = new SessionStorageDB();
-

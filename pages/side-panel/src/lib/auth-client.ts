@@ -1,32 +1,36 @@
 /**
  * Better Auth Client Configuration
- * 
+ *
  * This file sets up the Better Auth client with organization plugin for the frontend.
  * Includes password reset functionality for both user-initiated and admin-initiated flows.
  * Supports social login via Google, Microsoft, and GitHub.
  * Supports SSO (OIDC/SAML) for enterprise organizations.
  */
 
-import { createAuthClient } from "better-auth/client";
-import { organizationClient, adminClient } from "better-auth/client/plugins";
-import { ssoClient } from "@better-auth/sso/client";
+import { createAuthClient } from 'better-auth/client';
+import { organizationClient, adminClient } from 'better-auth/client/plugins';
+import { ssoClient } from '@better-auth/sso/client';
+import { isExtensionContext } from '@extension/platform';
 import { API_CONFIG } from '../constants';
 
 // Constants
-const DEFAULT_API_URL = "http://localhost:3001";
-const baseURL = API_CONFIG.BASE_URL || DEFAULT_API_URL;
+const DEFAULT_API_URL = 'http://localhost:3001';
+
+function getAuthApiBaseUrl(): string {
+  return API_CONFIG.BASE_URL || DEFAULT_API_URL;
+}
 
 /**
  * Better Auth client instance
  */
 export const authClient = createAuthClient({
-  baseURL: `${baseURL}/api/auth`,
-  
+  baseURL: `${getAuthApiBaseUrl()}/api/auth`,
+
   // Configure fetch options for Chrome extension compatibility
   fetchOptions: {
     credentials: 'include',
   },
-  
+
   plugins: [
     organizationClient({
       teams: {
@@ -50,11 +54,11 @@ export async function requestPasswordReset(email: string): Promise<{ success?: b
       email,
       redirectTo: `${window.location.origin}/#/reset-password`,
     });
-    
+
     if (error) {
       console.error('Password reset error:', error);
     }
-    
+
     // Always return success to prevent email enumeration
     return { success: true };
   } catch (error: any) {
@@ -71,18 +75,21 @@ export async function requestPasswordReset(email: string): Promise<{ success?: b
  * @param newPassword - New password to set
  * @returns Promise with success status or error
  */
-export async function resetPasswordWithToken(token: string, newPassword: string): Promise<{ success?: boolean; error?: string }> {
+export async function resetPasswordWithToken(
+  token: string,
+  newPassword: string,
+): Promise<{ success?: boolean; error?: string }> {
   try {
     // Use Better Auth's built-in resetPassword method
     const { error } = await (authClient as any).resetPassword({
       newPassword,
       token,
     });
-    
+
     if (error) {
       return { error: error.message || 'Failed to reset password' };
     }
-    
+
     return { success: true };
   } catch (error: any) {
     console.error('Password reset error:', error);
@@ -97,21 +104,24 @@ export async function resetPasswordWithToken(token: string, newPassword: string)
  * @param organizationId - Organization ID (for authorization)
  * @returns Promise with success status or error
  */
-export async function adminResetPassword(userId: string, organizationId: string): Promise<{ success?: boolean; message?: string; error?: string }> {
+export async function adminResetPassword(
+  userId: string,
+  organizationId: string,
+): Promise<{ success?: boolean; message?: string; error?: string }> {
   try {
-    const response = await fetch(`${baseURL}/api/auth/admin-reset-password`, {
+    const response = await fetch(`${getAuthApiBaseUrl()}/api/auth/admin-reset-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({ userId, organizationId }),
     });
-    
+
     const result = await response.json();
-    
+
     if (!response.ok) {
       return { error: result?.error || 'Failed to reset password' };
     }
-    
+
     return { success: true, message: result?.message };
   } catch (error: any) {
     console.error('Admin password reset error:', error);
@@ -130,22 +140,22 @@ export async function adminResetPassword(userId: string, organizationId: string)
 export async function banUser(
   userId: string,
   organizationId: string,
-  banReason?: string
+  banReason?: string,
 ): Promise<{ success?: boolean; message?: string; error?: string }> {
   try {
-    const response = await fetch(`${baseURL}/api/auth/admin-ban-user`, {
+    const response = await fetch(`${getAuthApiBaseUrl()}/api/auth/admin-ban-user`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({ userId, organizationId, banReason }),
     });
-    
+
     const result = await response.json();
-    
+
     if (!response.ok) {
       return { error: result?.error || 'Failed to ban user' };
     }
-    
+
     return { success: true, message: result?.message };
   } catch (error: any) {
     console.error('Ban user error:', error);
@@ -162,22 +172,22 @@ export async function banUser(
  */
 export async function unbanUser(
   userId: string,
-  organizationId: string
+  organizationId: string,
 ): Promise<{ success?: boolean; message?: string; error?: string }> {
   try {
-    const response = await fetch(`${baseURL}/api/auth/admin-unban-user`, {
+    const response = await fetch(`${getAuthApiBaseUrl()}/api/auth/admin-unban-user`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({ userId, organizationId }),
     });
-    
+
     const result = await response.json();
-    
+
     if (!response.ok) {
       return { error: result?.error || 'Failed to unban user' };
     }
-    
+
     return { success: true, message: result?.message };
   } catch (error: any) {
     console.error('Unban user error:', error);
@@ -189,15 +199,6 @@ export async function unbanUser(
  * Social login providers
  */
 export type SocialProvider = 'google' | 'microsoft' | 'github';
-
-/**
- * Check if running in a Chrome extension context
- */
-function isExtensionContext(): boolean {
-  return typeof chrome !== 'undefined' && 
-         typeof chrome.runtime !== 'undefined' && 
-         !!chrome.runtime.id;
-}
 
 /**
  * Direct social sign-in using Better Auth client.
@@ -212,19 +213,19 @@ export async function signInWithSocialDirect(provider: SocialProvider): Promise<
     if (!signIn || !signIn.social) {
       return { error: 'Social login not available' };
     }
-    
+
     // Use the server's OAuth success callback
-    const callbackURL = `${baseURL}/api/auth/oauth-success`;
-    
+    const callbackURL = `${getAuthApiBaseUrl()}/api/auth/oauth-success`;
+
     const { error } = await signIn.social({
       provider,
       callbackURL,
     });
-    
+
     if (error) {
       return { error: error.message || `Failed to sign in with ${provider}` };
     }
-    
+
     return { success: true };
   } catch (error: any) {
     console.error(`Social login error (${provider}):`, error);
@@ -244,36 +245,32 @@ export async function signInWithSocial(provider: SocialProvider): Promise<{ succ
     if (!signIn || !signIn.social) {
       return { error: 'Social login not available' };
     }
-    
+
     // For Chrome extensions, we need special handling
     if (isExtensionContext()) {
       // Open the extension's OAuth page in a popup
       // This page will initiate the OAuth flow with proper cookie context
       const extensionId = chrome.runtime.id;
       const oauthUrl = `chrome-extension://${extensionId}/side-panel/index.html#/oauth/${provider}`;
-      
+
       // Open OAuth in a popup window
-      const popup = window.open(
-        oauthUrl,
-        'oauth-popup',
-        'width=420,height=600,scrollbars=yes,resizable=yes'
-      );
-      
+      const popup = window.open(oauthUrl, 'oauth-popup', 'width=420,height=600,scrollbars=yes,resizable=yes');
+
       if (!popup) {
         return { error: 'Popup blocked. Please allow popups for this extension.' };
       }
-      
+
       // Poll for popup close and session
-      return new Promise((resolve) => {
+      return new Promise(resolve => {
         const checkInterval = setInterval(async () => {
           try {
             // Check if popup is closed
             if (popup.closed) {
               clearInterval(checkInterval);
-              
+
               // Give a moment for cookies to be set, then check session
               await new Promise(r => setTimeout(r, 500));
-              
+
               // Check if we're now authenticated
               const session = await authClient.getSession();
               if (session?.data?.user) {
@@ -287,28 +284,31 @@ export async function signInWithSocial(provider: SocialProvider): Promise<{ succ
             // Popup is still open or cross-origin, continue polling
           }
         }, 500);
-        
+
         // Timeout after 5 minutes
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          if (!popup.closed) {
-            popup.close();
-          }
-          resolve({ error: 'Authentication timed out' });
-        }, 5 * 60 * 1000);
+        setTimeout(
+          () => {
+            clearInterval(checkInterval);
+            if (!popup.closed) {
+              popup.close();
+            }
+            resolve({ error: 'Authentication timed out' });
+          },
+          5 * 60 * 1000,
+        );
       });
     }
-    
+
     // For regular web context, use standard OAuth flow
     const { error } = await signIn.social({
       provider,
       callbackURL: window.location.origin,
     });
-    
+
     if (error) {
       return { error: error.message || `Failed to sign in with ${provider}` };
     }
-    
+
     return { success: true };
   } catch (error: any) {
     console.error(`Social login error (${provider}):`, error);
@@ -329,19 +329,19 @@ export async function signInWithSSODirect(email: string): Promise<{ success?: bo
     if (!signIn || !signIn.sso) {
       return { error: 'SSO not available' };
     }
-    
+
     // Use the server's OAuth success callback
-    const callbackURL = `${baseURL}/api/auth/oauth-success`;
-    
+    const callbackURL = `${getAuthApiBaseUrl()}/api/auth/oauth-success`;
+
     const { error } = await signIn.sso({
       email,
       callbackURL,
     });
-    
+
     if (error) {
       return { error: error.message || 'Failed to sign in with SSO' };
     }
-    
+
     return { success: true };
   } catch (error: any) {
     console.error('SSO login error:', error);
@@ -351,7 +351,7 @@ export async function signInWithSSODirect(email: string): Promise<{ success?: bo
 
 /**
  * Type definitions for Better Auth
- * 
+ *
  * These types are inferred from the authClient session data.
  * They provide type safety for user, session, and organization data.
  */
@@ -478,17 +478,17 @@ export async function registerSSOProvider(config: {
     if (!sso || !sso.register) {
       return { error: 'SSO not available' };
     }
-    
+
     console.log('[SSO Register] Config being sent:', JSON.stringify(config, null, 2));
-    
+
     const { data, error } = await sso.register(config);
-    
+
     console.log('[SSO Register] Response:', { data, error });
-    
+
     if (error) {
       return { error: error.message || 'Failed to register SSO provider' };
     }
-    
+
     return { data };
   } catch (error: any) {
     console.error('SSO registration error:', error);
@@ -509,23 +509,23 @@ export async function updateSSOProvider(
     domain: string;
     oidcConfig?: OIDCConfig;
     samlConfig?: SAMLConfig;
-  }>
+  }>,
 ): Promise<{ data?: SSOProvider; error?: string }> {
   try {
     const sso = (authClient as any).sso;
     if (!sso || !sso.update) {
       return { error: 'SSO not available' };
     }
-    
+
     const { data, error } = await sso.update({
       providerId,
       ...config,
     });
-    
+
     if (error) {
       return { error: error.message || 'Failed to update SSO provider' };
     }
-    
+
     return { data };
   } catch (error: any) {
     console.error('SSO update error:', error);
@@ -541,18 +541,18 @@ export async function updateSSOProvider(
  */
 export async function deleteSSOProvider(providerId: string): Promise<{ success?: boolean; error?: string }> {
   try {
-    const response = await fetch(`${baseURL}/api/auth/delete-sso-provider`, {
+    const response = await fetch(`${getAuthApiBaseUrl()}/api/auth/delete-sso-provider`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({ providerId }),
     });
-    
+
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
       return { error: result?.error || 'Failed to delete SSO provider' };
     }
-    
+
     return { success: true };
   } catch (error: any) {
     console.error('SSO deletion error:', error);
@@ -568,14 +568,14 @@ export async function deleteSSOProvider(providerId: string): Promise<{ success?:
  */
 export async function listSSOProviders(organizationId?: string): Promise<{ data?: SSOProvider[]; error?: string }> {
   try {
-    const url = `${baseURL}/api/auth/list-sso-providers${organizationId ? `?organizationId=${organizationId}` : ''}`;
-    
+    const url = `${getAuthApiBaseUrl()}/api/auth/list-sso-providers${organizationId ? `?organizationId=${organizationId}` : ''}`;
+
     const response = await fetch(url, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
     });
-    
+
     if (!response.ok) {
       if (response.status === 404) {
         return { data: [] };
@@ -583,7 +583,7 @@ export async function listSSOProviders(organizationId?: string): Promise<{ data?
       const result = await response.json().catch(() => ({}));
       return { error: result?.message || result?.error || 'Failed to list SSO providers' };
     }
-    
+
     const data = await response.json();
     return { data: data.providers || data || [] };
   } catch (error: any) {
@@ -603,13 +603,13 @@ export async function getSSOProvider(providerId: string): Promise<{ data?: SSOPr
     if (!sso || !sso.getProvider) {
       return { error: 'SSO not available' };
     }
-    
+
     const { data, error } = await sso.getProvider({ providerId });
-    
+
     if (error) {
       return { error: error.message || 'Failed to get SSO provider' };
     }
-    
+
     return { data };
   } catch (error: any) {
     console.error('SSO get error:', error);
@@ -622,28 +622,28 @@ export async function getSSOProvider(providerId: string): Promise<{ data?: SSOPr
  * @param providerId - The provider ID to verify domain for
  * @returns Promise with verification token info or error
  */
-export async function requestDomainVerification(providerId: string): Promise<{ 
-  data?: { token: string; expiresAt?: Date }; 
-  error?: string 
+export async function requestDomainVerification(providerId: string): Promise<{
+  data?: { token: string; expiresAt?: Date };
+  error?: string;
 }> {
   try {
     const sso = (authClient as any).sso;
     if (!sso || !sso.requestDomainVerification) {
       return { error: 'SSO not available' };
     }
-    
+
     const { data, error } = await sso.requestDomainVerification({ providerId });
-    
+
     if (error) {
       return { error: error.message || 'Failed to request domain verification' };
     }
-    
+
     // Normalize the response - API returns domainVerificationToken
     const normalizedData = {
       token: data?.domainVerificationToken || data?.token,
       expiresAt: data?.expiresAt,
     };
-    
+
     return { data: normalizedData };
   } catch (error: any) {
     console.error('Domain verification request error:', error);
@@ -656,22 +656,22 @@ export async function requestDomainVerification(providerId: string): Promise<{
  * @param providerId - The provider ID to verify
  * @returns Promise with verification result or error
  */
-export async function verifyDomain(providerId: string): Promise<{ 
-  data?: { verified: boolean }; 
-  error?: string 
+export async function verifyDomain(providerId: string): Promise<{
+  data?: { verified: boolean };
+  error?: string;
 }> {
   try {
     const sso = (authClient as any).sso;
     if (!sso || !sso.verifyDomain) {
       return { error: 'SSO not available' };
     }
-    
+
     const { data, error } = await sso.verifyDomain({ providerId });
-    
+
     if (error) {
       return { error: error.message || 'Failed to verify domain' };
     }
-    
+
     return { data };
   } catch (error: any) {
     console.error('Domain verification error:', error);
@@ -688,43 +688,39 @@ export async function verifyDomain(providerId: string): Promise<{
  */
 export async function signInWithSSO(
   email: string,
-  options?: { 
+  options?: {
     callbackURL?: string;
     requestSignUp?: boolean;
-  }
+  },
 ): Promise<{ success?: boolean; error?: string; redirectUrl?: string }> {
   try {
     const signIn = (authClient as any).signIn;
     if (!signIn || !signIn.sso) {
       return { error: 'SSO not available' };
     }
-    
+
     // For Chrome extensions, use popup pattern like social login
     if (isExtensionContext()) {
       // Open the extension's SSO page in a popup
       // This page will initiate the SSO flow with proper cookie context
       const extensionId = chrome.runtime.id;
       const ssoUrl = `chrome-extension://${extensionId}/side-panel/index.html#/sso?email=${encodeURIComponent(email)}`;
-      
+
       // Open SSO in a popup window
-      const popup = window.open(
-        ssoUrl,
-        'sso-popup',
-        'width=500,height=700,scrollbars=yes,resizable=yes'
-      );
-      
+      const popup = window.open(ssoUrl, 'sso-popup', 'width=500,height=700,scrollbars=yes,resizable=yes');
+
       if (!popup) {
         return { error: 'Popup blocked. Please allow popups for this extension.' };
       }
-      
+
       // Poll for popup close and session
-      return new Promise((resolve) => {
+      return new Promise(resolve => {
         const checkInterval = setInterval(async () => {
           try {
             if (popup.closed) {
               clearInterval(checkInterval);
               await new Promise(r => setTimeout(r, 500));
-              
+
               const session = await authClient.getSession();
               if (session?.data?.user) {
                 resolve({ success: true });
@@ -736,30 +732,33 @@ export async function signInWithSSO(
             // Continue polling
           }
         }, 500);
-        
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          if (!popup.closed) popup.close();
-          resolve({ error: 'Authentication timed out' });
-        }, 5 * 60 * 1000);
+
+        setTimeout(
+          () => {
+            clearInterval(checkInterval);
+            if (!popup.closed) popup.close();
+            resolve({ error: 'Authentication timed out' });
+          },
+          5 * 60 * 1000,
+        );
       });
     }
-    
+
     // For regular web context
     const { data, error } = await signIn.sso({
       email,
       callbackURL: options?.callbackURL || window.location.origin,
       requestSignUp: options?.requestSignUp,
     });
-    
+
     if (error) {
       return { error: error.message || 'Failed to initiate SSO sign-in' };
     }
-    
+
     if (data?.url) {
       return { success: true, redirectUrl: data.url };
     }
-    
+
     return { success: true };
   } catch (error: any) {
     console.error('SSO sign-in error:', error);
@@ -778,7 +777,7 @@ export async function signInWithSSOProvider(
   options?: {
     callbackURL?: string;
     requestSignUp?: boolean;
-  }
+  },
 ): Promise<{ success?: boolean; error?: string; redirectUrl?: string }> {
   try {
     // According to Better Auth docs, use authClient.signIn.sso() with providerId
@@ -786,39 +785,36 @@ export async function signInWithSSOProvider(
     if (!signIn || !signIn.sso) {
       return { error: 'SSO not available' };
     }
-    
-    const callbackURL = options?.callbackURL || 
-      (isExtensionContext() ? `${baseURL}/api/auth/oauth-success` : window.location.origin);
-    
+
+    const callbackURL =
+      options?.callbackURL ||
+      (isExtensionContext() ? `${getAuthApiBaseUrl()}/api/auth/oauth-success` : window.location.origin);
+
     const { data, error } = await signIn.sso({
       providerId,
       callbackURL,
       requestSignUp: options?.requestSignUp,
     });
-    
+
     if (error) {
       return { error: error.message || 'Failed to initiate SSO sign-in' };
     }
-    
+
     // Handle popup for Chrome extension
     if (isExtensionContext() && data?.url) {
-      const popup = window.open(
-        data.url,
-        'sso-popup',
-        'width=500,height=700,scrollbars=yes,resizable=yes'
-      );
-      
+      const popup = window.open(data.url, 'sso-popup', 'width=500,height=700,scrollbars=yes,resizable=yes');
+
       if (!popup) {
         return { error: 'Popup blocked. Please allow popups for this extension.' };
       }
-      
-      return new Promise((resolve) => {
+
+      return new Promise(resolve => {
         const checkInterval = setInterval(async () => {
           try {
             if (popup.closed) {
               clearInterval(checkInterval);
               await new Promise(r => setTimeout(r, 500));
-              
+
               const session = await authClient.getSession();
               if (session?.data?.user) {
                 resolve({ success: true });
@@ -830,19 +826,22 @@ export async function signInWithSSOProvider(
             // Continue polling
           }
         }, 500);
-        
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          if (!popup.closed) popup.close();
-          resolve({ error: 'Authentication timed out' });
-        }, 5 * 60 * 1000);
+
+        setTimeout(
+          () => {
+            clearInterval(checkInterval);
+            if (!popup.closed) popup.close();
+            resolve({ error: 'Authentication timed out' });
+          },
+          5 * 60 * 1000,
+        );
       });
     }
-    
+
     if (data?.url) {
       return { success: true, redirectUrl: data.url };
     }
-    
+
     return { success: true };
   } catch (error: any) {
     console.error('SSO provider sign-in error:', error);

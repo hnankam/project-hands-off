@@ -581,17 +581,25 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
     <>
       {onNewSession && (
         <button
+          type="button"
           onClick={onNewSession}
           className={cn(
-            'text-md mb-3 flex w-full flex-shrink-0 items-center gap-2 rounded px-3 py-3 font-bold uppercase transition-colors',
-            hasArchivedSplit ? 'mt-1' : 'mt-3',
-            isLight ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700',
+            'mb-5 flex w-full flex-shrink-0 items-center justify-center gap-1.5 rounded-md border bg-transparent px-3 py-2.5 text-xs font-semibold tracking-wide uppercase transition-colors',
+            hasArchivedSplit ? 'mt-2' : 'mt-3',
+            isLight
+              ? 'border-blue-300/70 text-gray-600 hover:bg-gray-100/80'
+              : 'border-blue-700/70 text-gray-300 hover:bg-gray-700/35',
           )}
           title="Start new chat">
-          <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <svg
+            className="h-3.5 w-3.5 flex-shrink-0"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            strokeWidth={2}>
             <path d="M12 4v16m8-8H4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <span>Start New Chat</span>
+          <span>Start new chat</span>
         </button>
       )}
       {openSessions.length === 0 ? (
@@ -792,7 +800,7 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
         {/* Header */}
         <div
           className={cn(
-            'flex h-[34px] items-center border-b',
+            'flex h-[35px] min-h-[35px] items-center border-b',
             isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
           )}
         />

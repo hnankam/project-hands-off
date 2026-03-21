@@ -12,7 +12,8 @@
     "clean:node_modules": "pnpx rimraf node_modules",
     "clean:bundle": "pnpx rimraf dist",
     "clean": "pnpm clean:bundle && pnpm clean:node_modules",
-    "ready": "tsc -b"
+    "ready": "tsc -b",
+    "postinstall": "pnpm ready"
   },
   "dependencies": {
     "@extension/env": "workspace:*"

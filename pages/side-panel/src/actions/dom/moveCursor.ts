@@ -1,4 +1,5 @@
 import { debug as baseDebug } from '@extension/shared';
+import { assertExtensionContext } from '@src/utils/extensionOnly';
 
 // ============================================================================
 // CONSTANTS
@@ -136,7 +137,7 @@ function getErrorMessage(error: unknown): string {
  * Create a timeout promise for move cursor operation
  */
 function createTimeoutPromise(): Promise<ScriptExecutionResult[]> {
-  return new Promise((resolve) =>
+  return new Promise(resolve =>
     setTimeout(
       () =>
         resolve([
@@ -147,8 +148,8 @@ function createTimeoutPromise(): Promise<ScriptExecutionResult[]> {
             },
           },
         ]),
-      MOVE_CURSOR_TIMEOUT_MS
-    )
+      MOVE_CURSOR_TIMEOUT_MS,
+    ),
   );
 }
 
@@ -156,7 +157,7 @@ function createTimeoutPromise(): Promise<ScriptExecutionResult[]> {
  * Type guard to check if script result is valid
  */
 function isValidScriptResult(
-  results: ScriptExecutionResult[] | undefined
+  results: ScriptExecutionResult[] | undefined,
 ): results is [ScriptExecutionResult, ...ScriptExecutionResult[]] {
   return Array.isArray(results) && results.length > 0 && results[0]?.result !== undefined;
 }
@@ -171,6 +172,7 @@ function isValidScriptResult(
  * @returns Promise with status and message object
  */
 export async function handleMoveCursorToElement(cssSelector: string): Promise<MoveCursorResult> {
+  assertExtensionContext('Move cursor');
   // Validate input early
   if (!cssSelector || cssSelector.trim().length === 0) {
     return { status: 'error', message: 'Empty CSS selector provided' };
@@ -185,19 +187,21 @@ export async function handleMoveCursorToElement(cssSelector: string): Promise<Mo
   const lockAge = existingLock ? Date.now() - existingLock.timestamp : -1;
 
   if (existingLock && lockAge < HANDLER_LOCK_TIMEOUT_MS) {
-    debug.log(`${LOG_PREFIX}:${callId}`, `DUPLICATE REQUEST BLOCKED - Reusing existing execution (lock age: ${lockAge}ms)`);
+    debug.log(
+      `${LOG_PREFIX}:${callId}`,
+      `DUPLICATE REQUEST BLOCKED - Reusing existing execution (lock age: ${lockAge}ms)`,
+    );
     return existingLock.promise;
   }
 
   debug.log(LOG_PREFIX, 'Moving cursor to element with selector:', normalizedSelector);
 
   // Create and track the operation
-  const operationPromise = executeMoveCursorOperation(normalizedSelector, callId)
-    .finally(() => {
-      // Always clean up the lock after execution completes
-      pendingMoveCursorOperations.delete(normalizedSelector);
-      debug.log(`${LOG_PREFIX}:${callId}`, 'Lock released after execution');
-    });
+  const operationPromise = executeMoveCursorOperation(normalizedSelector, callId).finally(() => {
+    // Always clean up the lock after execution completes
+    pendingMoveCursorOperations.delete(normalizedSelector);
+    debug.log(`${LOG_PREFIX}:${callId}`, 'Lock released after execution');
+  });
 
   // Store the promise to prevent duplicate execution
   pendingMoveCursorOperations.set(normalizedSelector, {
@@ -225,10 +229,7 @@ export async function handleMoveCursorToElement(cssSelector: string): Promise<Mo
 /**
  * Internal function to execute the move cursor operation
  */
-async function executeMoveCursorOperation(
-  cssSelector: string,
-  callId: string
-): Promise<MoveCursorResult> {
+async function executeMoveCursorOperation(cssSelector: string, callId: string): Promise<MoveCursorResult> {
   try {
     // Get the current active tab
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -248,7 +249,7 @@ async function executeMoveCursorOperation(
       func: (
         selector: string,
         lockTimeout: number,
-        animation: typeof ANIMATION
+        animation: typeof ANIMATION,
       ): ScriptMoveCursorResult | Promise<ScriptMoveCursorResult> => {
         // Window type for content script
         type WindowWithState = Window & {
@@ -291,8 +292,8 @@ async function executeMoveCursorOperation(
 
             const pathSegments = shadowPath
               .split(' > ')
-              .map((s) => s.trim())
-              .filter((s) => s && s !== 'document');
+              .map(s => s.trim())
+              .filter(s => s && s !== 'document');
 
             if (pathSegments.length === 0) {
               throw new Error(`Shadow path must contain at least one element`);
@@ -338,7 +339,7 @@ async function executeMoveCursorOperation(
           const getComposedChain = (el: Element | null): Element[] => {
             if (!el) return [];
             const chain: Element[] = [];
-            forEachAncestor(el, (e) => chain.push(e));
+            forEachAncestor(el, e => chain.push(e));
             return chain;
           };
 
@@ -366,7 +367,7 @@ async function executeMoveCursorOperation(
                 clientX: x,
                 clientY: y,
                 pointerType: 'mouse',
-              })
+              }),
             );
             el.dispatchEvent(
               new MouseEvent('mousemove', {
@@ -376,7 +377,7 @@ async function executeMoveCursorOperation(
                 composed: true,
                 clientX: x,
                 clientY: y,
-              })
+              }),
             );
           };
 
@@ -390,7 +391,7 @@ async function executeMoveCursorOperation(
                   clientX: x,
                   clientY: y,
                   pointerType: 'mouse',
-                })
+                }),
               );
               t.dispatchEvent(
                 new MouseEvent('mouseover', {
@@ -400,7 +401,7 @@ async function executeMoveCursorOperation(
                   composed: true,
                   clientX: x,
                   clientY: y,
-                })
+                }),
               );
               t.dispatchEvent(
                 new PointerEvent('pointerenter', {
@@ -410,7 +411,7 @@ async function executeMoveCursorOperation(
                   clientX: x,
                   clientY: y,
                   pointerType: 'mouse',
-                })
+                }),
               );
               t.dispatchEvent(
                 new MouseEvent('mouseenter', {
@@ -420,7 +421,7 @@ async function executeMoveCursorOperation(
                   composed: true,
                   clientX: x,
                   clientY: y,
-                })
+                }),
               );
             }
           };
@@ -435,7 +436,7 @@ async function executeMoveCursorOperation(
                   clientX: x,
                   clientY: y,
                   pointerType: 'mouse',
-                })
+                }),
               );
               oldLeaf.dispatchEvent(
                 new MouseEvent('mouseout', {
@@ -445,7 +446,7 @@ async function executeMoveCursorOperation(
                   composed: true,
                   clientX: x,
                   clientY: y,
-                })
+                }),
               );
             }
             for (const t of targets) {
@@ -457,7 +458,7 @@ async function executeMoveCursorOperation(
                   clientX: x,
                   clientY: y,
                   pointerType: 'mouse',
-                })
+                }),
               );
               t.dispatchEvent(
                 new MouseEvent('mouseleave', {
@@ -467,7 +468,7 @@ async function executeMoveCursorOperation(
                   composed: true,
                   clientX: x,
                   clientY: y,
-                })
+                }),
               );
             }
           };
@@ -510,7 +511,7 @@ async function executeMoveCursorOperation(
           targetElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
 
           // Return promise that resolves after animation completes
-          return new Promise<ScriptMoveCursorResult>((resolve) => {
+          return new Promise<ScriptMoveCursorResult>(resolve => {
             setTimeout(() => {
               try {
                 // Get or create cursor tracking object

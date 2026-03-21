@@ -2,20 +2,20 @@
  * ================================================================================
  * useSessionData Hook
  * ================================================================================
- * 
+ *
  * Consolidates all session-specific data loading from IndexedDB:
  * - Agent/Model selection
- * - Usage statistics  
+ * - Usage statistics
  * - Agent step state
- * 
+ *
  * Ensures proper session isolation and cleanup on session switches.
- * 
+ *
  * Features:
  * - Parallel data loading for performance
  * - Prevents duplicate fetches with refs
  * - Proper cleanup on session change
  * - Hydration state tracking
- * 
+ *
  * @module useSessionData
  * ================================================================================
  */
@@ -58,14 +58,14 @@ export interface UseSessionDataReturn {
   selectedModel: string;
   /** Update selected model */
   setSelectedModel: (model: string) => void;
-  
+
   /** Initial selected page URLs loaded from DB */
   initialSelectedPageURLs: string[];
   /** Initial selected note IDs loaded from DB */
   initialSelectedNoteIds: string[];
   /** Initial selected credential IDs loaded from DB */
   initialSelectedCredentialIds: string[];
-  
+
   /** Initial usage totals loaded from DB */
   initialUsage: UsageTotals;
   /** Last usage data point loaded from DB */
@@ -74,12 +74,12 @@ export interface UseSessionDataReturn {
   isUsageHydrating: boolean;
   /** Persist updated usage stats to DB */
   persistUsageStats: (cumulativeUsage: UsageTotals, lastUsageData: UsageData | null) => void;
-  
+
   /** Current agent step state for task progress */
   currentAgentStepState: AgentStepState;
   /** Update agent step state */
   setCurrentAgentStepState: (state: AgentStepState) => void;
-  
+
   /** Whether session metadata is currently loading */
   isLoadingMetadata: boolean;
   /** Whether any data is being loaded from DB (for preventing premature saves) */
@@ -103,13 +103,13 @@ const DEFAULT_USAGE: UsageTotals = {
 
 /**
  * useSessionData Hook
- * 
+ *
  * Manages all session-specific data loading and persistence.
- * 
+ *
  * @param sessionId - The ID of the session to load data for
  * @param isActive - Whether this session is currently active
  * @returns Object containing session data and management functions
- * 
+ *
  * @example
  * ```tsx
  * const {
@@ -125,34 +125,35 @@ export const useSessionData = (
   sessionId: string,
   isActive: boolean,
   initialMetadata?: SessionMetadata | null,
-  _configPanelOpenOverride?: boolean // Unused - config panel now managed in ChatSessionContainer via localStorage
+  _configPanelOpenOverride?: boolean, // Unused - config panel now managed in ChatSessionContainer via localStorage
+  /** When org/team (or similar) changes, re-fetch session row from DB; otherwise lastLoaded guard can skip forever. */
+  metadataReloadKey?: string,
 ): UseSessionDataReturn => {
-  
   // ============================================================================
   // STATE
   // ============================================================================
-  
+
   // Agent/Model selection state
   // OPTIMIZATION: Initialize immediately with initialMetadata if provided
-  const [selections, setSelections] = useState({ 
-    agent: initialMetadata?.selectedAgent ?? '', 
-    model: initialMetadata?.selectedModel ?? '' 
+  const [selections, setSelections] = useState({
+    agent: initialMetadata?.selectedAgent ?? '',
+    model: initialMetadata?.selectedModel ?? '',
   });
   const selectedAgent = selections.agent;
   const selectedModel = selections.model;
 
   // Selected page URLs state (context selector)
   const [initialSelectedPageURLs, setInitialSelectedPageURLs] = useState<string[]>(
-    initialMetadata?.selectedPageURLs ?? []
+    initialMetadata?.selectedPageURLs ?? [],
   );
 
   // Selected workspace items state
   const [initialSelectedNoteIds, setInitialSelectedNoteIds] = useState<string[]>(
-    initialMetadata?.selectedNoteIds ?? []
+    initialMetadata?.selectedNoteIds ?? [],
   );
 
   const [initialSelectedCredentialIds, setInitialSelectedCredentialIds] = useState<string[]>(
-    initialMetadata?.selectedCredentialIds ?? []
+    initialMetadata?.selectedCredentialIds ?? [],
   );
 
   // Keep selections in sync when sessionId or initialMetadata changes
@@ -160,7 +161,7 @@ export const useSessionData = (
     if (sessionId) {
       setSelections({
         agent: initialMetadata?.selectedAgent ?? '',
-        model: initialMetadata?.selectedModel ?? ''
+        model: initialMetadata?.selectedModel ?? '',
       });
       setInitialSelectedPageURLs(initialMetadata?.selectedPageURLs ?? []);
       setInitialSelectedNoteIds(initialMetadata?.selectedNoteIds ?? []);
@@ -168,7 +169,7 @@ export const useSessionData = (
       setIsLoadingMetadata(isActive && !initialMetadata);
     }
   }, [sessionId, initialMetadata, isActive]);
-  
+
   const setSelectedAgent = useCallback((agent: string) => {
     setSelections(prev => ({ ...prev, agent }));
   }, []);
@@ -176,43 +177,45 @@ export const useSessionData = (
   const setSelectedModel = useCallback((model: string) => {
     setSelections(prev => ({ ...prev, model }));
   }, []);
-  
+
   // Usage tracking state
   const [usageCache, setUsageCache] = useState<Record<string, UsageTotals>>({});
   const [lastUsageCache, setLastUsageCache] = useState<Record<string, UsageData | null>>({});
   const [isUsageHydrating, setIsUsageHydrating] = useState(false);
-  
+
   // Agent step state (flat structure with multi-instance support)
   const [currentAgentStepState, setCurrentAgentStepState] = useState<AgentStepState>({
     sessionId,
     plans: {},
     graphs: {},
   });
-  
+
   // Loading flags
   // OPTIMIZATION: If we have initial metadata, we aren't "loading" the basics anymore
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(isActive && !initialMetadata);
   const isLoadingFromDBRef = useRef(false);
   const lastLoadedSessionRef = useRef<string | null>(null);
+  /** Same session can be re-valid after workspace scope change — track scope so we don't skip DB load. */
+  const lastLoadedScopeRef = useRef<string | null>(null);
   const loadingSessionIdRef = useRef<string | null>(null);
-  
+
   // ============================================================================
   // REFS
   // ============================================================================
-  
+
   // Ref for sessionId to use in persistUsageStats callback
   const sessionIdRef = useRef(sessionId);
-  
+
   // Keep sessionId ref in sync and reset hydration flags on session change
   useEffect(() => {
     sessionIdRef.current = sessionId;
     usageHydrationCompleteRef.current = false;
   }, [sessionId]);
-  
+
   // ============================================================================
   // EFFECTS
   // ============================================================================
-  
+
   /**
    * Effect 1: Initialize cache entries for new session
    * Runs before data loading to ensure cache structure exists
@@ -228,7 +231,7 @@ export const useSessionData = (
       return { ...prev, [sessionId]: null };
     });
   }, [sessionId]);
-  
+
   /**
    * Effect 2: Load session metadata (Agent/Model/context) from DB when tab is active.
    * We always fetch when isActive, rather than trusting initialMetadata from the session list,
@@ -239,18 +242,20 @@ export const useSessionData = (
     if (!isActive) {
       return;
     }
-    
-    // Check if already loaded or currently loading to prevent duplicate fetches
-    if (lastLoadedSessionRef.current === sessionId) {
+
+    const scopeKey = metadataReloadKey ?? '';
+
+    // Check if already loaded for this session *and* workspace scope (org/team), or currently loading
+    if (lastLoadedSessionRef.current === sessionId && lastLoadedScopeRef.current === scopeKey) {
       return;
     }
 
     if (loadingSessionIdRef.current === sessionId) {
       return;
     }
-    
+
     let isCancelled = false;
-    
+
     loadingSessionIdRef.current = sessionId;
     setIsLoadingMetadata(true);
     isLoadingFromDBRef.current = true;
@@ -258,14 +263,14 @@ export const useSessionData = (
     const loadSessionMetadata = async () => {
       try {
         const metadata = await sessionStorageDBWrapper.getSession(sessionId);
-        
+
         if (isCancelled) {
           setIsLoadingMetadata(false);
           isLoadingFromDBRef.current = false;
           loadingSessionIdRef.current = null;
           return;
         }
-        
+
         if (!metadata) {
           setIsLoadingMetadata(false);
           isLoadingFromDBRef.current = false;
@@ -286,10 +291,10 @@ export const useSessionData = (
 
         // Mark session as loaded and clear loading flags ATOMICALLY
         lastLoadedSessionRef.current = sessionId;
+        lastLoadedScopeRef.current = scopeKey;
         loadingSessionIdRef.current = null;
-            setIsLoadingMetadata(false);
-            isLoadingFromDBRef.current = false;
-        
+        setIsLoadingMetadata(false);
+        isLoadingFromDBRef.current = false;
       } catch (error) {
         debug.error(`[useSessionData] Failed to load metadata for session ${sessionId.slice(0, 8)}:`, error);
         setIsLoadingMetadata(false);
@@ -306,8 +311,8 @@ export const useSessionData = (
       setIsLoadingMetadata(false);
       isLoadingFromDBRef.current = false;
     };
-  }, [sessionId, isActive]);
-  
+  }, [sessionId, isActive, metadataReloadKey]);
+
   /**
    * Effect 3: Load usage stats and agent state (in parallel)
    */
@@ -324,9 +329,9 @@ export const useSessionData = (
         // OPTIMIZATION: Load both usage stats and agent state in parallel
         const [storedUsage, storedState] = await Promise.all([
           sessionStorageDBWrapper.getUsageStatsAsync(sessionId),
-          sessionStorageDBWrapper.getAgentStepStateAsync(sessionId)
+          sessionStorageDBWrapper.getAgentStepStateAsync(sessionId),
         ]);
-        
+
         if (!isCancelled) {
           if (storedUsage) {
             const normalizedUsage: UsageTotals = {
@@ -352,7 +357,7 @@ export const useSessionData = (
 
             setUsageCache(prev => ({ ...prev, [sessionId]: normalizedUsage }));
             setLastUsageCache(prev => ({ ...prev, [sessionId]: normalizedLastUsage }));
-            
+
             debug.log(`[useSessionData] Applied usage stats for session ${sessionId.slice(0, 8)}:`, {
               request: normalizedUsage.request,
               response: normalizedUsage.response,
@@ -363,14 +368,14 @@ export const useSessionData = (
             debug.log(`[useSessionData] No stored usage found for session ${sessionId.slice(0, 8)}`);
           }
         }
-        
+
         const storedPlanIds = Object.keys(storedState?.plans ?? {});
         debug.log(`[SessionPlans] useSessionData DB query for session ${sessionId.slice(0, 8)}:`, {
           found: !!storedState,
           plansCount: storedPlanIds.length,
           planIds: storedPlanIds,
         });
-        
+
         if (!isCancelled) {
           // Always set the state - either from DB or empty for new sessions
           setCurrentAgentStepState({
@@ -379,7 +384,7 @@ export const useSessionData = (
             graphs: storedState?.graphs ?? {},
             deferred_tool_requests: storedState?.deferred_tool_requests,
           });
-          
+
           const numPlans = Object.keys(storedState?.plans ?? {}).length;
           const numGraphs = Object.keys(storedState?.graphs ?? {}).length;
           debug.log(`[SessionPlans] useSessionData setState for session ${sessionId.slice(0, 8)}:`, {
@@ -387,7 +392,6 @@ export const useSessionData = (
             numGraphs,
           });
         }
-        
       } catch (error) {
         debug.error(`[useSessionData] Failed to load stored data for session ${sessionId.slice(0, 8)}:`, error);
         // On error, set empty state to prevent stale data
@@ -412,67 +416,77 @@ export const useSessionData = (
   // ============================================================================
   // CALLBACKS
   // ============================================================================
-  
+
   // Track if we should skip the first persist after usage hydration completes
   // This prevents saving loaded data back to DB when nothing has changed
   const usageHydrationCompleteRef = useRef(false);
+
+  const prevIsActiveForUsageHydrationRef = useRef(isActive);
+  useEffect(() => {
+    if (isActive && !prevIsActiveForUsageHydrationRef.current) {
+      usageHydrationCompleteRef.current = false;
+    }
+    prevIsActiveForUsageHydrationRef.current = isActive;
+  }, [isActive]);
 
   /**
    * Persist usage statistics to IndexedDB.
    * Called from ChatSessionContainer when usage changes.
    * Uses ref pattern to avoid recreation on every sessionId change.
    */
-  const persistUsageStats = useCallback((
-    cumulativeUsage: UsageTotals,
-    lastUsageData: UsageData | null
-  ) => {
-    const currentSessionId = sessionIdRef.current;
+  const persistUsageStats = useCallback(
+    (cumulativeUsage: UsageTotals, lastUsageData: UsageData | null) => {
+      const currentSessionId = sessionIdRef.current;
 
-    // Don't persist during hydration
-    if (!currentSessionId || isUsageHydrating) {
-      return;
-    }
+      // Don't persist during hydration
+      if (!currentSessionId || isUsageHydrating) {
+        return;
+      }
 
-    // Skip the first persist after hydration completes (just reloaded from DB)
-    if (!usageHydrationCompleteRef.current) {
-      usageHydrationCompleteRef.current = true;
-      return;
-    }
+      // Skip the first persist after hydration completes (just reloaded from DB)
+      if (!usageHydrationCompleteRef.current) {
+        usageHydrationCompleteRef.current = true;
+        return;
+      }
 
-    // Don't persist zeros - this prevents overwriting DB data with empty values
-    // when useUsageStream hasn't loaded from DB yet
-    const hasData = cumulativeUsage.request > 0 || cumulativeUsage.response > 0 ||
-                    cumulativeUsage.total > 0 || cumulativeUsage.requestCount > 0;
-    if (!hasData && !lastUsageData) {
-      return;
-    }
+      // Don't persist zeros - this prevents overwriting DB data with empty values
+      // when useUsageStream hasn't loaded from DB yet
+      const hasData =
+        cumulativeUsage.request > 0 ||
+        cumulativeUsage.response > 0 ||
+        cumulativeUsage.total > 0 ||
+        cumulativeUsage.requestCount > 0;
+      if (!hasData && !lastUsageData) {
+        return;
+      }
 
-    const lastUsageRecord = lastUsageData
-      ? {
-          requestTokens: lastUsageData.request_tokens ?? 0,
-          responseTokens: lastUsageData.response_tokens ?? 0,
-          totalTokens:
-            lastUsageData.total_tokens ??
-            (lastUsageData.request_tokens ?? 0) + (lastUsageData.response_tokens ?? 0),
-          timestamp: lastUsageData.timestamp,
-          agentType: lastUsageData.agent_type,
-          model: lastUsageData.model,
-        }
-      : null;
+      const lastUsageRecord = lastUsageData
+        ? {
+            requestTokens: lastUsageData.request_tokens ?? 0,
+            responseTokens: lastUsageData.response_tokens ?? 0,
+            totalTokens:
+              lastUsageData.total_tokens ?? (lastUsageData.request_tokens ?? 0) + (lastUsageData.response_tokens ?? 0),
+            timestamp: lastUsageData.timestamp,
+            agentType: lastUsageData.agent_type,
+            model: lastUsageData.model,
+          }
+        : null;
 
-    sessionStorageDBWrapper.updateUsageStats(currentSessionId, {
-      request: cumulativeUsage.request,
-      response: cumulativeUsage.response,
-      total: cumulativeUsage.total,
-      requestCount: cumulativeUsage.requestCount,
-      lastUsage: lastUsageRecord,
-    });
-  }, [isUsageHydrating]); // Only depends on isUsageHydrating, uses ref for sessionId
+      sessionStorageDBWrapper.updateUsageStats(currentSessionId, {
+        request: cumulativeUsage.request,
+        response: cumulativeUsage.response,
+        total: cumulativeUsage.total,
+        requestCount: cumulativeUsage.requestCount,
+        lastUsage: lastUsageRecord,
+      });
+    },
+    [isUsageHydrating],
+  ); // Only depends on isUsageHydrating, uses ref for sessionId
 
   // ============================================================================
   // RETURN
   // ============================================================================
-  
+
   const initialUsage = usageCache[sessionId] ?? DEFAULT_USAGE;
   const initialLastUsage = lastUsageCache[sessionId] ?? null;
 

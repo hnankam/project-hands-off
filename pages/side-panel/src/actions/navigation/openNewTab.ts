@@ -5,6 +5,7 @@
  */
 
 import { debug as baseDebug } from '@extension/shared';
+import { isExtensionContext } from '@extension/platform';
 
 // ============================================================================
 // CONSTANTS
@@ -212,8 +213,28 @@ export async function handleOpenNewTab(
   const callId = Math.random().toString(36).substring(2, 9);
   debug.log(LOG_PREFIX, `[${callId}] Request:`, { url, active, options });
 
+  if (!isExtensionContext()) {
+    const validation = validateUrl(url);
+    if (!validation.valid) {
+      return { status: 'error', message: validation.error };
+    }
+    window.open(validation.urlObj.toString(), '_blank', 'noopener,noreferrer');
+    return {
+      status: 'success',
+      message: `Opened ${validation.urlObj.href}`,
+      tabInfo: {
+        tabId: -1,
+        url: validation.urlObj.href,
+        domain: validation.urlObj.hostname,
+        path: validation.urlObj.pathname,
+        isActive: active,
+      },
+    };
+  }
+
   try {
-    const opts: Required<Omit<OpenNewTabOptions, 'index' | 'waitForCompleteMs'>> & Pick<OpenNewTabOptions, 'index' | 'waitForCompleteMs'> = {
+    const opts: Required<Omit<OpenNewTabOptions, 'index' | 'waitForCompleteMs'>> &
+      Pick<OpenNewTabOptions, 'index' | 'waitForCompleteMs'> = {
       active,
       adjacent: true,
       bringWindowToFront: true,
@@ -265,12 +286,11 @@ export async function handleOpenNewTab(
     debug.log(LOG_PREFIX, `[${callId}] Lock acquired, total locks:`, lockMap.size);
 
     // Cleanup on completion (delayed to allow duplicate detection)
-    executionPromise
-      .catch(() => {
-        // On error, delete lock immediately for retries
-        lockMap.delete(requestSignature);
-        debug.log(LOG_PREFIX, `[${callId}] Lock deleted due to error`);
-      });
+    executionPromise.catch(() => {
+      // On error, delete lock immediately for retries
+      lockMap.delete(requestSignature);
+      debug.log(LOG_PREFIX, `[${callId}] Lock deleted due to error`);
+    });
 
     // Passive cleanup of stale locks
     const cleaned = cleanupStaleLocks(lockMap);
@@ -293,7 +313,8 @@ export async function handleOpenNewTab(
  */
 async function executeOpenNewTabInternal(
   url: string,
-  opts: Required<Omit<OpenNewTabOptions, 'index' | 'waitForCompleteMs'>> & Pick<OpenNewTabOptions, 'index' | 'waitForCompleteMs'>,
+  opts: Required<Omit<OpenNewTabOptions, 'index' | 'waitForCompleteMs'>> &
+    Pick<OpenNewTabOptions, 'index' | 'waitForCompleteMs'>,
   normalizedUrl: string,
   callId: string,
 ): Promise<OpenNewTabResult> {

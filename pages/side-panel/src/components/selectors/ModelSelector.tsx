@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { cn } from '@extension/ui';
-import { API_CONFIG } from '../../constants';
+import { API_CONFIG, buildApiUrl } from '../../constants';
 import { useAuth } from '../../context/AuthContext';
 
 interface ModelSelectorProps {
@@ -38,13 +38,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const textRef = React.useRef<HTMLSpanElement>(null);
   const { organization, activeTeam, isLoading: authLoading } = useAuth();
-  
+
   // Track last fetch to prevent duplicate requests
   const lastFetchRef = React.useRef<{ orgId: string | null; teamId: string | null }>({
     orgId: null,
     teamId: null,
   });
-  
+
   // Get allowed models for the selected agent
   const allowedModels = React.useMemo(() => {
     if (!selectedAgent || !agents) return null;
@@ -62,7 +62,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     };
 
     checkTruncation();
-    
+
     // Re-check on resize
     const resizeObserver = new ResizeObserver(checkTruncation);
     if (textRef.current) {
@@ -93,10 +93,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     const orgId = organization.id;
     const teamId = activeTeam;
     const currentFetchKey = `${orgId}:${teamId}`;
-    const lastFetchKey = lastFetchRef.current.orgId && lastFetchRef.current.teamId
-      ? `${lastFetchRef.current.orgId}:${lastFetchRef.current.teamId}`
-      : null;
-    
+    const lastFetchKey =
+      lastFetchRef.current.orgId && lastFetchRef.current.teamId
+        ? `${lastFetchRef.current.orgId}:${lastFetchRef.current.teamId}`
+        : null;
+
     if (currentFetchKey === lastFetchKey) {
       // Already fetched for this combination, skip duplicate request
       console.log('[ModelSelector] Skipping duplicate fetch for same org/team');
@@ -115,11 +116,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     const fetchModels = async () => {
       try {
         // Add team ID as query parameter to ensure we're fetching the correct team's models
-        const url = new URL(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.CONFIG_MODELS}`);
+        const url = buildApiUrl(API_CONFIG.ENDPOINTS.CONFIG_MODELS);
         if (activeTeam) {
           url.searchParams.append('teamId', activeTeam);
         }
-        
+
         console.log('[ModelSelector] Fetching models for team:', activeTeam);
         const response = await fetch(url.toString(), {
           credentials: 'include',
@@ -148,17 +149,17 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
           return;
         }
         setMissingContext(false);
-        
+
         // Sort models by name alphabetically
         const sortedModels = [...data.models].sort((a: Model, b: Model) =>
-          a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })
+          a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }),
         );
-        
+
         if (!isActive) {
           return;
         }
         setModels(sortedModels);
-        
+
         // Removed: Auto-selection moved to separate effect to handle session loading state
       } catch (error) {
         if ((error as Error)?.name === 'AbortError') {
@@ -167,11 +168,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         console.error('Error fetching models:', error);
         // Fallback to a default model if API fails
         if (isActive) {
-          setModels([{
-            id: 'claude-4.5-haiku',
-            label: 'Claude 4.5 Haiku',
-            provider: 'Anthropic',
-          }]);
+          setModels([
+            {
+              id: 'claude-4.5-haiku',
+              label: 'Claude 4.5 Haiku',
+              provider: 'Anthropic',
+            },
+          ]);
         }
       } finally {
         if (isActive) {
@@ -199,17 +202,22 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     }
 
     const allowedModelIds = allowedModels === null ? null : new Set(allowedModels);
-    const hasValidSelection = selectedModel && models.some((model: Model) => {
-      const isAllowed = allowedModelIds === null || allowedModelIds.has(model.id);
-      return model.id === selectedModel && model.enabled !== false && isAllowed;
-    });
+    const hasValidSelection =
+      selectedModel &&
+      models.some((model: Model) => {
+        const isAllowed = allowedModelIds === null || allowedModelIds.has(model.id);
+        return model.id === selectedModel && model.enabled !== false && isAllowed;
+      });
 
     if (!hasValidSelection) {
-      const firstEnabledModel = models.find((model: Model) => {
-        const isAllowed = allowedModelIds === null || allowedModelIds.has(model.id);
-        return model.enabled !== false && isAllowed;
-      }) || models.find((model: Model) => model.enabled !== false) || models[0];
-      
+      const firstEnabledModel =
+        models.find((model: Model) => {
+          const isAllowed = allowedModelIds === null || allowedModelIds.has(model.id);
+          return model.enabled !== false && isAllowed;
+        }) ||
+        models.find((model: Model) => model.enabled !== false) ||
+        models[0];
+
       if (firstEnabledModel) {
         console.log('[ModelSelector] Auto-selecting default model:', firstEnabledModel.id);
         onModelChange(firstEnabledModel.id);
@@ -240,13 +248,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         className={cn(
           'flex min-w-0 items-center gap-1.5 px-2 opacity-50',
           inlineInput
-            ? 'mt-[3px] h-[22px] rounded-xl py-0 text-[12px] leading-tight'
+            ? 'mt-[1px] h-[22px] rounded-xl py-0 text-[12px] leading-tight'
             : 'h-[26px] rounded-md py-1 text-xs',
         )}>
         <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
           <path d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
         </svg>
-        <span className="font-medium truncate">Loading...</span>
+        <span className="truncate font-medium">Loading...</span>
       </div>
     );
   }
@@ -255,32 +263,32 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     // Show different message based on whether we have a team or not
     const hasTeam = !!(organization?.id && activeTeam);
     const message = hasTeam ? 'Team has no models configured' : 'Select a team to load models';
-    
+
     return (
       <div
         className={cn(
           'flex min-w-0 items-center gap-1.5 px-2 opacity-50',
           inlineInput
-            ? 'mt-[3px] h-[22px] rounded-xl py-0 text-[12px] leading-tight'
+            ? 'mt-[1px] h-[22px] rounded-xl py-0 text-[12px] leading-tight'
             : 'h-[26px] rounded-md py-1 text-xs',
         )}>
         <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
           <path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        <span className="font-medium truncate">{message}</span>
+        <span className="truncate font-medium">{message}</span>
       </div>
     );
   }
 
   return (
-    <div className="relative chat-bar-agent-model-selector" ref={dropdownRef}>
+    <div className="chat-bar-agent-model-selector relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
           'flex min-w-0 items-center gap-1.5 px-2',
           inlineInput && 'group',
           inlineInput
-            ? 'mt-[3px] h-[22px] py-0 text-[12px] leading-tight [&_svg]:h-3 [&_svg]:w-3 [&_svg]:shrink-0'
+            ? 'mt-[1px] h-[22px] py-0 text-[12px] leading-tight [&_svg]:h-3 [&_svg]:w-3 [&_svg]:shrink-0'
             : 'h-[26px] py-1 text-xs',
           inlineInput ? 'rounded-xl transition-all' : 'rounded-md',
           inlineInput
@@ -311,7 +319,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
           style={{ flexShrink: 0 }}>
           <path d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
         </svg>
-        <span className="relative min-w-0 flex-1 overflow-hidden truncate font-medium">
+        <span className="relative min-w-0 flex-1 truncate overflow-hidden font-medium">
           <span ref={textRef} className="block truncate">
             {selectedModelData ? selectedModelData.label : 'Select Model'}
           </span>
@@ -347,9 +355,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       {/* Dropdown: animated outer + inner scroller; avoid flex-1 on inner (collapses when parent height is intrinsic). */}
       <div
         className={cn(
-          'absolute bottom-full left-0 z-[9999] mb-1 max-h-64 min-w-full w-max max-w-[min(100vw-1.5rem,36rem)] overflow-hidden rounded-md border shadow-lg',
+          'absolute bottom-full left-0 z-[9999] mb-1 max-h-64 w-max max-w-[min(100vw-1.5rem,36rem)] min-w-full overflow-hidden rounded-md border shadow-lg',
           isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
-          isOpen ? 'pointer-events-auto model-selector-dropdown' : 'opacity-0 pointer-events-none'
+          isOpen ? 'model-selector-dropdown pointer-events-auto' : 'pointer-events-none opacity-0',
         )}>
         <div
           className="recent-sessions-scroll max-h-64 overflow-y-auto overscroll-contain"
@@ -358,66 +366,54 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
               '--table-scroll-bg': isLight ? '#f9fafb' : '#151C24',
             } as React.CSSProperties
           }>
-        {models
-          .filter(model => {
-            if (model.enabled === false) return false;
-            if (allowedModels !== null && !allowedModels.includes(model.id)) return false;
-            return true;
-          })
-          .map(model => {
-          return (
-            <button
-              key={model.id}
-              onClick={() => {
-                onModelChange(model.id);
-                setIsOpen(false);
-              }}
-              className={cn(
-                'flex w-full min-w-0 flex-col items-start whitespace-normal px-2.5 py-1.5 text-left text-xs transition-colors',
-                selectedModel === model.id
-                  ? isLight
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'bg-blue-900/30 text-blue-300'
-                  : isLight
-                    ? 'text-gray-600 hover:bg-gray-100'
-                    : 'text-gray-500 hover:bg-gray-700',
-              )}>
-              <div className="flex w-full min-w-0 items-center justify-between gap-2">
-                <span
+          {models
+            .filter(model => {
+              if (model.enabled === false) return false;
+              if (allowedModels !== null && !allowedModels.includes(model.id)) return false;
+              return true;
+            })
+            .map(model => {
+              return (
+                <button
+                  key={model.id}
+                  onClick={() => {
+                    onModelChange(model.id);
+                    setIsOpen(false);
+                  }}
                   className={cn(
-                    'min-w-0 flex-1 truncate whitespace-nowrap',
-                    selectedModel === model.id && 'font-medium',
-                  )}
-                >
-                  {model.label}
-                </span>
-                {selectedModel === model.id && (
-                  <svg
-                    className="flex-shrink-0"
-                    width="12"
-                    height="12"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                )}
-              </div>
-              <span
-                className={cn(
-                  'whitespace-nowrap text-xs',
-                  isLight ? 'text-gray-500' : 'text-gray-400',
-                )}
-              >
-                {model.provider}
-              </span>
-            </button>
-          );
-        })}
+                    'flex w-full min-w-0 flex-col items-start px-2.5 py-1.5 text-left text-xs whitespace-normal transition-colors',
+                    selectedModel === model.id
+                      ? isLight
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'bg-blue-900/30 text-blue-300'
+                      : isLight
+                        ? 'text-gray-600 hover:bg-gray-100'
+                        : 'text-gray-500 hover:bg-gray-700',
+                  )}>
+                  <div className="flex w-full min-w-0 items-center justify-between gap-2">
+                    <span
+                      className={cn(
+                        'min-w-0 flex-1 truncate whitespace-nowrap',
+                        selectedModel === model.id && 'font-medium',
+                      )}>
+                      {model.label}
+                    </span>
+                    {selectedModel === model.id && (
+                      <svg className="flex-shrink-0" width="12" height="12" fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                          fillRule="evenodd"
+                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    )}
+                  </div>
+                  <span className={cn('text-xs whitespace-nowrap', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    {model.provider}
+                  </span>
+                </button>
+              );
+            })}
         </div>
       </div>
     </div>

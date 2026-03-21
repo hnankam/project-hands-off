@@ -5,6 +5,7 @@
 
 import * as React from 'react';
 import { cn } from '@extension/ui';
+import { ModalCloseButton } from './ModalCloseButton';
 
 // ============================================================================
 // CONSTANTS
@@ -89,10 +90,9 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
       <div
         className={cn(
           'fixed inset-0 flex items-center justify-center p-4 transition-opacity',
-          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          isOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
         )}
-        style={{ zIndex: Z_INDEX.modal }}
-      >
+        style={{ zIndex: Z_INDEX.modal }}>
         <div
           className={cn(
             'w-full max-w-sm rounded-lg shadow-xl',
@@ -105,52 +105,21 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
               'flex items-center justify-between border-b px-3 py-2',
               isLight ? 'border-gray-200' : 'border-gray-700',
             )}>
-            <h2 className={cn('text-sm font-semibold', mainTextColor)}>
-              {title}
-            </h2>
-            <button
-              onClick={onClose}
-              className={cn(
-                'rounded-md p-0.5 transition-colors',
-                isLight
-                  ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                  : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-              )}>
-              <svg
-                width="14"
-                height="14"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round">
-                <path d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <h2 className={cn('text-sm font-semibold', mainTextColor)}>{title}</h2>
+            <ModalCloseButton onClick={onClose} isLight={isLight} />
           </div>
 
           {/* Content */}
           <div className="space-y-3 px-3 py-4">
             <div className="flex items-start gap-3">
-              <div
-                className={cn(
-                  'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
-                  colors.iconBg
-                )}>
-                <svg
-                  className={cn('h-3.5 w-3.5', colors.iconColor)}
-                  fill="currentColor"
-                  viewBox="0 0 24 24">
+              <div className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full', colors.iconBg)}>
+                <svg className={cn('h-3.5 w-3.5', colors.iconColor)} fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
                 </svg>
               </div>
 
               <div className="flex-1">
-                <div
-                  className={cn('text-sm', mainTextColor)}
-                  dangerouslySetInnerHTML={{ __html: message }}
-                />
+                <div className={cn('text-sm', mainTextColor)} dangerouslySetInnerHTML={{ __html: message }} />
               </div>
             </div>
           </div>
@@ -165,20 +134,14 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
               onClick={onClose}
               className={cn(
                 'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                isLight
-                  ? 'bg-gray-200 hover:bg-gray-300'
-                  : 'bg-gray-700 hover:bg-gray-600',
+                isLight ? 'bg-gray-200 hover:bg-gray-300' : 'bg-gray-700 hover:bg-gray-600',
               )}
-              style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-            >
+              style={{ color: isLight ? '#374151' : '#bcc1c7' }}>
               {cancelLabel}
             </button>
             <button
               onClick={onConfirm}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                colors.buttonBg
-              )}>
+              className={cn('rounded-md px-3 py-1.5 text-xs font-medium transition-colors', colors.buttonBg)}>
               {confirmLabel}
             </button>
           </div>
@@ -187,4 +150,3 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
     </>
   );
 };
-

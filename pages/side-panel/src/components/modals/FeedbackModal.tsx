@@ -1,12 +1,13 @@
 /**
  * Feedback Modal Component
- * 
+ *
  * Reusable modal for collecting user feedback.
  */
 
 import * as React from 'react';
 import { cn } from '@extension/ui';
 import { RichTextEditor } from '../admin/editors';
+import { ModalCloseButton } from './ModalCloseButton';
 
 interface FeedbackModalProps {
   isLight: boolean;
@@ -33,10 +34,7 @@ export default function FeedbackModal({
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
+      <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
       <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
@@ -52,37 +50,14 @@ export default function FeedbackModal({
               'flex items-center justify-between border-b px-3 py-2',
               isLight ? 'border-gray-200' : 'border-gray-700',
             )}>
-            <h2 className={cn('text-sm font-semibold', mainTextColor)}>
-              Help us improve Hands-Off
-            </h2>
-            <button
-              onClick={onClose}
-              className={cn(
-                'rounded-md p-0.5 transition-colors',
-                isLight
-                  ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                  : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-              )}>
-              <svg
-                width="14"
-                height="14"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round">
-                <path d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <h2 className={cn('text-sm font-semibold', mainTextColor)}>Help us improve Hands-Off</h2>
+            <ModalCloseButton onClick={onClose} isLight={isLight} />
           </div>
 
           {/* Content */}
           <div className="space-y-3 px-5 py-4">
-            <p className={cn('text-sm font-medium', mainTextColor)}>
-              We'd love your feedback.
-            </p>
-            
+            <p className={cn('text-sm font-medium', mainTextColor)}>We'd love your feedback.</p>
+
             <div className="space-y-2">
               <label className={cn('block text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
                 Share your thoughts
@@ -105,9 +80,8 @@ export default function FeedbackModal({
                 rel="noopener noreferrer"
                 className={cn(
                   'font-medium underline',
-                  isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300'
-                )}
-              >
+                  isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300',
+                )}>
                 Contact Support
               </a>
               , or the community on{' '}
@@ -117,9 +91,8 @@ export default function FeedbackModal({
                 rel="noopener noreferrer"
                 className={cn(
                   'font-medium underline',
-                  isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300'
-                )}
-              >
+                  isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300',
+                )}>
                 Discord
               </a>
               .
@@ -136,12 +109,9 @@ export default function FeedbackModal({
               onClick={onClose}
               className={cn(
                 'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                isLight
-                  ? 'bg-gray-200 hover:bg-gray-300'
-                  : 'bg-gray-700 hover:bg-gray-600',
+                isLight ? 'bg-gray-200 hover:bg-gray-300' : 'bg-gray-700 hover:bg-gray-600',
               )}
-              style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-            >
+              style={{ color: isLight ? '#374151' : '#bcc1c7' }}>
               Cancel
             </button>
             <button
@@ -152,8 +122,8 @@ export default function FeedbackModal({
                 feedbackText.trim()
                   ? 'bg-blue-600 text-white hover:bg-blue-700'
                   : isLight
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : 'bg-gray-700 text-gray-500 cursor-not-allowed',
+                    ? 'cursor-not-allowed bg-gray-300 text-gray-500'
+                    : 'cursor-not-allowed bg-gray-700 text-gray-500',
               )}>
               Send
             </button>
@@ -163,4 +133,3 @@ export default function FeedbackModal({
     </>
   );
 }
-

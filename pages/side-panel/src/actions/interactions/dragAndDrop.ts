@@ -5,6 +5,7 @@
  */
 
 import { debug as baseDebug } from '@extension/shared';
+import { assertExtensionContext } from '@src/utils/extensionOnly';
 import { QUERY_SELECTOR_SHADOW_DOM_CODE } from '../dom/shadowDOMHelper';
 
 // ============================================================================
@@ -191,6 +192,7 @@ export async function handleDragAndDrop(
   offsetY: number = 0,
   options?: DragAndDropOptions,
 ): Promise<DragAndDropResult> {
+  assertExtensionContext('Drag and drop');
   const requestSignature = createRequestSignature(sourceCssSelector, targetCssSelector);
 
   debug.log(LOG_PREFIX, 'Request:', { sourceCssSelector, targetCssSelector, offsetX, offsetY, options });
@@ -301,15 +303,13 @@ async function executeDragDropOperation(
 
         // Access injected function
         const querySelectorWithShadowDOM =
-          win.querySelectorWithShadowDOM ||
-          ((sel: string) => document.querySelector(sel));
+          win.querySelectorWithShadowDOM || ((sel: string) => document.querySelector(sel));
 
         // Helper function to check if element is visible
         const isVisible = (el: Element): boolean => {
           const style = window.getComputedStyle(el);
           const htmlEl = el as HTMLElement;
-          const hasBox =
-            htmlEl.offsetWidth > 0 || htmlEl.offsetHeight > 0 || el.getClientRects().length > 0;
+          const hasBox = htmlEl.offsetWidth > 0 || htmlEl.offsetHeight > 0 || el.getClientRects().length > 0;
           return hasBox && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
         };
 
@@ -489,8 +489,7 @@ async function executeDragDropOperation(
 
               for (let currentStep = 0; currentStep <= steps; currentStep++) {
                 const progress = currentStep / steps;
-                const easeProgress =
-                  progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+                const easeProgress = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
 
                 const currentX = sourceX + (targetX - sourceX) * easeProgress;
                 const currentY = sourceY + (targetY - sourceY) * easeProgress;

@@ -1,5 +1,15 @@
 @import '@extension/ui/global.css';
 @import '@copilotkitnext/react/styles.css';
 
-/* CopilotKit V2 styles content source */
-@source "../../../../node_modules/@copilotkitnext/react";
+/*
+ * Explicit content paths (relative to this file). Tailwind v4 resolves scans from the CSS
+ * file location; without this, `pnpm dev:web` (cwd pages/web) can miss classes used only in
+ * shared side-panel sources → nearly unstyled UI on localhost.
+ */
+@source "./**/*.{tsx,ts}";
+@source "../index.html";
+@source "../../web/index.html";
+@source "../../web/src/**/*.{tsx,ts}";
+@source "../../../packages/ui/lib/**/*.tsx";
+/* CopilotKit V2 — resolved from side-panel package (pnpm node_modules) */
+@source "../../node_modules/@copilotkitnext/react";

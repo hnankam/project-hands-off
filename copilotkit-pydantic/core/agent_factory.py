@@ -260,6 +260,9 @@ def _format_selected_credentials_context(value: dict) -> str:
         key = cred.get('key')
         if key:
             parts.append(f" - Key: `{key}`")
+        desc = cred.get('description')
+        if desc is not None and str(desc).strip():
+            parts.append(f" - Description: {str(desc).strip()}")
         parts.append("\n")
     
     return "".join(parts)

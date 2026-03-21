@@ -1,9 +1,9 @@
 /**
  * Better Auth Configuration
- * 
+ *
  * This file configures Better Auth with the organization plugin for
  * multi-tenant organization and team management.
- * 
+ *
  * Features:
  * - Email/password authentication
  * - Social login (Google, GitHub, Microsoft)
@@ -13,10 +13,10 @@
  * - SSO (OIDC/SAML) support for enterprise organizations
  */
 
-import { betterAuth } from "better-auth";
-import { organization, admin } from "better-auth/plugins";
-import { defaultAc } from "better-auth/plugins/organization/access";
-import { sso } from "@better-auth/sso";
+import { betterAuth } from 'better-auth';
+import { organization, admin } from 'better-auth/plugins';
+import { defaultAc } from 'better-auth/plugins/organization/access';
+import { sso } from '@better-auth/sso';
 import { getPool } from '../config/database.js';
 import { sendOrganizationInvitation, sendPasswordResetEmail } from './email.js';
 
@@ -24,11 +24,11 @@ import { sendOrganizationInvitation, sendPasswordResetEmail } from './email.js';
 async function isAdminOrOwner(userId, organizationId) {
   try {
     const pool = getPool();
-    const result = await pool.query(
-      'SELECT role FROM member WHERE "organizationId" = $1 AND "userId" = $2',
-      [organizationId, userId]
-    );
-    
+    const result = await pool.query('SELECT role FROM member WHERE "organizationId" = $1 AND "userId" = $2', [
+      organizationId,
+      userId,
+    ]);
+
     if (result.rows.length > 0) {
       const roles = Array.isArray(result.rows[0].role) ? result.rows[0].role : [result.rows[0].role];
       return roles.includes('owner') || roles.includes('admin');
@@ -43,45 +43,44 @@ async function isAdminOrOwner(userId, organizationId) {
 // IMPORTANT: Only adds user if they are already an organization member
 async function addUserToTeam(teamId, userId) {
   const pool = getPool();
-  
+
   // Get the organization ID for this team
-  const teamResult = await pool.query(
-    'SELECT "organizationId" FROM team WHERE id = $1',
-    [teamId]
-  );
-  
+  const teamResult = await pool.query('SELECT "organizationId" FROM team WHERE id = $1', [teamId]);
+
   if (!teamResult.rows || teamResult.rows.length === 0) {
     throw new Error(`Team ${teamId} not found`);
   }
-  
+
   const organizationId = teamResult.rows[0].organizationId;
-  
+
   // Verify user is an organization member before adding to team
-  const memberResult = await pool.query(
-    'SELECT id FROM member WHERE "userId" = $1 AND "organizationId" = $2',
-    [userId, organizationId]
-  );
-  
+  const memberResult = await pool.query('SELECT id FROM member WHERE "userId" = $1 AND "organizationId" = $2', [
+    userId,
+    organizationId,
+  ]);
+
   if (!memberResult.rows || memberResult.rows.length === 0) {
     console.warn(`[Auth] Cannot add user ${userId} to team ${teamId}: user is not an organization member`);
     throw new Error('User must be an organization member before being added to a team');
   }
-  
+
   // Check if already a team member
-  const existingTeamMember = await pool.query(
-    'SELECT id FROM "teamMember" WHERE "teamId" = $1 AND "userId" = $2',
-    [teamId, userId]
-  );
-  
+  const existingTeamMember = await pool.query('SELECT id FROM "teamMember" WHERE "teamId" = $1 AND "userId" = $2', [
+    teamId,
+    userId,
+  ]);
+
   if (existingTeamMember.rows && existingTeamMember.rows.length > 0) {
     console.log(`[Auth] User ${userId} is already a member of team ${teamId}`);
     return; // Already a member, no action needed
   }
-  
-  await pool.query(
-    `INSERT INTO "teamMember" (id, "teamId", "userId", "createdAt") VALUES ($1, $2, $3, $4)`,
-    [crypto.randomUUID(), teamId, userId, new Date()]
-  );
+
+  await pool.query(`INSERT INTO "teamMember" (id, "teamId", "userId", "createdAt") VALUES ($1, $2, $3, $4)`, [
+    crypto.randomUUID(),
+    teamId,
+    userId,
+    new Date(),
+  ]);
 }
 
 /**
@@ -90,18 +89,18 @@ async function addUserToTeam(teamId, userId) {
  */
 export const auth = betterAuth({
   database: getPool(),
-  
+
   // Email/password authentication with forgot password support
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false, // Set to true in production
-    
+
     // Forgot password configuration
     sendResetPassword: async ({ user, url, token }) => {
       // Generate our custom reset link that shows the instruction page
       const baseUrl = process.env.BETTER_AUTH_URL || process.env.BASE_URL || 'http://localhost:3001';
       const customResetLink = `${baseUrl}/api/auth/reset-password?token=${token}`;
-      
+
       // Send password reset email with our custom link
       await sendPasswordResetEmail({
         email: user.email,
@@ -110,11 +109,11 @@ export const auth = betterAuth({
         token,
       });
     },
-    
+
     // Password reset token expiration (1 hour)
     resetPasswordTokenExpiresIn: 60 * 60, // 1 hour in seconds
   },
-  
+
   // Social login providers
   socialProviders: {
     // Google OAuth
@@ -138,7 +137,7 @@ export const auth = betterAuth({
       enabled: !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
     },
   },
-  
+
   // Session configuration
   session: {
     cookieCache: {
@@ -148,21 +147,38 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // 1 day (refresh session after 1 day of activity)
   },
-  
+
   // Base URL for callbacks and redirects (uses BETTER_AUTH_URL env var)
-  baseURL: process.env.BETTER_AUTH_URL || process.env.BASE_URL || "http://localhost:3001",
-  
-  // Trust proxy for production deployments
-  trustedOrigins: process.env.CORS_ORIGINS ? 
-    process.env.CORS_ORIGINS.split(',').map(o => o.trim()) : 
-    [
-      "http://localhost:3000",
-      "chrome-extension://onppliipgpejpnnmafbljnkdigmofncb"
-    ],
-  
+  baseURL: process.env.BETTER_AUTH_URL || process.env.BASE_URL || 'http://localhost:3001',
+
+  // Origins allowed for session / CSRF validation (must include any SPA host that calls the API).
+  // Default list includes Vite web app ports and extension; merge with CORS_ORIGINS when set.
+  trustedOrigins: (() => {
+    const fromEnv = process.env.CORS_ORIGINS
+      ? process.env.CORS_ORIGINS.split(',')
+          .map(o => o.trim())
+          .filter(Boolean)
+      : [];
+    const devSpaOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:4173',
+      'http://localhost:8080',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:5174',
+      'http://127.0.0.1:4173',
+      'http://127.0.0.1:8080',
+      'chrome-extension://onppliipgpejpnnmafbljnkdigmofncb',
+    ];
+    const isProd = process.env.NODE_ENV === 'production';
+    const merged = isProd && fromEnv.length > 0 ? [...fromEnv] : [...new Set([...fromEnv, ...devSpaOrigins])];
+    return merged;
+  })(),
+
   // Advanced session options
   advanced: {
-    cookiePrefix: "better_auth",
+    cookiePrefix: 'better_auth',
     crossSubDomainCookies: {
       enabled: false,
     },
@@ -174,7 +190,7 @@ export const auth = betterAuth({
     // Disable CSRF for Chrome extensions (they can't be subject to CSRF attacks)
     disableCSRFCheck: true,
   },
-  
+
   // Plugins configuration
   plugins: [
     // Admin plugin for user management (password reset, etc.)
@@ -182,7 +198,7 @@ export const auth = betterAuth({
       // Default role is 'user' - admins are managed via organization roles
       defaultRole: 'user',
     }),
-    
+
     // Organization plugin for multi-tenant support
     organization({
       // Enable teams functionality
@@ -191,15 +207,15 @@ export const auth = betterAuth({
         maximumTeams: 100, // Optional: limit teams per organization
         allowRemovingAllTeams: false, // Optional: prevent removing the last team
       },
-      
+
       // Access control configuration - use statement-based AC
       ac: {
         ...defaultAc,
         statements: [
           // Allow organization owners and admins to list team members even if not in the team
           {
-            action: "team:listMembers",
-            effect: "allow",
+            action: 'team:listMembers',
+            effect: 'allow',
             condition: async ({ session, organization }) => {
               if (!organization || !session?.user) return false;
               return await isAdminOrOwner(session.user.id, organization.id);
@@ -207,18 +223,18 @@ export const auth = betterAuth({
           },
         ],
       },
-      
+
       // Allow users to create organizations
-      allowUserToCreateOrganization: async (user) => {
+      allowUserToCreateOrganization: async user => {
         // By default, all authenticated users can create organizations
         // You can add custom logic here (e.g., check subscription plan)
         return true;
       },
-      
+
       // Organization creation hooks
       organizationHooks: {
         // Before creating an organization
-        beforeCreateOrganization: async ({ organization, user }) => {          
+        beforeCreateOrganization: async ({ organization, user }) => {
           // You can modify organization data here
           return {
             data: {
@@ -231,65 +247,63 @@ export const auth = betterAuth({
             },
           };
         },
-        
+
         // Note: Better Auth automatically creates a team with the organization's name
         // and adds the creator to it when teams are enabled. No need for custom afterCreate hook.
-        
+
         // Before updating an organization
         beforeUpdateOrganization: async ({ organization, user, member }) => {
           // console.log(`User ${user.email} is updating organization: ${organization.name}`);
           return { data: organization };
         },
-        
+
         // After updating an organization
         afterUpdateOrganization: async ({ organization, user, member }) => {
           // console.log(`Organization updated: ${organization.name}`);
         },
       },
-      
+
       // Member hooks
       memberHooks: {
         // Before adding a member
         beforeAddMember: async ({ member, user, organization }) => {
           return { data: member };
         },
-        
+
         // After adding a member
-        afterAddMember: async (params) => {
-          const { member, user, organization } = params;          
+        afterAddMember: async params => {
+          const { member, user, organization } = params;
           // Note: Team assignment is now handled by the invite process
           // The frontend must specify which team to add the member to
           // This ensures single-team membership is enforced at invitation time
         },
-        
+
         // Before removing a member
         beforeRemoveMember: async ({ member, user, organization }) => {
           return { data: member };
         },
-        
+
         // After removing a member
-        afterRemoveMember: async ({ member, user, organization }) => {
-        },
+        afterRemoveMember: async ({ member, user, organization }) => {},
       },
-      
+
       // Invitation hooks
       invitationHooks: {
         // Before sending an invitation
         beforeSendInvitation: async ({ invitation, user, organization }) => {
           return { data: invitation };
         },
-        
+
         // After sending an invitation - email is sent via sendInvitationEmail below
-        afterSendInvitation: async ({ invitation, user, organization }) => {
-        },
+        afterSendInvitation: async ({ invitation, user, organization }) => {},
       },
-      
+
       // Team hooks
       teamHooks: {
         // After creating a team
-        afterCreateTeam: async (params) => {
+        afterCreateTeam: async params => {
           const { team, user, organization } = params;
-                    
+
           try {
             // Automatically add the team creator as a team member
             await addUserToTeam(team.id, user.id);
@@ -297,23 +311,21 @@ export const auth = betterAuth({
             console.error('Error adding creator to team:', error);
           }
         },
-        
+
         // Before removing a team
         beforeRemoveTeam: async ({ team, user, organization }) => {
           return { data: team };
         },
-        
+
         // After removing a team
-        afterRemoveTeam: async ({ team, user, organization }) => {
-        },
+        afterRemoveTeam: async ({ team, user, organization }) => {},
       },
-      
+
       // IMPORTANT: Do not override 'ac' and 'roles' with custom resource maps here.
       // We rely on Better Auth's built-in default access control and roles.
-      
+
       // Send invitation email function
-      sendInvitationEmail: async (data) => {
-        
+      sendInvitationEmail: async data => {
         try {
           await sendOrganizationInvitation(data);
           return { success: true };
@@ -324,7 +336,7 @@ export const auth = betterAuth({
         }
       },
     }),
-    
+
     // SSO plugin for enterprise OIDC/SAML authentication
     sso({
       // Organization provisioning - automatically add SSO users to their organization
@@ -341,22 +353,22 @@ export const auth = betterAuth({
           return 'member';
         },
       },
-      
+
       // Domain verification for enterprise security
       domainVerification: {
         enabled: true,
         tokenPrefix: 'better-auth-sso-',
       },
-      
+
       // Limit SSO providers per organization (0 = unlimited)
       providersLimit: 5,
-      
+
       // Trust email_verified from IdP (careful: only enable if you control provider registration)
       // trustEmailVerified: false,
-      
+
       // Don't override existing user info by default
       defaultOverrideUserInfo: false,
-      
+
       // Allow implicit sign-up for SSO users
       disableImplicitSignUp: false,
     }),
@@ -367,4 +379,3 @@ export const auth = betterAuth({
  * Get the auth instance (for use in other modules)
  */
 export default auth;
-

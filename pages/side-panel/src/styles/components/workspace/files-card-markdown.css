@@ -323,3 +323,28 @@
   border-style: none;
   margin: 0 0 1em 0;
 }
+
+/* Config panel Preview tab: no gray canvas; Menlo; tight insets (no default 16px padding) */
+.files-card-markdown.config-panel-preview-markdown .markdown-content {
+  background-color: transparent;
+  font-family: Menlo, ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, monospace;
+  padding: 6px 8px 0;
+}
+.files-card-markdown.config-panel-preview-markdown.dark .markdown-content {
+  background-color: transparent;
+  font-family: Menlo, ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, monospace;
+  padding: 6px 8px 0;
+}
+
+.files-card-markdown.config-panel-preview-markdown .markdown-content code,
+.files-card-markdown.config-panel-preview-markdown .markdown-content pre {
+  font-family: Menlo, ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, monospace;
+}
+
+/* Non-markdown preview (CodeBlock): Menlo — overrides SyntaxHighlighter inline font */
+.config-panel-preview-code,
+.config-panel-preview-code pre,
+.config-panel-preview-code code,
+.config-panel-preview-code span {
+  font-family: Menlo, ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, monospace !important;
+}

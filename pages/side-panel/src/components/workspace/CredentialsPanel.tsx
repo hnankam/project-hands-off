@@ -1,12 +1,25 @@
 import * as React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@extension/ui';
 import { API_CONFIG } from '../../constants';
+import { WORKSPACE_CREDENTIAL_TYPES, type WorkspaceCredentialType } from '../../constants/workspaceCredentialTypes';
+
+/** Credential categories for the Home → Workspace credentials UI (stored as `type` on the API). */
+export const CREDENTIAL_TYPES = WORKSPACE_CREDENTIAL_TYPES;
+export type CredentialType = WorkspaceCredentialType;
+
+function isCredentialType(value: string): value is CredentialType {
+  return (CREDENTIAL_TYPES as readonly string[]).includes(value);
+}
 
 interface Credential {
   id: string;
   name: string;
+  /** Prefer {@link CredentialType}; API may return legacy free-text values. */
   type: string;
+  /** Optional user-visible notes (stored server-side; not secret). */
+  description?: string | null;
   key?: string;
   created_at: string;
   updated_at: string;
@@ -19,14 +32,14 @@ interface Credential {
  */
 function extractDisplayName(uniqueKey?: string): string {
   if (!uniqueKey) return '';
-  
+
   // Pattern: match everything before the last underscore followed by exactly 4 alphanumeric chars
   const match = uniqueKey.match(/^(.+)_[a-z0-9]{4}$/);
-  
+
   if (match) {
     return match[1];
   }
-  
+
   // Fallback: if pattern doesn't match, return as-is
   return uniqueKey;
 }
@@ -38,19 +51,23 @@ function extractDisplayName(uniqueKey?: string): string {
  */
 function maskCredentialValue(value: string | null | undefined): string {
   if (!value) return '';
-  
+
   const raw = String(value);
   const maskLength = Math.max(6, Math.min(raw.length || 0, 12));
   return '*'.repeat(maskLength);
 }
 
-export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void }> = ({ isLight, onStatsChange }) => {
+export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void }> = ({
+  isLight,
+  onStatsChange,
+}) => {
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEditor, setShowEditor] = useState(false);
   const [editingCredential, setEditingCredential] = useState<Credential | null>(null);
   const [name, setName] = useState('');
   const [type, setType] = useState('');
+  const [description, setDescription] = useState('');
   const [key, setKey] = useState('');
   const [password, setPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -62,10 +79,33 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
 
   // Password visibility state
   const [showPassword, setShowPassword] = useState(false);
-  
+
   // State for tracking which credential secrets are visible in the table
   const [visibleSecrets, setVisibleSecrets] = useState<Record<string, string>>({});
   const [loadingSecrets, setLoadingSecrets] = useState<Record<string, boolean>>({});
+  const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
+  const typeDropdownRef = useRef<HTMLDivElement>(null);
+  /** Portaled tooltip for truncated description (same pattern as PlanStateCard step text). */
+  const [descriptionTooltip, setDescriptionTooltip] = useState<{
+    text: string;
+    left: number;
+    top: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!showEditor) setTypeDropdownOpen(false);
+  }, [showEditor]);
+
+  useEffect(() => {
+    if (!typeDropdownOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!typeDropdownRef.current?.contains(event.target as Node)) {
+        setTypeDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside, true);
+    return () => document.removeEventListener('mousedown', handleClickOutside, true);
+  }, [typeDropdownOpen]);
 
   const loadCredentials = useCallback(async () => {
     try {
@@ -97,7 +137,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
 
     // Otherwise, fetch the secret
     setLoadingSecrets(prev => ({ ...prev, [credentialId]: true }));
-    
+
     try {
       const baseURL = API_CONFIG.BASE_URL;
       const response = await fetch(`${baseURL}/api/workspace/credentials/bulk`, {
@@ -136,6 +176,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
     setEditingCredential(null);
     setName('');
     setType('');
+    setDescription('');
     setKey('');
     setPassword('');
     setShowPassword(false);
@@ -146,10 +187,11 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
     setEditingCredential(credential);
     setName(credential.name);
     setType(credential.type);
+    setDescription(credential.description ?? '');
     // Extract the base key (without suffix) for editing
     setKey(credential.key ? extractDisplayName(credential.key) : '');
     setShowPassword(false); // Reset password visibility
-    
+
     // Load the existing password so user can see it with eye icon
     try {
       const baseURL = API_CONFIG.BASE_URL;
@@ -191,7 +233,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
       const url = editingCredential
         ? `${baseURL}/api/workspace/credentials/${editingCredential.id}`
         : `${baseURL}/api/workspace/credentials`;
-      
+
       const response = await fetch(url, {
         method: editingCredential ? 'PUT' : 'POST',
         credentials: 'include',
@@ -201,6 +243,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
         body: JSON.stringify({
           name,
           type,
+          description: description.trim() ? description.trim() : null,
           key: key.trim() || undefined, // Send user-provided key
           password: password || undefined, // Only send if provided
         }),
@@ -216,6 +259,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
       setShowEditor(false);
       setName('');
       setType('');
+      setDescription('');
       setKey('');
       setPassword('');
       setEditingCredential(null);
@@ -270,7 +314,9 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
 
   if (loading) {
     return (
-      <div className={cn('text-center py-8 text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>Loading credentials...</div>
+      <div className={cn('py-8 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
+        Loading credentials...
+      </div>
     );
   }
 
@@ -278,51 +324,175 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
     <div className="space-y-4">
       {/* Editor */}
       {showEditor && (
-        <div className={cn('rounded-lg border p-4', isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700')}>
+        <div
+          className={cn(
+            'rounded-lg border p-4',
+            isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
+          )}>
           <div className="space-y-3">
             <div>
-              <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
+              <label className={cn('mb-1 block text-xs font-medium', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
                 Name *
               </label>
               <input
                 type="text"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={e => setName(e.target.value)}
                 className={cn(
-                  'w-full px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-blue-500 outline-none',
-                  isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white'
+                  'w-full rounded border px-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-blue-500',
+                  isLight ? 'border-gray-300 bg-white text-gray-900' : 'border-gray-600 bg-[#151C24] text-white',
                 )}
                 placeholder="My API Key"
               />
             </div>
 
             <div>
-              <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
+              <label className={cn('mb-1 block text-xs font-medium', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
                 Type *
               </label>
-              <input
-                type="text"
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                className={cn(
-                  'w-full px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-blue-500 outline-none',
-                  isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white'
+              <div className="relative" ref={typeDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setTypeDropdownOpen(o => !o)}
+                  className={cn(
+                    'flex min-h-[32px] w-full items-start gap-1.5 rounded-md border px-2 py-1.5 text-xs transition-colors',
+                    isLight
+                      ? 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
+                      : 'border-gray-600 bg-[#151C24] text-gray-200 hover:bg-gray-700',
+                  )}>
+                  <span className="flex-1 truncate text-left font-medium">
+                    {!type ? 'Select type…' : isCredentialType(type) ? type : `${type} (legacy)`}
+                  </span>
+                  <svg
+                    className={cn('mt-0.5 flex-shrink-0 transition-transform', typeDropdownOpen ? 'rotate-180' : '')}
+                    width="12"
+                    height="12"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden>
+                    <path d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {typeDropdownOpen && (
+                  <div
+                    className={cn(
+                      'absolute top-full left-0 z-[100] mt-1 max-h-[240px] w-full overflow-y-auto rounded-md border shadow-lg',
+                      isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
+                    )}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setType('');
+                        setTypeDropdownOpen(false);
+                      }}
+                      className={cn(
+                        'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors',
+                        !type
+                          ? isLight
+                            ? 'bg-blue-50 font-medium text-blue-700'
+                            : 'bg-blue-900/30 font-medium text-blue-300'
+                          : isLight
+                            ? 'text-gray-500 hover:bg-gray-100'
+                            : 'text-gray-400 hover:bg-gray-700',
+                      )}>
+                      <span className="flex-1 truncate">Select type…</span>
+                    </button>
+                    {[...CREDENTIAL_TYPES].map(opt => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => {
+                          setType(opt);
+                          setTypeDropdownOpen(false);
+                        }}
+                        className={cn(
+                          'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors',
+                          type === opt
+                            ? isLight
+                              ? 'bg-blue-50 font-medium text-blue-700'
+                              : 'bg-blue-900/30 font-medium text-blue-300'
+                            : isLight
+                              ? 'text-gray-700 hover:bg-gray-100'
+                              : 'text-gray-200 hover:bg-gray-700',
+                        )}>
+                        <span className="flex-1 truncate">{opt}</span>
+                        {type === opt && (
+                          <svg
+                            className="ml-auto h-3 w-3 flex-shrink-0"
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                            aria-hidden>
+                            <path
+                              fillRule="evenodd"
+                              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        )}
+                      </button>
+                    ))}
+                    {type && !isCredentialType(type) ? (
+                      <button
+                        key={`legacy-${type}`}
+                        type="button"
+                        onClick={() => setTypeDropdownOpen(false)}
+                        className={cn(
+                          'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors',
+                          isLight ? 'bg-blue-50 font-medium text-blue-700' : 'bg-blue-900/30 font-medium text-blue-300',
+                        )}>
+                        <span className="flex-1 truncate">
+                          {type} <span className="opacity-80">(legacy)</span>
+                        </span>
+                        <svg
+                          className="ml-auto h-3 w-3 flex-shrink-0"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                          aria-hidden>
+                          <path
+                            fillRule="evenodd"
+                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      </button>
+                    ) : null}
+                  </div>
                 )}
-                placeholder="API Key, Database, SSH, etc."
+              </div>
+            </div>
+
+            <div>
+              <label className={cn('mb-1 block text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                Description (optional)
+              </label>
+              <textarea
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                rows={2}
+                placeholder="Shared with the agent when this credential is used (e.g. prod workspace, read-only)"
+                className={cn(
+                  // `block` removes extra gap below textarea (inline-block baseline strut vs Key field)
+                  'json-textarea block w-full resize-y rounded border px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-blue-500',
+                  isLight ? 'border-gray-300 bg-white text-gray-700' : 'border-gray-600 bg-[#151C24] text-[#bcc1c7]',
+                )}
               />
             </div>
 
             <div>
-              <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
+              <label className={cn('mb-1 block text-xs font-medium', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
                 Key *
               </label>
               <input
                 type="text"
                 value={key}
-                onChange={(e) => setKey(e.target.value)}
+                onChange={e => setKey(e.target.value)}
                 className={cn(
-                  'w-full px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-blue-500 outline-none',
-                  isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white'
+                  'w-full rounded border px-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-blue-500',
+                  isLight ? 'border-gray-300 bg-white text-gray-900' : 'border-gray-600 bg-[#151C24] text-white',
                 )}
                 placeholder="e.g., databricks_host, production_token"
               />
@@ -332,7 +502,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
               <div className="mb-1 flex items-center justify-between">
                 <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
                   Secret {!editingCredential && '*'}
-              </label>
+                </label>
                 <button
                   type="button"
                   onClick={() => setShowPassword(prev => !prev)}
@@ -344,15 +514,22 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
                   )}
                   title={showPassword ? 'Hide password' : 'Show password'}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  aria-pressed={showPassword}
-                >
+                  aria-pressed={showPassword}>
                   {showPassword ? (
                     <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19.5c-5 0-9-4.5-9-7.5a7.88 7.88 0 012.243-3.992m2.598-1.96A9.956 9.956 0 0112 4.5c5 0 9 4.5 9 7.5a7.86 7.86 0 01-2.318 4.042M3 3l18 18" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M13.875 18.825A10.05 10.05 0 0112 19.5c-5 0-9-4.5-9-7.5a7.88 7.88 0 012.243-3.992m2.598-1.96A9.956 9.956 0 0112 4.5c5 0 9 4.5 9 7.5a7.86 7.86 0 01-2.318 4.042M3 3l18 18"
+                      />
                     </svg>
                   ) : (
                     <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M1.5 12s4.5-7.5 10.5-7.5 10.5 7.5 10.5 7.5-4.5 7.5-10.5 7.5S1.5 12 1.5 12z" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M1.5 12s4.5-7.5 10.5-7.5 10.5 7.5 10.5 7.5-4.5 7.5-10.5 7.5S1.5 12 1.5 12z"
+                      />
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
                     </svg>
                   )}
@@ -361,10 +538,10 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={e => setPassword(e.target.value)}
                 className={cn(
-                  'w-full px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-blue-500 outline-none',
-                  isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white'
+                  'w-full rounded border px-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-blue-500',
+                  isLight ? 'border-gray-300 bg-white text-gray-900' : 'border-gray-600 bg-[#151C24] text-white',
                 )}
                 placeholder="password or secret"
               />
@@ -375,27 +552,28 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
                 onClick={handleSave}
                 disabled={saving || !name.trim() || !type.trim() || (!editingCredential && !key.trim())}
                 className={cn(
-                  'px-4 py-1.5 text-xs rounded font-medium transition-colors',
+                  'rounded px-4 py-1.5 text-xs font-medium transition-colors',
                   saving || !name.trim() || !type.trim() || (!editingCredential && !key.trim())
-                    ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                    ? 'cursor-not-allowed bg-gray-400 text-gray-200'
                     : isLight
-                    ? 'bg-blue-500/90 text-white hover:bg-blue-500'
-                    : 'bg-blue-600/90 text-white hover:bg-blue-600',
-                )}
-              >
+                      ? 'bg-blue-500/90 text-white hover:bg-blue-500'
+                      : 'bg-blue-600/90 text-white hover:bg-blue-600',
+                )}>
                 {saving ? 'Saving...' : 'Save Credential'}
               </button>
               <button
                 onClick={() => {
                   setShowEditor(false);
                   setEditingCredential(null);
+                  setDescription('');
                 }}
                 disabled={saving}
                 className={cn(
-                  'px-4 py-1.5 text-xs rounded font-medium transition-colors',
-                  isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-                )}
-              >
+                  'rounded px-4 py-1.5 text-xs font-medium transition-colors',
+                  isLight
+                    ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    : 'bg-gray-700 text-gray-200 hover:bg-gray-600',
+                )}>
                 Cancel
               </button>
             </div>
@@ -404,19 +582,29 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
       )}
 
       {/* Credentials List */}
-      <div className={cn('rounded-lg border overflow-hidden', isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700')}>
-        <div className={cn('border-b px-4 py-2 flex items-center justify-between', isLight ? 'border-gray-200' : 'border-gray-700')}>
-          <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>Your Credentials</h3>
+      <div
+        className={cn(
+          'overflow-hidden rounded-lg border',
+          isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
+        )}>
+        <div
+          className={cn(
+            'flex items-center justify-between border-b px-4 py-2',
+            isLight ? 'border-gray-200' : 'border-gray-700',
+          )}>
+          <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
+            Your Credentials
+          </h3>
           <button
             onClick={handleCreate}
             className={cn(
-              'flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium rounded transition-colors border',
+              'flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-medium transition-colors',
               isLight
-                ? 'text-blue-600 hover:bg-blue-50 border-gray-200'
-                : 'text-blue-300 hover:bg-blue-900/20 border-gray-700'
+                ? 'border-gray-200 text-blue-600 hover:bg-blue-50'
+                : 'border-gray-700 text-blue-300 hover:bg-blue-900/20',
             )}
             title="Create new credential">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
             NEW CREDENTIAL
@@ -428,104 +616,226 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
           </div>
         ) : (
           <div className="max-h-[600px] w-full overflow-auto">
-            <table className={cn('min-w-full w-full border-collapse text-xs')}>
+            <table className={cn('w-full min-w-full border-collapse text-xs')}>
               <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#151C24]')}>
                 <tr className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
-                  <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Name</th>
-                  <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Type</th>
-                  <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Key</th>
-                  <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Secret</th>
-                  <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Updated</th>
-                  <th className={cn('px-3 py-1.5 text-right text-xs font-semibold w-24', isLight ? 'text-gray-600' : 'text-gray-300')}>Actions</th>
+                  <th
+                    className={cn(
+                      'px-3 py-1.5 text-left text-xs font-semibold',
+                      isLight ? 'text-gray-600' : 'text-gray-300',
+                    )}>
+                    Name
+                  </th>
+                  <th
+                    className={cn(
+                      'px-3 py-1.5 text-left text-xs font-semibold',
+                      isLight ? 'text-gray-600' : 'text-gray-300',
+                    )}>
+                    Type
+                  </th>
+                  <th
+                    className={cn(
+                      'w-[120px] max-w-[120px] px-3 py-1.5 text-left text-xs font-semibold',
+                      isLight ? 'text-gray-600' : 'text-gray-300',
+                    )}>
+                    Description
+                  </th>
+                  <th
+                    className={cn(
+                      'px-3 py-1.5 text-left text-xs font-semibold',
+                      isLight ? 'text-gray-600' : 'text-gray-300',
+                    )}>
+                    Key
+                  </th>
+                  <th
+                    className={cn(
+                      'px-3 py-1.5 text-left text-xs font-semibold',
+                      isLight ? 'text-gray-600' : 'text-gray-300',
+                    )}>
+                    Secret
+                  </th>
+                  <th
+                    className={cn(
+                      'px-3 py-1.5 text-left text-xs font-semibold',
+                      isLight ? 'text-gray-600' : 'text-gray-300',
+                    )}>
+                    Updated
+                  </th>
+                  <th
+                    className={cn(
+                      'w-24 px-3 py-1.5 text-right text-xs font-semibold',
+                      isLight ? 'text-gray-600' : 'text-gray-300',
+                    )}>
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {credentials.map(credential => (
-                  <tr
-                    key={credential.id}
-                    className={cn(
-                      'transition-colors border-b',
-                      isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40'
-                    )}
-                  >
-                    <td className={cn('px-3 py-1.5 font-medium', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
-                      {credential.name}
-                    </td>
-                    <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      <span className={cn('px-2 py-0.5 rounded text-[10px] font-medium', isLight ? 'bg-gray-100 text-gray-600' : 'bg-gray-800 text-gray-400')}>
-                        {credential.type}
-                      </span>
-                    </td>
-                    <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      {/* Display the key without suffix for cleaner UI */}
-                      {credential.key ? extractDisplayName(credential.key) : '—'}
-                    </td>
-                    <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      <div className="flex items-center gap-2">
-                        {loadingSecrets[credential.id] ? (
-                          <span className="text-[10px]">Loading...</span>
-                        ) : visibleSecrets[credential.id] ? (
-                          <span className="font-mono text-[11px] break-all max-w-[200px]">{visibleSecrets[credential.id]}</span>
+                {credentials.map(credential => {
+                  const descriptionText = credential.description?.trim() ?? '';
+                  return (
+                    <tr
+                      key={credential.id}
+                      className={cn(
+                        'border-b transition-colors',
+                        isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
+                      )}>
+                      <td className={cn('px-3 py-1.5 font-medium', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
+                        {credential.name}
+                      </td>
+                      <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                        <span
+                          className={cn(
+                            'rounded px-2 py-0.5 text-[10px] font-medium',
+                            isLight ? 'bg-gray-100 text-gray-600' : 'bg-gray-800 text-gray-400',
+                          )}>
+                          {credential.type}
+                        </span>
+                      </td>
+                      <td
+                        className={cn(
+                          'w-[120px] max-w-[120px] min-w-0 px-3 py-1.5 align-middle',
+                          isLight ? 'text-gray-600' : 'text-gray-400',
+                        )}>
+                        {descriptionText ? (
+                          <span
+                            className={cn(
+                              'block max-w-full cursor-default truncate text-[11px]',
+                              isLight ? 'text-gray-600' : 'text-gray-400',
+                            )}
+                            onMouseEnter={e => {
+                              const el = e.currentTarget;
+                              const text = descriptionText;
+                              try {
+                                const isTruncated = el.scrollWidth - el.clientWidth > 1;
+                                if (!isTruncated) return;
+                                const r = el.getBoundingClientRect();
+                                setDescriptionTooltip({
+                                  text,
+                                  left: r.left + r.width / 2,
+                                  top: r.bottom,
+                                });
+                              } catch {
+                                /* noop */
+                              }
+                            }}
+                            onMouseLeave={() => setDescriptionTooltip(null)}>
+                            {descriptionText}
+                          </span>
                         ) : (
-                          <span className="text-[11px]">{maskCredentialValue('secret')}</span>
+                          <span className="text-[11px] opacity-50">—</span>
                         )}
-                        <button
-                          onClick={() => toggleSecretVisibility(credential.id)}
-                          className={cn(
-                            'inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded transition-colors',
-                            isLight
-                              ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
-                              : 'text-gray-500 hover:bg-gray-700 hover:text-gray-300',
-                          )}
-                          title={visibleSecrets[credential.id] ? 'Hide secret' : 'Show secret'}
-                          aria-label={visibleSecrets[credential.id] ? 'Hide secret' : 'Show secret'}
-                        >
-                          {visibleSecrets[credential.id] ? (
-                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19.5c-5 0-9-4.5-9-7.5a7.88 7.88 0 012.243-3.992m2.598-1.96A9.956 9.956 0 0112 4.5c5 0 9 4.5 9 7.5a7.86 7.86 0 01-2.318 4.042M3 3l18 18" />
-                            </svg>
+                      </td>
+                      <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                        {/* Display the key without suffix for cleaner UI */}
+                        {credential.key ? extractDisplayName(credential.key) : '—'}
+                      </td>
+                      <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                        <div className="flex items-center gap-2">
+                          {loadingSecrets[credential.id] ? (
+                            <span className="text-[10px]">Loading...</span>
+                          ) : visibleSecrets[credential.id] ? (
+                            <span className="max-w-[200px] font-mono text-[11px] break-all">
+                              {visibleSecrets[credential.id]}
+                            </span>
                           ) : (
-                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M1.5 12s4.5-7.5 10.5-7.5 10.5 7.5 10.5 7.5-4.5 7.5-10.5 7.5S1.5 12 1.5 12z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
+                            <span className="text-[11px]">{maskCredentialValue('secret')}</span>
+                          )}
+                          <button
+                            onClick={() => toggleSecretVisibility(credential.id)}
+                            className={cn(
+                              'inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded transition-colors',
+                              isLight
+                                ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                                : 'text-gray-500 hover:bg-gray-700 hover:text-gray-300',
+                            )}
+                            title={visibleSecrets[credential.id] ? 'Hide secret' : 'Show secret'}
+                            aria-label={visibleSecrets[credential.id] ? 'Hide secret' : 'Show secret'}>
+                            {visibleSecrets[credential.id] ? (
+                              <svg
+                                className="h-3 w-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                strokeWidth={2}>
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M13.875 18.825A10.05 10.05 0 0112 19.5c-5 0-9-4.5-9-7.5a7.88 7.88 0 012.243-3.992m2.598-1.96A9.956 9.956 0 0112 4.5c5 0 9 4.5 9 7.5a7.86 7.86 0 01-2.318 4.042M3 3l18 18"
+                                />
+                              </svg>
+                            ) : (
+                              <svg
+                                className="h-3 w-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                strokeWidth={2}>
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M1.5 12s4.5-7.5 10.5-7.5 10.5 7.5 10.5 7.5-4.5 7.5-10.5 7.5S1.5 12 1.5 12z"
+                                />
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M12 15a3 3 0 100-6 3 3 0 000 6z"
+                                />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                      <td className={cn('px-3 py-1.5 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                        {formatDate(credential.updated_at)}
+                      </td>
+                      <td className="px-3 py-1.5 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleEdit(credential)}
+                            className={cn(
+                              'rounded p-1 transition-colors',
+                              isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400',
+                            )}
+                            title="Edit credential">
+                            <svg
+                              className="h-3.5 w-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              strokeWidth={2}>
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                              />
                             </svg>
-                          )}
-                        </button>
-                      </div>
-                    </td>
-                    <td className={cn('px-3 py-1.5 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      {formatDate(credential.updated_at)}
-                    </td>
-                    <td className="px-3 py-1.5 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => handleEdit(credential)}
-                          className={cn(
-                            'p-1 rounded transition-colors',
-                            isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400'
-                          )}
-                          title="Edit credential"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => openDeleteDialog(credential.id, credential.name)}
-                          className={cn(
-                            'p-1 rounded transition-colors',
-                            isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400'
-                          )}
-                          title="Delete credential"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          </button>
+                          <button
+                            onClick={() => openDeleteDialog(credential.id, credential.name)}
+                            className={cn(
+                              'rounded p-1 transition-colors',
+                              isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400',
+                            )}
+                            title="Delete credential">
+                            <svg
+                              className="h-3.5 w-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              strokeWidth={2}>
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -537,8 +847,8 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/50 z-[10000] backdrop-blur-sm"
-            onClick={(e) => {
+            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
+            onClick={e => {
               if (e.target === e.currentTarget) {
                 setDeleteDialogOpen(false);
                 setCredentialToDelete(null);
@@ -547,32 +857,22 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
           />
 
           {/* Modal */}
-          <div 
-            className="fixed inset-0 z-[10001] flex items-center justify-center p-4 pointer-events-none"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div
+            className="pointer-events-none fixed inset-0 z-[10001] flex items-center justify-center p-4"
+            onClick={e => e.stopPropagation()}>
             <div
               className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl pointer-events-auto',
-                isLight
-                  ? 'bg-gray-50 border border-gray-200'
-                  : 'bg-[#151C24] border border-gray-700'
+                'pointer-events-auto w-full max-w-sm rounded-lg shadow-xl',
+                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
               )}
-              onClick={(e) => e.stopPropagation()}
-            >
+              onClick={e => e.stopPropagation()}>
               {/* Header */}
               <div
                 className={cn(
-                  'flex items-center justify-between px-3 py-2 border-b',
-                  isLight ? 'border-gray-200' : 'border-gray-700'
-                )}
-              >
-                <h2
-                  className={cn(
-                    'text-sm font-semibold',
-                    isLight ? 'text-gray-900' : 'text-gray-100'
-                  )}
-                >
+                  'flex items-center justify-between border-b px-3 py-2',
+                  isLight ? 'border-gray-200' : 'border-gray-700',
+                )}>
+                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
                   Delete Credential
                 </h2>
                 <button
@@ -581,12 +881,11 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
                     setCredentialToDelete(null);
                   }}
                   className={cn(
-                    'p-0.5 rounded-md transition-colors',
+                    'rounded-md p-0.5 transition-colors',
                     isLight
-                      ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
-                  )}
-                >
+                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
+                  )}>
                   <svg
                     width="14"
                     height="14"
@@ -595,50 +894,34 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
                     viewBox="0 0 24 24"
                     strokeWidth={2}
                     strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
+                    strokeLinejoin="round">
                     <path d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
 
               {/* Content */}
-              <div className="px-3 py-4 space-y-3">
+              <div className="space-y-3 px-3 py-4">
                 {/* Warning Icon */}
                 <div className="flex items-start gap-3">
                   <div
                     className={cn(
-                      'flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center',
-                      isLight ? 'bg-red-100' : 'bg-red-900/30'
-                    )}
-                  >
+                      'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
+                      isLight ? 'bg-red-100' : 'bg-red-900/30',
+                    )}>
                     <svg
-                      className={cn(
-                        'w-4 h-4',
-                        isLight ? 'text-red-600' : 'text-red-400'
-                      )}
+                      className={cn('h-4 w-4', isLight ? 'text-red-600' : 'text-red-400')}
                       fill="currentColor"
-                      viewBox="0 0 24 24"
-                    >
+                      viewBox="0 0 24 24">
                       <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
                     </svg>
                   </div>
 
                   <div className="flex-1">
-                    <p
-                      className={cn(
-                        'text-sm font-medium',
-                        isLight ? 'text-gray-900' : 'text-gray-100'
-                      )}
-                    >
+                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
                       Permanently delete credential?
                     </p>
-                    <p
-                      className={cn(
-                        'text-xs mt-1',
-                        isLight ? 'text-gray-600' : 'text-gray-400'
-                      )}
-                    >
+                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
                       "{credentialToDelete.name}" will be permanently deleted and cannot be recovered.
                     </p>
                   </div>
@@ -648,10 +931,9 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
               {/* Footer */}
               <div
                 className={cn(
-                  'flex items-center justify-end gap-2 px-3 py-2 border-t',
-                  isLight ? 'border-gray-200' : 'border-gray-700'
-                )}
-              >
+                  'flex items-center justify-end gap-2 border-t px-3 py-2',
+                  isLight ? 'border-gray-200' : 'border-gray-700',
+                )}>
                 <button
                   onClick={() => {
                     setDeleteDialogOpen(false);
@@ -659,29 +941,27 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
                   }}
                   disabled={deleting}
                   className={cn(
-                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                    deleting ? 'opacity-50 cursor-not-allowed' : '',
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                    deleting ? 'cursor-not-allowed opacity-50' : '',
                     isLight
                       ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
-                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600'
-                  )}
-                >
+                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
+                  )}>
                   Cancel
                 </button>
                 <button
-                  onClick={(e) => {
+                  onClick={e => {
                     e.stopPropagation();
                     e.preventDefault();
                     confirmDeleteCredential();
                   }}
-                  onMouseDown={(e) => e.stopPropagation()}
+                  onMouseDown={e => e.stopPropagation()}
                   disabled={deleting}
                   className={cn(
-                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                    deleting ? 'opacity-50 cursor-not-allowed' : '',
-                    'bg-red-600 text-white hover:bg-red-700'
-                  )}
-                >
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                    deleting ? 'cursor-not-allowed opacity-50' : '',
+                    'bg-red-600 text-white hover:bg-red-700',
+                  )}>
                   {deleting ? 'Deleting...' : 'Delete'}
                 </button>
               </div>
@@ -689,7 +969,29 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
           </div>
         </>
       )}
+
+      {descriptionTooltip &&
+        createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              left: descriptionTooltip.left,
+              top: descriptionTooltip.top + 6,
+              transform: 'translateX(-50%)',
+              zIndex: 100000,
+              pointerEvents: 'none',
+            }}>
+            <div
+              className={cn(
+                'rounded-md border px-2 py-1.5 text-[11px] shadow-lg',
+                isLight ? 'border-gray-200 bg-white text-gray-800' : 'border-gray-700 bg-[#151C24] text-gray-100',
+              )}
+              style={{ maxWidth: 520, whiteSpace: 'pre-wrap' }}>
+              {descriptionTooltip.text}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };
-

@@ -157,14 +157,35 @@
 /* ==========================================================
    RECENT SESSIONS TABLE SCROLLBAR
    Thin scrollbar with transparent track
+   Do not use scrollbar-width: none here — Chromium (incl. macOS) often hides the
+   entire scrollbar with no ::-webkit-scrollbar fallback. Same idea as Tiptap block
+   below: rely on ::-webkit-scrollbar for WebKit; avoid setting scrollbar-width on
+   Chromium so width: 3px can apply. Firefox: thin + scrollbar-color via @supports
+   (-moz-user-select), which is false in Chromium (unlike selector(::-webkit-scrollbar)).
    ========================================================== */
 .recent-sessions-scroll {
   background-color: var(--table-scroll-bg, transparent);
 }
 
+@supports (-moz-user-select: none) {
+  .recent-sessions-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(156, 163, 175, 0.45) transparent;
+  }
+}
+
 .recent-sessions-scroll::-webkit-scrollbar {
-  width: 3px;
-  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 3px !important;
+  height: 3px !important;
+}
+
+.dark .recent-sessions-scroll::-webkit-scrollbar {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 3px !important;
+  height: 3px !important;
 }
 
 .recent-sessions-scroll::-webkit-scrollbar-track {
@@ -172,12 +193,12 @@
 }
 
 .recent-sessions-scroll::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.3);
+  background: rgba(156, 163, 175, 0.45) !important;
   border-radius: 2px;
 }
 
 .recent-sessions-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.5);
+  background: rgba(156, 163, 175, 0.65) !important;
 }
 
 .recent-sessions-scroll::-webkit-scrollbar-corner {
@@ -189,11 +210,15 @@
 }
 
 .dark .recent-sessions-scroll::-webkit-scrollbar-thumb {
-  background: rgba(75, 85, 99, 0.3);
+  background: rgba(75, 85, 99, 0.5) !important;
 }
 
 .dark .recent-sessions-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(75, 85, 99, 0.5);
+  background: rgba(75, 85, 99, 0.7) !important;
+}
+
+.dark .recent-sessions-scroll {
+  scrollbar-color: rgba(75, 85, 99, 0.5) transparent;
 }
 
 /* ==========================================================
@@ -319,6 +344,6 @@
   background: rgba(75, 85, 99, 0.5);
 }
 
-/* Agent/model selector menus: thin scrollbar via inner .recent-sessions-scroll (see ModelSelector /
-   AgentSelector). Animation lives on outer .agent-selector-dropdown / .model-selector-dropdown only —
-   combining transform animation + overflow on one element breaks WebKit custom scrollbar width. */
+/* Agent/model/context selector menus: thin scrollbar via inner .recent-sessions-scroll (ModelSelector,
+   AgentSelector, ContextSelector). Keep transform animation on the outer shell only — combining
+   animation + overflow on one element breaks WebKit custom scrollbar width (see dropdown classes). */

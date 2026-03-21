@@ -750,7 +750,8 @@ POST /api/workspace/credentials
   "name": "OpenAI API Key",
   "type": "api_key",
   "key": "OPENAI_API_KEY",
-  "password": "sk-..."  // Encrypted with AES-256-GCM
+  "password": "sk-...",  // Encrypted with AES-256-GCM
+  "description": "Optional notes shown in the workspace UI"
 }
 
 // Fetch metadata for agent context (secure - no secrets)
@@ -951,6 +952,7 @@ CREATE TABLE workspace_credentials (
   type VARCHAR(100),
   key VARCHAR(255),
   encrypted_data TEXT,  -- Hex-encoded AES-256-GCM
+  description TEXT,     -- Optional user-facing notes (plaintext)
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

@@ -9,7 +9,8 @@ import { ChatInner } from './ChatInner';
 import { SelectorsBar } from '../selectors/SelectorsBar';
 import { SettingsModal } from '../modals/SettingsModal';
 import { UsagePopup } from '../menus/UsagePopup';
-import { ConfigPanel } from '../panels/ConfigPanel';
+import { ConfigPanel, type ConfigPanelTab } from '../panels/ConfigPanel';
+import { ChatPreviewProvider, type ChatPreviewDocument } from '../../context/ChatPreviewContext';
 import type { AgentStepState } from '../cards';
 import { useContentManager, type ContentState } from '../layout/ContentManager';
 import { useTabManager } from '../layout/TabManager';
@@ -24,6 +25,7 @@ import { useDOMUpdateEmbedding } from '../../hooks/useDOMUpdateEmbedding';
 import { useAgentSwitching } from '../../hooks/useAgentSwitching';
 import { useEnabledFrontendTools } from '../../hooks/useEnabledFrontendTools';
 import { TIMING_CONSTANTS, COPIOLITKIT_CONFIG, ABLY_CONFIG } from '../../constants';
+import { getCurrentViewMode } from '../../utils/windowManager';
 import { ts } from '../../utils/logging';
 import { useAuth } from '../../context/AuthContext';
 import { ExploreAccordionProvider } from '../../context/ExploreAccordionContext';
@@ -42,9 +44,7 @@ const clipText = (text: string, maxLength: number): string => {
 };
 
 /** Read config panel state from localStorage (matches SessionsPage pattern for reliable restore) */
-function getConfigPanelFromLocalStorage(
-  sessionId: string,
-): { open: boolean; tab: 'context' | 'plans' | 'graphs' | 'sub-agents' } | null {
+function getConfigPanelFromLocalStorage(sessionId: string): { open: boolean; tab: ConfigPanelTab } | null {
   try {
     const stored = localStorage.getItem(`configPanel_${sessionId}`);
     if (!stored) return null;
@@ -52,9 +52,9 @@ function getConfigPanelFromLocalStorage(
     if (
       parsed &&
       typeof parsed.open === 'boolean' &&
-      ['context', 'plans', 'graphs', 'sub-agents'].includes(parsed.tab)
+      ['context', 'plans', 'graphs', 'preview', 'sub-agents'].includes(parsed.tab)
     ) {
-      return { open: parsed.open, tab: parsed.tab as 'context' | 'plans' | 'graphs' | 'sub-agents' };
+      return { open: parsed.open, tab: parsed.tab as ConfigPanelTab };
     }
   } catch {
     // ignore parse errors
@@ -70,8 +70,8 @@ function getConfigPanelFromLocalStorage(
 const ConfigPanelWrapper: FC<{
   isLight: boolean;
   showConfigPanel: boolean;
-  activeTab: 'context' | 'plans' | 'graphs' | 'sub-agents';
-  onTabChange: (tab: 'context' | 'plans' | 'graphs' | 'sub-agents') => void;
+  activeTab: ConfigPanelTab;
+  onTabChange: (tab: ConfigPanelTab) => void;
   agentPlans: Record<string, any>;
   agentGraphs: Record<string, any>;
   sessionId: string;
@@ -81,6 +81,7 @@ const ConfigPanelWrapper: FC<{
   onWidthChange: (width: number) => void;
   initialPanelWidth?: number;
   chatFontSize?: 'small' | 'medium' | 'large';
+  previewDocument?: ChatPreviewDocument | null;
   /** When provided, render ConfigPanel into this portal (same parent as content column, like SessionsPanel) */
   portalRef?: React.RefObject<HTMLDivElement | null>;
 }> = ({
@@ -97,6 +98,7 @@ const ConfigPanelWrapper: FC<{
   onWidthChange,
   initialPanelWidth = 384,
   chatFontSize = 'medium',
+  previewDocument = null,
   portalRef,
 }) => {
   // Detect container size for responsive behavior
@@ -192,6 +194,7 @@ const ConfigPanelWrapper: FC<{
         initialWidth={initialPanelWidth}
         isSmallView={isSmallView}
         chatFontSize={chatFontSize}
+        previewDocument={previewDocument}
       />
     </div>
   );
@@ -393,6 +396,12 @@ interface ChatSessionContainerProps {
   configPanelOpenOverride?: boolean;
   /** More options menu for status bar (session actions) - only shown for active session */
   moreOptionsMenu?: MoreOptionsMenuProps;
+  /**
+   * Must change when active org/team changes. The container uses useAuth() internally, but
+   * React.memo's custom comparator only compares props — without this, switching org/team in
+   * the user menu does not re-render and Copilot headers / chat stay on the old workspace.
+   */
+  workspaceScopeKey?: string;
 }
 
 /**
@@ -420,6 +429,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     configPanelPortalRef,
     configPanelOpenOverride,
     moreOptionsMenu,
+    workspaceScopeKey = '',
   }) => {
     // Removed: const { sessions } = useSessionStorageDB();
     // This was causing unnecessary re-renders on every session update.
@@ -496,7 +506,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       isLoadingMetadata,
       isLoadingFromDB,
       persistUsageStats,
-    } = useSessionData(sessionId, isActive, initialMetadata, configPanelOpenOverride);
+    } = useSessionData(sessionId, isActive, initialMetadata, configPanelOpenOverride, workspaceScopeKey);
 
     // Ref to hold the setDynamicAgentState from ChatInner (via useAgentStateManagement)
     // This allows activity renderers to update the CopilotKit agent state directly
@@ -615,10 +625,19 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       const stored = getConfigPanelFromLocalStorage(sessionId);
       return stored?.open ?? false;
     });
-    const [configPanelTab, setConfigPanelTab] = useState<'context' | 'plans' | 'graphs' | 'sub-agents'>(() => {
+    const [configPanelTab, setConfigPanelTab] = useState<ConfigPanelTab>(() => {
       const stored = getConfigPanelFromLocalStorage(sessionId);
       return stored?.tab ?? 'context';
     });
+    const [chatPreviewDocument, setChatPreviewDocument] = useState<ChatPreviewDocument | null>(null);
+
+    const openChatPreview = useCallback((doc: ChatPreviewDocument) => {
+      setChatPreviewDocument(doc);
+      setShowConfigPanel(true);
+      setConfigPanelTab('preview');
+    }, []);
+
+    const chatPreviewContextValue = useMemo(() => ({ openChatPreview }), [openChatPreview]);
 
     // Sync config panel state when session changes (read from localStorage for new session)
     // Use || not ?? so when configPanelOpenOverride is false we fall through to stored?.open
@@ -626,6 +645,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       const stored = getConfigPanelFromLocalStorage(sessionId);
       setShowConfigPanel(configPanelOpenOverride || (stored?.open ?? false));
       setConfigPanelTab(stored?.tab ?? 'context');
+      setChatPreviewDocument(null);
     }, [sessionId, configPanelOpenOverride]);
 
     // Load persisted panel width from localStorage
@@ -1253,15 +1273,10 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       sessionId,
     });
 
-    // Compute mount decision once per render
-    const hasValidSelection = useMemo(
-      () => selectedAgent && selectedModel && selectedAgent !== '' && selectedModel !== '',
-      [selectedAgent, selectedModel],
-    );
-    const shouldShowLoading = useMemo(
-      () => isLoadingMetadata || !hasValidSelection,
-      [isLoadingMetadata, hasValidSelection],
-    );
+    // Only gate on DB metadata load. Do not also require agent/model: the org/team effect can clear
+    // selections while the session was already marked loaded, which would show "Loading session..." forever.
+    // Missing agent/model is handled by the overlay inside the Copilot area.
+    const shouldShowLoading = useMemo(() => isLoadingMetadata, [isLoadingMetadata]);
 
     // Enabled frontend tools hook - fetches which frontend tools are enabled for this agent
     const { enabledFrontendTools, isLoading: isLoadingFrontendTools } = useEnabledFrontendTools({
@@ -1359,6 +1374,18 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     useEffect(() => {
       isWorkspaceItemsHydrated.current = false;
     }, [sessionId]);
+
+    // Cached sessions stay mounted with isActive false; when user opens that chat again, skip one
+    // persist cycle so context/config sync doesn't echo into DB + session store refreshes.
+    const prevIsActiveForHydrationRef = useRef(isActive);
+    useEffect(() => {
+      if (isActive && !prevIsActiveForHydrationRef.current) {
+        isPageURLsHydrated.current = false;
+        isWorkspaceItemsHydrated.current = false;
+        isConfigPanelHydrated.current = false;
+      }
+      prevIsActiveForHydrationRef.current = isActive;
+    }, [isActive]);
 
     // Content refresh hook
     const { triggerManualRefresh } = useContentRefresh({
@@ -1708,6 +1735,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       initialSelectedCredentialIds,
     ]);
 
+    const showAgentModelInSelectorsBar = getCurrentViewMode() === 'sidepanel';
+
     return (
       <ExploreAccordionProvider>
         <div className="relative flex flex-1 flex-col overflow-hidden">
@@ -1762,102 +1791,106 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                 </div>
               ) : (
                 <CopilotKitProvider
-                  key={`copilot-provider-${sessionId}`}
+                  key={`copilot-provider-${sessionId}-${workspaceScopeKey}`}
                   runtimeUrl={COPIOLITKIT_CONFIG.RUNTIME_URL}
                   headers={copilotHeaders}
+                  credentials="include"
                   showDevConsole={false}
                   renderToolCalls={toolRenderers as any}
                   renderActivityMessages={activityRenderers as any}>
-                  <SharedAgentProvider key={sessionId} sessionKey={sessionId}>
-                    <AgentStateSync
-                      sessionId={sessionId}
-                      agentStateRef={dynamicAgentStateRef}
-                      onStateChange={handleAgentStateChange}
-                    />
+                  <ChatPreviewProvider value={chatPreviewContextValue}>
+                    <SharedAgentProvider key={`${sessionId}-${workspaceScopeKey}`} sessionKey={sessionId}>
+                      <AgentStateSync
+                        sessionId={sessionId}
+                        agentStateRef={dynamicAgentStateRef}
+                        onStateChange={handleAgentStateChange}
+                      />
 
-                    {/* Wrapper for chat container and panels */}
-                    <div ref={chatWrapperRef} className="relative flex h-full flex-1 flex-col overflow-hidden">
-                      {/* Chat Container */}
-                      <div
-                        className={`copilot-chat-container flex flex-1 flex-col overflow-hidden ${!isLight ? 'dark' : ''} font-size-${chatFontSize} transition-all transition-opacity duration-300`}
-                        style={
-                          {
-                            '--copilot-kit-primary-color': themeColor,
-                            opacity: isCounterReady ? 1 : 0,
-                            visibility: isCounterReady ? 'visible' : 'hidden',
-                            // Margin applied at content wrapper level (StatusBar + main + SelectorsBar) for push behavior
-                          } as CSSProperties
-                        }>
-                        <div className="relative flex h-full flex-1 flex-col overflow-hidden">
-                          {/* Selection Overlay - only visible when agent/model not selected */}
-                          {(!selectedAgent || !selectedModel) && (
-                            <div
-                              className={`absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm ${isLight ? 'bg-white/80' : 'bg-gray-900/80'}`}>
-                              <div className="p-6 text-center">
-                                <p className={isLight ? 'font-medium text-gray-600' : 'font-medium text-gray-300'}>
-                                  {!selectedAgent || !selectedModel
-                                    ? 'Select an agent and model to continue'
-                                    : 'Loading agent configuration...'}
-                                </p>
+                      {/* Wrapper for chat container and panels */}
+                      <div ref={chatWrapperRef} className="relative flex h-full flex-1 flex-col overflow-hidden">
+                        {/* Chat Container */}
+                        <div
+                          className={`copilot-chat-container flex flex-1 flex-col overflow-hidden ${!isLight ? 'dark' : ''} font-size-${chatFontSize} transition-all transition-opacity duration-300`}
+                          style={
+                            {
+                              '--copilot-kit-primary-color': themeColor,
+                              opacity: isCounterReady ? 1 : 0,
+                              visibility: isCounterReady ? 'visible' : 'hidden',
+                              // Margin applied at content wrapper level (StatusBar + main + SelectorsBar) for push behavior
+                            } as CSSProperties
+                          }>
+                          <div className="relative flex h-full flex-1 flex-col overflow-hidden">
+                            {/* Selection Overlay - only visible when agent/model not selected */}
+                            {(!selectedAgent || !selectedModel) && (
+                              <div
+                                className={`absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm ${isLight ? 'bg-white/80' : 'bg-gray-900/80'}`}>
+                                <div className="p-6 text-center">
+                                  <p className={isLight ? 'font-medium text-gray-600' : 'font-medium text-gray-300'}>
+                                    {!selectedAgent || !selectedModel
+                                      ? 'Select an agent and model to continue'
+                                      : 'Loading agent configuration...'}
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            )}
 
-                          <VirtuaChatSessionVisibleProvider visible={isActive}>
-                            <ChatInnerWithSignatureSync
-                              sessionId={sessionId}
-                              onSignatureChange={handleMessagesSignatureChange}
-                              onStreamingChange={handleStreamingChange}
-                              renderChatInner={renderChatInner}
-                              agentStateRef={dynamicAgentStateRef}
-                            />
-                          </VirtuaChatSessionVisibleProvider>
+                            <VirtuaChatSessionVisibleProvider visible={isActive}>
+                              <ChatInnerWithSignatureSync
+                                sessionId={sessionId}
+                                onSignatureChange={handleMessagesSignatureChange}
+                                onStreamingChange={handleStreamingChange}
+                                renderChatInner={renderChatInner}
+                                agentStateRef={dynamicAgentStateRef}
+                              />
+                            </VirtuaChatSessionVisibleProvider>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* 
+                      {/* 
                   Config Panel (plans, graphs, and other containers) - INSIDE SharedAgentProvider 
                   so it can access agent setState for bidirectional sync.
                   Only portal when active - multiple sessions share the portal, so inactive ones must not render.
                 */}
-                    {isActive && showConfigPanel && (
-                      <ConfigPanelWrapper
-                        isLight={isLight}
-                        showConfigPanel={showConfigPanel}
-                        activeTab={configPanelTab}
-                        onTabChange={setConfigPanelTab}
-                        agentPlans={agentPlans}
-                        agentGraphs={agentGraphs}
-                        sessionId={sessionId}
-                        onCloseConfig={() => setShowConfigPanel(false)}
-                        portalRef={configPanelPortalRef}
-                        onPlansUpdate={(updatedPlans: any) => {
-                          const planIds = Object.keys(updatedPlans ?? {});
-                          debug.log('[SessionPlans] ChatSessionContainer onPlansUpdate:', {
-                            sessionId: sessionId?.slice(0, 8),
-                            plansCount: planIds.length,
-                            planIds,
-                          });
-                          setAgentPlans({ ...updatedPlans });
-                          dynamicAgentStateRef.current = {
-                            ...dynamicAgentStateRef.current,
-                            plans: updatedPlans,
-                          };
-                        }}
-                        onGraphsUpdate={(updatedGraphs: any) => {
-                          setAgentGraphs({ ...updatedGraphs });
-                          dynamicAgentStateRef.current = {
-                            ...dynamicAgentStateRef.current,
-                            graphs: updatedGraphs,
-                          };
-                        }}
-                        onWidthChange={handlePanelWidthChange}
-                        initialPanelWidth={panelWidth}
-                        chatFontSize={chatFontSize}
-                      />
-                    )}
-                  </SharedAgentProvider>
+                      {isActive && showConfigPanel && (
+                        <ConfigPanelWrapper
+                          isLight={isLight}
+                          showConfigPanel={showConfigPanel}
+                          activeTab={configPanelTab}
+                          onTabChange={setConfigPanelTab}
+                          agentPlans={agentPlans}
+                          agentGraphs={agentGraphs}
+                          sessionId={sessionId}
+                          onCloseConfig={() => setShowConfigPanel(false)}
+                          portalRef={configPanelPortalRef}
+                          onPlansUpdate={(updatedPlans: any) => {
+                            const planIds = Object.keys(updatedPlans ?? {});
+                            debug.log('[SessionPlans] ChatSessionContainer onPlansUpdate:', {
+                              sessionId: sessionId?.slice(0, 8),
+                              plansCount: planIds.length,
+                              planIds,
+                            });
+                            setAgentPlans({ ...updatedPlans });
+                            dynamicAgentStateRef.current = {
+                              ...dynamicAgentStateRef.current,
+                              plans: updatedPlans,
+                            };
+                          }}
+                          onGraphsUpdate={(updatedGraphs: any) => {
+                            setAgentGraphs({ ...updatedGraphs });
+                            dynamicAgentStateRef.current = {
+                              ...dynamicAgentStateRef.current,
+                              graphs: updatedGraphs,
+                            };
+                          }}
+                          onWidthChange={handlePanelWidthChange}
+                          initialPanelWidth={panelWidth}
+                          chatFontSize={chatFontSize}
+                          previewDocument={chatPreviewDocument}
+                        />
+                      )}
+                    </SharedAgentProvider>
+                  </ChatPreviewProvider>
                 </CopilotKitProvider>
               )}
             </div>
@@ -1875,6 +1908,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
               onShowSuggestionsChange={(show: boolean) => preferencesStorage.setShowSuggestions(show)}
               onShowThoughtBlocksChange={(show: boolean) => preferencesStorage.setShowThoughtBlocks(show)}
               onExpandSettingsClick={() => setIsSettingsOpen(true)}
+              showAgentAndModelSelectors={showAgentModelInSelectorsBar}
+              selectedCredentials={selectedCredentials}
             />
           </div>
 
@@ -1921,6 +1956,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       prevProps.publicApiKey === nextProps.publicApiKey &&
       prevProps.isActive === nextProps.isActive &&
       prevProps.contextMenuMessage === nextProps.contextMenuMessage &&
+      prevProps.workspaceScopeKey === nextProps.workspaceScopeKey &&
       prevProps.initialMetadata?.selectedAgent === nextProps.initialMetadata?.selectedAgent &&
       prevProps.initialMetadata?.selectedModel === nextProps.initialMetadata?.selectedModel
     );

@@ -5,6 +5,7 @@
 # This compose file orchestrates:
 # - copilotkit-pydantic: Python FastAPI service with MCP servers
 # - copilot-runtime-server: Node.js Express + Hono service
+# - hands-off-web: static SPA (nginx) for the web build of the UI
 #
 # External Dependencies (Managed SaaS):
 # - PostgreSQL: Neon, AWS RDS, Google Cloud SQL, etc.
@@ -140,6 +141,30 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    networks:
+      - copilotkit-network
+
+  # ---------------------------------------------------------------------------
+  # Web app (static SPA — nginx)
+  # ---------------------------------------------------------------------------
+  hands-off-web:
+    build:
+      context: .
+      dockerfile: docker/web-app/Dockerfile
+      target: production
+      args:
+        CEB_API_URL: ${CEB_API_URL:-http://localhost:3001}
+        CEB_BACKEND_URL: ${CEB_BACKEND_URL:-http://localhost:8001}
+    container_name: hands-off-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     networks:
       - copilotkit-network
 

@@ -11,8 +11,25 @@ export { AuxiliaryAgentSelector, type AuxiliaryAgentSelectorProps } from './Auxi
 // Multi-selectors
 export { TeamMultiSelector, type TeamMultiSelectorProps } from './TeamMultiSelector';
 export { ModelMultiSelector, type ModelMultiSelectorProps } from './ModelMultiSelector';
-export { FallbackChainSelector, type FallbackChainSelectorProps, type FallbackChainModelOption } from './FallbackChainSelector';
+export {
+  FallbackChainSelector,
+  type FallbackChainSelectorProps,
+  type FallbackChainModelOption,
+} from './FallbackChainSelector';
 export { ToolMultiSelector, type ToolMultiSelectorProps } from './ToolMultiSelector';
-export { SkillResourceListEditor, type SkillResourceListEditorProps, type SkillResource } from './SkillResourceListEditor';
+export {
+  SkillResourceListEditor,
+  type SkillResourceListEditorProps,
+  type SkillResource,
+} from './SkillResourceListEditor';
 export { SkillMultiSelector, type SkillMultiSelectorProps, type SkillOption } from './SkillMultiSelector';
-
+export {
+  RequiredWorkspaceCredentialsEditor,
+  type RequiredWorkspaceCredentialsEditorProps,
+  type AgentRequiredCredentialRow,
+  newAgentRequiredCredentialRowId,
+} from './RequiredWorkspaceCredentialsEditor';
+export {
+  WorkspaceCredentialTypeDropdown,
+  type WorkspaceCredentialTypeDropdownProps,
+} from './WorkspaceCredentialTypeDropdown';

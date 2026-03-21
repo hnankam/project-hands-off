@@ -2,19 +2,20 @@
  * ================================================================================
  * usePageContentEmbedding Hook
  * ================================================================================
- * 
+ *
  * Custom hook that manages page content embedding lifecycle:
  * - Generates embeddings for HTML chunks, form fields, and clickable elements
  * - Stores embeddings in IndexedDB (via Web Worker) with HNSW indexes for fast vector search
  * - Prevents duplicate embedding of the same content
  * - Manages embedding state and progress
  * - Updates database totals for agent consumption
- * 
+ *
  * @module usePageContentEmbedding
  * ================================================================================
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { FEATURES } from '@extension/platform';
 import { embeddingsStorage, debug } from '@extension/shared';
 
 // ============================================================================
@@ -85,17 +86,12 @@ function createContentKey(url: string, timestamp: number): string {
 function hasValidContentData(content: any): boolean {
   if (!content?.allDOMContent) return false;
 
-  const hasFormData = 
-    content.allDOMContent.allFormData && 
-    content.allDOMContent.allFormData.length > 0;
-  
-  const hasClickableElements = 
-    content.allDOMContent.clickableElements && 
-    content.allDOMContent.clickableElements.length > 0;
-  
-  const hasHTML = 
-    content.allDOMContent.fullHTML && 
-    content.allDOMContent.fullHTML.length > 0;
+  const hasFormData = content.allDOMContent.allFormData && content.allDOMContent.allFormData.length > 0;
+
+  const hasClickableElements =
+    content.allDOMContent.clickableElements && content.allDOMContent.clickableElements.length > 0;
+
+  const hasHTML = content.allDOMContent.fullHTML && content.allDOMContent.fullHTML.length > 0;
 
   return hasHTML || hasFormData || hasClickableElements;
 }
@@ -126,13 +122,13 @@ async function getCurrentTabId(): Promise<number> {
 
 /**
  * Custom hook for managing page content embeddings.
- * 
+ *
  * Automatically generates and stores embeddings when page content changes.
  * Prevents duplicate embeddings and manages embedding state.
- * 
+ *
  * @param params - Hook parameters
  * @returns Object containing embedding state and results
- * 
+ *
  * @example
  * ```tsx
  * const { pageContentEmbeddingRef, isEmbedding, dbTotals } = usePageContentEmbedding({
@@ -178,7 +174,7 @@ export const usePageContentEmbedding = ({
   const isEmbeddingRef = useRef(false);
   const lastEmbeddedKeyRef = useRef<string>('');
   const isEmbeddingProcessingRef = useRef<boolean>(false);
-  
+
   // Cleanup tracker for async operations
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -199,75 +195,79 @@ export const usePageContentEmbedding = ({
    * Stores embedding results in IndexedDB asynchronously.
    * Tracks operation with AbortController for cleanup.
    */
-  const storeEmbeddingsInDB = useCallback(async (
-    result: any,
-    pageURL: string,
-    pageTitle: string,
-    sessionId: string,
-    signal: AbortSignal
-  ): Promise<void> => {
-    try {
-      debug.log('[usePageContentEmbedding] Storing embeddings in IndexedDB with HNSW indexes');
+  const storeEmbeddingsInDB = useCallback(
+    async (result: any, pageURL: string, pageTitle: string, sessionId: string, signal: AbortSignal): Promise<void> => {
+      try {
+        debug.log('[usePageContentEmbedding] Storing embeddings in IndexedDB with HNSW indexes');
 
-      // Store HTML chunks with HNSW index
-      if (result.chunks && result.chunks.length > 0) {
-        if (signal.aborted) return;
-        
-        await embeddingsStorage.storeHTMLChunks({
-          pageURL,
-          pageTitle,
-          chunks: result.chunks.map((chunk: any, index: number) => ({
-            text: chunk.text,
-            html: chunk.html || '',
-            embedding: chunk.embedding,
-            index,
-          })),
-          sessionId,
-        });
-        
-        debug.log('[usePageContentEmbedding] HTML chunks stored:', result.chunks.length);
-      }
+        // Store HTML chunks with HNSW index
+        if (result.chunks && result.chunks.length > 0) {
+          if (signal.aborted) return;
 
-      // Store form field groups with HNSW index
-      if (result.formFieldGroupEmbeddings && result.formFieldGroupEmbeddings.length > 0) {
-        if (signal.aborted) return;
-        
-        await embeddingsStorage.storeFormFields({
-          pageURL,
-          groups: result.formFieldGroupEmbeddings,
-          sessionId,
-        });
-        
-        debug.log('[usePageContentEmbedding] Form field groups stored:', result.formFieldGroupEmbeddings.length);
-      }
+          await embeddingsStorage.storeHTMLChunks({
+            pageURL,
+            pageTitle,
+            chunks: result.chunks.map((chunk: any, index: number) => ({
+              text: chunk.text,
+              html: chunk.html || '',
+              embedding: chunk.embedding,
+              index,
+            })),
+            sessionId,
+          });
 
-      // Store clickable element groups with HNSW index
-      if (result.clickableElementGroupEmbeddings && result.clickableElementGroupEmbeddings.length > 0) {
-        if (signal.aborted) return;
-        
-        await embeddingsStorage.storeClickableElements({
-          pageURL,
-          groups: result.clickableElementGroupEmbeddings,
-          sessionId,
-        });
-        
-        debug.log('[usePageContentEmbedding] Clickable element groups stored:', result.clickableElementGroupEmbeddings.length);
-      }
+          debug.log('[usePageContentEmbedding] HTML chunks stored:', result.chunks.length);
+        }
 
-      if (!signal.aborted) {
-        debug.log('[usePageContentEmbedding] All embeddings stored successfully');
+        // Store form field groups with HNSW index
+        if (result.formFieldGroupEmbeddings && result.formFieldGroupEmbeddings.length > 0) {
+          if (signal.aborted) return;
+
+          await embeddingsStorage.storeFormFields({
+            pageURL,
+            groups: result.formFieldGroupEmbeddings,
+            sessionId,
+          });
+
+          debug.log('[usePageContentEmbedding] Form field groups stored:', result.formFieldGroupEmbeddings.length);
+        }
+
+        // Store clickable element groups with HNSW index
+        if (result.clickableElementGroupEmbeddings && result.clickableElementGroupEmbeddings.length > 0) {
+          if (signal.aborted) return;
+
+          await embeddingsStorage.storeClickableElements({
+            pageURL,
+            groups: result.clickableElementGroupEmbeddings,
+            sessionId,
+          });
+
+          debug.log(
+            '[usePageContentEmbedding] Clickable element groups stored:',
+            result.clickableElementGroupEmbeddings.length,
+          );
+        }
+
+        if (!signal.aborted) {
+          debug.log('[usePageContentEmbedding] All embeddings stored successfully');
+        }
+      } catch (storageError) {
+        if (!signal.aborted) {
+          debug.error('[usePageContentEmbedding] Failed to store embeddings:', storageError);
+        }
       }
-    } catch (storageError) {
-      if (!signal.aborted) {
-        debug.error('[usePageContentEmbedding] Failed to store embeddings:', storageError);
-      }
-    }
-  }, []);
+    },
+    [],
+  );
 
   /**
    * Main embedding function - generates and stores embeddings for page content.
    */
   const embedContent = useCallback(async (): Promise<void> => {
+    if (!FEATURES.embeddingWorker()) {
+      return;
+    }
+
     // Guard: Check prerequisites
     if (!currentPageContent || !isEmbeddingInitialized || isEmbeddingProcessingRef.current) {
       if (!currentPageContent) {
@@ -316,9 +316,7 @@ export const usePageContentEmbedding = ({
 
     try {
       // Get embedding result
-      const tabIdToUse = currentTabId 
-        ? currentTabId 
-        : await getCurrentTabId();
+      const tabIdToUse = currentTabId ? currentTabId : await getCurrentTabId();
 
       if (signal.aborted) return;
 
@@ -362,7 +360,7 @@ export const usePageContentEmbedding = ({
               : 0;
 
             setDbTotals({ html: htmlTotal, form: formTotal, click: clickTotal });
-            
+
             debug.log('[usePageContentEmbedding] Totals updated:', {
               html: htmlTotal,
               form: formTotal,

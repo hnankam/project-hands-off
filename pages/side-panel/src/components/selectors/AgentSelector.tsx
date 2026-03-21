@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { cn } from '@extension/ui';
-import { API_CONFIG } from '../../constants';
+import { API_CONFIG, buildApiUrl } from '../../constants';
 import { useAuth } from '../../context/AuthContext';
 
 interface AgentSelectorProps {
@@ -25,52 +25,126 @@ interface Agent {
 const getAgentIcon = (agentId: string): React.ReactNode => {
   const iconMap: Record<string, React.ReactNode> = {
     databricks: (
-      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round">
         <path d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
       </svg>
     ),
     wiki: (
-      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round">
         <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
       </svg>
     ),
     jira: (
-      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round">
         <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
       </svg>
     ),
     aep: (
-      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round">
         <path d="M13 10V3L4 14h7v7l9-11h-7z" />
       </svg>
     ),
     general: (
-      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round">
         <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
       </svg>
     ),
     sharepoint: (
-      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round">
         <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
       </svg>
     ),
     excel: (
-      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round">
         <path d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
       </svg>
     ),
     word: (
-      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round">
         <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
     ),
   };
-  
+
   // Default icon for unknown agents
-  return iconMap[agentId] || (
-    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-    </svg>
+  return (
+    iconMap[agentId] || (
+      <svg
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round">
+        <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      </svg>
+    )
   );
 };
 
@@ -100,7 +174,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     };
 
     checkTruncation();
-    
+
     // Re-check on resize
     const resizeObserver = new ResizeObserver(checkTruncation);
     if (textRef.current) {
@@ -135,11 +209,11 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     const fetchAgents = async () => {
       try {
         // Add team ID as query parameter to ensure we're fetching the correct team's agents
-        const url = new URL(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.CONFIG_AGENTS}`);
+        const url = buildApiUrl(API_CONFIG.ENDPOINTS.CONFIG_AGENTS);
         if (activeTeam) {
           url.searchParams.append('teamId', activeTeam);
         }
-        
+
         console.log('[AgentSelector] Fetching agents for team:', activeTeam);
         const response = await fetch(url.toString(), {
           credentials: 'include',
@@ -163,24 +237,34 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
           onAgentChange(''); // Clear selected agent in parent state
           return;
         }
-        
+
         if (!isActive) {
           return;
         }
         setMissingContext(false);
 
         // Add icons to the fetched agents and sort by name alphabetically
-        const agentsWithIcons = data.agents.map((agent: { id: string; label: string; description?: string; enabled?: boolean; allowedModels?: string[] | null }) => ({
-          ...agent,
-          icon: getAgentIcon(agent.id),
-        }));
-        agentsWithIcons.sort((a: Agent, b: Agent) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
-        
+        const agentsWithIcons = data.agents.map(
+          (agent: {
+            id: string;
+            label: string;
+            description?: string;
+            enabled?: boolean;
+            allowedModels?: string[] | null;
+          }) => ({
+            ...agent,
+            icon: getAgentIcon(agent.id),
+          }),
+        );
+        agentsWithIcons.sort((a: Agent, b: Agent) =>
+          a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }),
+        );
+
         if (!isActive) {
           return;
         }
         setAgents(agentsWithIcons);
-        
+
         // Removed: Auto-selection moved to separate effect to handle session loading state
       } catch (error) {
         if ((error as Error)?.name === 'AbortError') {
@@ -190,11 +274,13 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
         // Fallback to a default agent if API fails
         if (isActive) {
           setMissingContext(false);
-          setAgents([{
-            id: 'general',
-            label: 'General Agent',
-            icon: getAgentIcon('general'),
-          }]);
+          setAgents([
+            {
+              id: 'general',
+              label: 'General Agent',
+              icon: getAgentIcon('general'),
+            },
+          ]);
         }
       } finally {
         if (isActive) {
@@ -219,7 +305,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
 
     // Auto-select first agent if none is selected or current selection is invalid
     const hasValidSelection = selectedAgent && agents.some((agent: Agent) => agent.id === selectedAgent);
-    
+
     if (!hasValidSelection) {
       const firstEnabledAgent = agents.find((agent: Agent) => agent.enabled !== false) || agents[0];
       if (firstEnabledAgent) {
@@ -252,7 +338,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
         className={cn(
           'flex items-center gap-1.5 px-2 opacity-50',
           inlineInput
-            ? 'mt-[3px] h-[22px] rounded-xl py-0 text-[12px] leading-tight'
+            ? 'mt-[1px] h-[22px] rounded-xl py-0 text-[12px] leading-tight'
             : 'h-[26px] rounded-md py-1 text-xs',
         )}>
         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -267,13 +353,13 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     // Show different message based on whether we have a team or not
     const hasTeam = !!(organization?.id && activeTeam);
     const message = hasTeam ? 'Team has no agents configured' : 'Select a team to load agents';
-    
+
     return (
       <div
         className={cn(
           'flex items-center gap-1.5 px-2 opacity-50',
           inlineInput
-            ? 'mt-[3px] h-[22px] rounded-xl py-0 text-[12px] leading-tight'
+            ? 'mt-[1px] h-[22px] rounded-xl py-0 text-[12px] leading-tight'
             : 'h-[26px] rounded-md py-1 text-xs',
         )}>
         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -285,14 +371,14 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   }
 
   return (
-    <div className="relative chat-bar-agent-model-selector" ref={dropdownRef}>
+    <div className="chat-bar-agent-model-selector relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
           'flex min-w-0 items-center gap-1.5 px-2',
           inlineInput && 'group',
           inlineInput
-            ? 'mt-[3px] h-[22px] py-0 text-[12px] leading-tight [&_svg]:h-3 [&_svg]:w-3 [&_svg]:shrink-0'
+            ? 'mt-[1px] h-[22px] py-0 text-[12px] leading-tight [&_svg]:h-3 [&_svg]:w-3 [&_svg]:shrink-0'
             : 'h-[26px] py-1 text-xs',
           inlineInput ? 'rounded-xl transition-all' : 'rounded-md',
           inlineInput
@@ -310,21 +396,22 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
               : selectedAgentData
                 ? 'text-gray-500'
                 : 'text-gray-400',
-        )}
-      >
+        )}>
         <span className="flex-shrink-0">
-          {selectedAgentData ? selectedAgentData.icon : (
+          {selectedAgentData ? (
+            selectedAgentData.icon
+          ) : (
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
           )}
         </span>
-        <span className="font-medium truncate flex-1 min-w-0 relative overflow-hidden">
+        <span className="relative min-w-0 flex-1 truncate overflow-hidden font-medium">
           <span ref={textRef} className="block truncate">
             {selectedAgentData ? selectedAgentData.label : 'Select Agent'}
           </span>
           {isTruncated && (
-            <span 
+            <span
               className={cn(
                 'pointer-events-none absolute top-0 right-0 bottom-0 w-8 transition-[background-image] duration-150',
                 isLight
@@ -339,10 +426,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
           )}
         </span>
         <svg
-          className={cn(
-            'transition-transform flex-shrink-0',
-            isOpen ? 'rotate-180' : ''
-          )}
+          className={cn('flex-shrink-0 transition-transform', isOpen ? 'rotate-180' : '')}
           width="12"
           height="12"
           fill="none"
@@ -350,8 +434,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
           viewBox="0 0 24 24"
           strokeWidth={2}
           strokeLinecap="round"
-          strokeLinejoin="round"
-        >
+          strokeLinejoin="round">
           <path d="M19 9l-7 7-7-7" />
         </svg>
       </button>
@@ -359,22 +442,18 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
       {/* Dropdown: animated outer + inner .recent-sessions-scroll (see ModelSelector). */}
       <div
         className={cn(
-          'absolute bottom-full left-0 z-[9999] mb-1 max-h-64 min-w-full w-max max-w-[min(100vw-1.5rem,36rem)] overflow-hidden rounded-md border shadow-lg',
-          isLight
-            ? 'bg-gray-50 border-gray-200'
-            : 'bg-[#151C24] border-gray-700',
-          isOpen ? 'pointer-events-auto agent-selector-dropdown' : 'opacity-0 pointer-events-none'
-        )}
-      >
+          'absolute bottom-full left-0 z-[9999] mb-1 max-h-64 w-max max-w-[min(100vw-1.5rem,36rem)] min-w-full overflow-hidden rounded-md border shadow-lg',
+          isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
+          isOpen ? 'agent-selector-dropdown pointer-events-auto' : 'pointer-events-none opacity-0',
+        )}>
         <div
           className="recent-sessions-scroll max-h-64 overflow-y-auto overscroll-contain"
           style={
             {
               '--table-scroll-bg': isLight ? '#f9fafb' : '#151C24',
             } as React.CSSProperties
-          }
-        >
-        {agents.map(agent => (
+          }>
+          {agents.map(agent => (
             <button
               key={agent.id}
               onClick={() => {
@@ -385,28 +464,21 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
               }}
               disabled={agent.enabled === false}
               className={cn(
-                'flex w-full min-w-0 items-center gap-1.5 whitespace-nowrap px-2.5 py-1.5 text-left text-xs transition-colors',
+                'flex w-full min-w-0 items-center gap-1.5 px-2.5 py-1.5 text-left text-xs whitespace-nowrap transition-colors',
                 agent.enabled === false
-                  ? 'opacity-50 cursor-not-allowed'
+                  ? 'cursor-not-allowed opacity-50'
                   : selectedAgent === agent.id
-                  ? isLight
-                    ? 'bg-blue-50 text-blue-700 font-medium'
-                    : 'bg-blue-900/30 text-blue-300 font-medium'
-                  : isLight
-                  ? 'text-gray-600 hover:bg-gray-100'
-                  : 'text-gray-500 hover:bg-gray-700'
-              )}
-            >
+                    ? isLight
+                      ? 'bg-blue-50 font-medium text-blue-700'
+                      : 'bg-blue-900/30 font-medium text-blue-300'
+                    : isLight
+                      ? 'text-gray-600 hover:bg-gray-100'
+                      : 'text-gray-500 hover:bg-gray-700',
+              )}>
               <span className="flex-shrink-0">{agent.icon}</span>
               <span className="whitespace-nowrap">{agent.label}</span>
               {selectedAgent === agent.id && agent.enabled !== false && (
-                <svg
-                  className="ml-auto"
-                  width="12"
-                  height="12"
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                >
+                <svg className="ml-auto" width="12" height="12" fill="currentColor" viewBox="0 0 20 20">
                   <path
                     fillRule="evenodd"
                     d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -421,4 +493,3 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     </div>
   );
 };
-

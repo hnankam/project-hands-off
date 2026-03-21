@@ -18,6 +18,7 @@ import './SidePanel.css';
 // CopilotKit styles now imported in index.css (after Tailwind base for @layer support)
 import * as React from 'react';
 import { useCallback, useEffect } from 'react';
+import { FEATURES } from '@extension/platform';
 import { useStorage, useSessionStorageDB, withErrorBoundary } from '@extension/shared';
 import { themeStorage, apiConfigStorage } from '@extension/storage';
 import { cn, ErrorDisplay } from '@extension/ui';
@@ -31,7 +32,7 @@ import OAuthPage from './pages/OAuthPage';
 import SSOPage from './pages/SSOPage';
 import { useAuth } from './context/AuthContext';
 import { useDBWorkerClient } from './hooks/useDBWorkerClient';
-import { useNavigationManager } from './hooks/useNavigationManager';
+import { useNavigationManager, LOGIN_HASH_ROUTE } from './hooks/useNavigationManager';
 import { useSessionUrlSync } from './hooks/useSessionUrlSync';
 import { useThemeManager } from './hooks/useThemeManager';
 import { useMessageHandlers } from './hooks/useMessageHandlers';
@@ -102,7 +103,66 @@ const SidePanel = () => {
     activePage,
     onPageChange: handlePageChange,
     sessionsLoading,
+    enabled: isAuthenticated,
   });
+
+  // Canonical URL for sign-in: `/?…#/login` (hash routes). Fixes `/home?sessionId=…` style URLs.
+  useEffect(() => {
+    if (authLoading) return;
+    if (isAuthenticated) return;
+    if (invitationId || resetPasswordToken || oauthProvider || ssoEmail) return;
+
+    const hash = window.location.hash;
+    if (
+      hash.startsWith('#/accept-invitation') ||
+      hash.startsWith('#/reset-password') ||
+      hash.startsWith('#/oauth/') ||
+      hash.startsWith('#/sso')
+    ) {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.hash = LOGIN_HASH_ROUTE;
+    url.searchParams.delete('sessionId');
+
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      const path = url.pathname.replace(/\/$/, '') || '/';
+      if (['/home', '/sessions', '/admin'].includes(path)) {
+        url.pathname = '/';
+      }
+    }
+
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (current !== next) {
+      window.history.replaceState({}, document.title, next);
+    }
+  }, [authLoading, isAuthenticated, invitationId, resetPasswordToken, oauthProvider, ssoEmail]);
+
+  // After sign-in, leave `#/login` for the restored in-app route
+  useEffect(() => {
+    if (authLoading || !isAuthenticated || !isPageRestored) return;
+    if (invitationId || resetPasswordToken || oauthProvider || ssoEmail) return;
+    if (window.location.hash !== LOGIN_HASH_ROUTE) return;
+
+    if (activePage === 'home') navigateToHome();
+    else if (activePage === 'admin') navigateToAdmin(adminInitialTab);
+    else navigateToSessions();
+  }, [
+    authLoading,
+    isAuthenticated,
+    isPageRestored,
+    activePage,
+    adminInitialTab,
+    invitationId,
+    resetPasswordToken,
+    oauthProvider,
+    ssoEmail,
+    navigateToHome,
+    navigateToSessions,
+    navigateToAdmin,
+  ]);
 
   // Message handlers (context menu, close events)
   const { contextMenuMessage } = useMessageHandlers();
@@ -119,11 +179,13 @@ const SidePanel = () => {
   // ============================================================================
 
   const closeSidePanel = useCallback(() => {
-    // Send message to popup to update its state
-    chrome.runtime.sendMessage({ action: 'sidePanelClosed' });
-    // Close the side panel
-    window.close();
-  }, []);
+    if (FEATURES.extensionMessaging()) {
+      chrome.runtime.sendMessage({ action: 'sidePanelClosed' });
+      window.close();
+    } else {
+      navigateToSessions();
+    }
+  }, [navigateToSessions]);
 
   const openAbout = useCallback(() => {
     setAboutOpen(true);
@@ -174,7 +236,11 @@ const SidePanel = () => {
   // Show error if DB worker failed
   if (dbWorkerError) {
     return (
-      <div className={cn('flex h-screen items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
+      <div
+        className={cn(
+          'flex h-screen w-full max-w-full min-w-0 items-center justify-center',
+          isLight ? 'bg-white' : 'bg-[#0D1117]',
+        )}>
         <div className="p-4 text-center">
           <h3 className="mb-2 text-lg font-semibold text-red-600 dark:text-red-400">Database Initialization Failed</h3>
           <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">{dbWorkerError.message}</p>
@@ -191,7 +257,7 @@ const SidePanel = () => {
   // Show loading while checking authentication OR DB initialization
   if (authLoading || !dbWorkerReady) {
     return (
-      <div className={cn('h-screen', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
+      <div className={cn('h-screen w-full max-w-full min-w-0', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
         <ChatSkeleton isLight={isLight} />
       </div>
     );
@@ -281,7 +347,7 @@ const SidePanel = () => {
   return (
     <div
       className={cn(
-        'relative flex h-screen max-h-screen min-h-0 flex-col overflow-hidden',
+        'relative flex h-screen max-h-screen min-h-0 w-full max-w-full min-w-0 flex-col overflow-hidden',
         isLight ? 'bg-white' : 'bg-[#151C24]',
       )}>
       {/* Page Content - Chats page stays mounted to preserve session cache */}

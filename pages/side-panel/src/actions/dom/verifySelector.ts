@@ -5,6 +5,7 @@
  */
 
 import { debug as baseDebug } from '@extension/shared';
+import { assertExtensionContext } from '@src/utils/extensionOnly';
 import { QUERY_SELECTOR_SHADOW_DOM_CODE } from './shadowDOMHelper';
 
 // ============================================================================
@@ -122,6 +123,7 @@ function isValidScriptResult(result: unknown): result is { result: ScriptVerifyR
  */
 export async function handleVerifySelector(cssSelector: string): Promise<VerifySelectorResult> {
   try {
+    assertExtensionContext('Verify selector');
     debug.log(LOG_PREFIX, 'Verifying selector:', cssSelector);
 
     if (!cssSelector || cssSelector.trim().length === 0) {

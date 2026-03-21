@@ -1,4 +1,5 @@
 import { debug as baseDebug } from '@extension/shared';
+import { assertExtensionContext } from '@src/utils/extensionOnly';
 
 // ============================================================================
 // CONSTANTS
@@ -7,7 +8,7 @@ import { debug as baseDebug } from '@extension/shared';
 /** Timeout for click operation in milliseconds */
 const CLICK_TIMEOUT_MS = 8000;
 
-/** 
+/**
  * Timeout for duplicate injection prevention in milliseconds.
  * Must be longer than the full click operation:
  * - Cursor animation: ~800ms (30 steps × 20ms + 200ms delay)
@@ -35,7 +36,7 @@ const CURSOR_ANIMATION = {
 /** Log prefix for click actions */
 const LOG_PREFIX = '[ClickElement]';
 
-/** 
+/**
  * Handler-level pending operations map.
  * Prevents duplicate calls before content script lock is set.
  * Key: normalized selector, Value: Promise of the operation
@@ -129,7 +130,7 @@ function getErrorMessage(error: unknown): string {
  * Create a timeout promise for click operation
  */
 function createTimeoutPromise(): Promise<ScriptExecutionResult[]> {
-  return new Promise((resolve) =>
+  return new Promise(resolve =>
     setTimeout(
       () =>
         resolve([
@@ -140,8 +141,8 @@ function createTimeoutPromise(): Promise<ScriptExecutionResult[]> {
             },
           },
         ]),
-      CLICK_TIMEOUT_MS
-    )
+      CLICK_TIMEOUT_MS,
+    ),
   );
 }
 
@@ -149,7 +150,7 @@ function createTimeoutPromise(): Promise<ScriptExecutionResult[]> {
  * Type guard to check if script result is valid
  */
 function isValidScriptResult(
-  results: ScriptExecutionResult[] | undefined
+  results: ScriptExecutionResult[] | undefined,
 ): results is [ScriptExecutionResult, ...ScriptExecutionResult[]] {
   return Array.isArray(results) && results.length > 0 && results[0]?.result !== undefined;
 }
@@ -166,8 +167,9 @@ function isValidScriptResult(
  */
 export async function handleClickElement(
   cssSelector: string,
-  autoMoveCursor: boolean = true
+  autoMoveCursor: boolean = true,
 ): Promise<ClickElementResult> {
+  assertExtensionContext('Click element');
   // Validate input
   if (!cssSelector || cssSelector.trim().length === 0) {
     return { status: 'error', message: 'Empty CSS selector provided' };
@@ -175,11 +177,15 @@ export async function handleClickElement(
 
   // Normalize selector for deduplication key
   const normalizedSelector = cssSelector.trim();
-  
+
   // Check for pending operation on the same selector (handler-level deduplication)
   const pendingOperation = pendingClickOperations.get(normalizedSelector);
   if (pendingOperation) {
-    debug.log(LOG_PREFIX, 'Duplicate click request detected, returning pending operation result for:', normalizedSelector);
+    debug.log(
+      LOG_PREFIX,
+      'Duplicate click request detected, returning pending operation result for:',
+      normalizedSelector,
+    );
     return pendingOperation;
   }
 
@@ -199,10 +205,7 @@ export async function handleClickElement(
 /**
  * Internal function to execute the click operation
  */
-async function executeClickOperation(
-  cssSelector: string,
-  autoMoveCursor: boolean
-): Promise<ClickElementResult> {
+async function executeClickOperation(cssSelector: string, autoMoveCursor: boolean): Promise<ClickElementResult> {
   try {
     debug.log(LOG_PREFIX, 'Clicking element with selector:', cssSelector, 'autoMoveCursor:', autoMoveCursor);
 
@@ -227,7 +230,7 @@ async function executeClickOperation(
         injectionLockTimeout: number,
         highlightDuration: number,
         rippleDuration: number,
-        cursorAnimation: { steps: number; stepDuration: number; newCursorDelay: number; existingCursorDelay: number }
+        cursorAnimation: { steps: number; stepDuration: number; newCursorDelay: number; existingCursorDelay: number },
       ): ScriptClickResult | Promise<ScriptClickResult> => {
         const win = window as unknown as WindowWithState;
 
@@ -235,14 +238,14 @@ async function executeClickOperation(
         const injectionKey = `__copilotClickInjected_${selector}` as const;
         if (win[injectionKey]) {
           console.log('[ClickElement] Duplicate click prevented for selector:', selector);
-          return { 
-            success: true, 
+          return {
+            success: true,
             message: 'Click already in progress for this element. Duplicate request ignored.',
-            elementInfo: undefined // No element info since we didn't click
+            elementInfo: undefined, // No element info since we didn't click
           };
         }
         win[injectionKey] = true;
-        
+
         // Clear lock after operation completes (longer than actual operation to be safe)
         setTimeout(() => {
           delete win[injectionKey];
@@ -258,7 +261,9 @@ async function executeClickOperation(
 
             const parts = sel.split(' >> ');
             if (parts.length !== 2) {
-              throw new Error(`Invalid shadow DOM selector format. Expected "shadowPath >> elementSelector", got: ${sel}`);
+              throw new Error(
+                `Invalid shadow DOM selector format. Expected "shadowPath >> elementSelector", got: ${sel}`,
+              );
             }
 
             const shadowPath = parts[0].trim();
@@ -266,8 +271,8 @@ async function executeClickOperation(
 
             const pathSegments = shadowPath
               .split(' > ')
-              .map((s) => s.trim())
-              .filter((s) => s && s !== 'document');
+              .map(s => s.trim())
+              .filter(s => s && s !== 'document');
 
             if (pathSegments.length === 0) {
               throw new Error(`Shadow path must contain at least one element, got: ${shadowPath}`);
@@ -388,7 +393,11 @@ async function executeClickOperation(
 
           // Check if element is visible
           const computedStyle = window.getComputedStyle(targetElement);
-          if (computedStyle.display === 'none' || computedStyle.visibility === 'hidden' || computedStyle.opacity === '0') {
+          if (
+            computedStyle.display === 'none' ||
+            computedStyle.visibility === 'hidden' ||
+            computedStyle.opacity === '0'
+          ) {
             console.log('[ClickElement] Element found but is hidden:', selector);
             return {
               success: false,
@@ -400,7 +409,7 @@ async function executeClickOperation(
           targetElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
 
           // Return promise that resolves after click completes
-          return new Promise<ScriptClickResult>((resolve) => {
+          return new Promise<ScriptClickResult>(resolve => {
             const performClick = (): void => {
               const htmlTarget = targetElement as HTMLElement;
               const originalStyle = htmlTarget.style.cssText;
@@ -434,20 +443,23 @@ async function executeClickOperation(
                     clickNote = ' [clicked child at cursor position]';
                     console.log('[ClickElement] Clicking child element at cursor:', {
                       selectorTarget: targetElement.tagName + (targetElement.id ? '#' + targetElement.id : ''),
-                      actualAtPoint: actualElementAtPoint.tagName + (actualElementAtPoint.id ? '#' + actualElementAtPoint.id : ''),
+                      actualAtPoint:
+                        actualElementAtPoint.tagName + (actualElementAtPoint.id ? '#' + actualElementAtPoint.id : ''),
                     });
                   } else if (isParent) {
                     elementToClick = targetElement;
                     clickNote = ' [kept target, more specific than parent]';
                     console.log('[ClickElement] Keeping target (more specific):', {
                       selectorTarget: targetElement.tagName + (targetElement.id ? '#' + targetElement.id : ''),
-                      parentAtPoint: actualElementAtPoint.tagName + (actualElementAtPoint.id ? '#' + actualElementAtPoint.id : ''),
+                      parentAtPoint:
+                        actualElementAtPoint.tagName + (actualElementAtPoint.id ? '#' + actualElementAtPoint.id : ''),
                     });
                   } else {
                     clickNote = ' [WARNING: different element at cursor]';
                     console.warn('[ClickElement] Different element at cursor position:', {
                       selectorTarget: targetElement.tagName + (targetElement.id ? '#' + targetElement.id : ''),
-                      actualAtPoint: actualElementAtPoint.tagName + (actualElementAtPoint.id ? '#' + actualElementAtPoint.id : ''),
+                      actualAtPoint:
+                        actualElementAtPoint.tagName + (actualElementAtPoint.id ? '#' + actualElementAtPoint.id : ''),
                     });
                   }
                 }
@@ -545,7 +557,7 @@ async function executeClickOperation(
                     }),
                   ];
 
-                  events.forEach((event) => finalTarget.dispatchEvent(event));
+                  events.forEach(event => finalTarget.dispatchEvent(event));
                 };
 
                 clickElement(elementToClick);
@@ -692,7 +704,7 @@ async function executeClickOperation(
                       // Dispatch mousemove to trigger hover effects
                       const elemUnderCursor = document.elementFromPoint(cursorState.lastX, cursorState.lastY);
                       if (elemUnderCursor) {
-                        forEachAncestor(elemUnderCursor, (target) => {
+                        forEachAncestor(elemUnderCursor, target => {
                           target.dispatchEvent(
                             new MouseEvent('mousemove', {
                               view: window,
@@ -701,7 +713,7 @@ async function executeClickOperation(
                               composed: true,
                               clientX: cursorState.lastX,
                               clientY: cursorState.lastY,
-                            })
+                            }),
                           );
                         });
                       }
@@ -719,7 +731,7 @@ async function executeClickOperation(
                       // Trigger hover effects at final position
                       const elemAtCursor = document.elementFromPoint(centerX, centerY);
                       if (elemAtCursor) {
-                        forEachAncestor(elemAtCursor, (target) => {
+                        forEachAncestor(elemAtCursor, target => {
                           target.dispatchEvent(
                             new PointerEvent('pointerover', {
                               bubbles: true,
@@ -728,7 +740,7 @@ async function executeClickOperation(
                               clientX: centerX,
                               clientY: centerY,
                               pointerType: 'mouse',
-                            })
+                            }),
                           );
                           target.dispatchEvent(
                             new MouseEvent('mouseenter', {
@@ -738,7 +750,7 @@ async function executeClickOperation(
                               composed: true,
                               clientX: centerX,
                               clientY: centerY,
-                            })
+                            }),
                           );
                           target.dispatchEvent(
                             new MouseEvent('mouseover', {
@@ -748,7 +760,7 @@ async function executeClickOperation(
                               composed: true,
                               clientX: centerX,
                               clientY: centerY,
-                            })
+                            }),
                           );
                         });
                       }
@@ -763,7 +775,7 @@ async function executeClickOperation(
                 // Start cursor animation with delay for new cursor
                 setTimeout(
                   animateCursor,
-                  isNewCursor ? cursorAnimation.newCursorDelay : cursorAnimation.existingCursorDelay
+                  isNewCursor ? cursorAnimation.newCursorDelay : cursorAnimation.existingCursorDelay,
                 );
               } catch (cursorError) {
                 console.log('[ClickElement] Cursor movement error:', cursorError);

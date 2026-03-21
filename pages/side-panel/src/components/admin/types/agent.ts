@@ -9,12 +9,7 @@ export interface AgentOption {
   enabled?: boolean;
 }
 
-export type AuxiliaryAgentType = 
-  | 'image_generation'
-  | 'web_search'
-  | 'code_execution'
-  | 'url_context'
-  | 'memory';
+export type AuxiliaryAgentType = 'image_generation' | 'web_search' | 'code_execution' | 'url_context' | 'memory';
 
 /** Configuration for a built-in auxiliary agent type */
 export interface BuiltinAuxiliaryAgentConfig {
@@ -67,6 +62,15 @@ export const AUX_TYPE_LABELS: Record<AuxiliaryAgentType, { label: string; descri
 
 export type AgentScope = 'organization' | 'team';
 
+/**
+ * Stored on the agent under `metadata.required_workspace_credentials` (JSON array).
+ * Tells users and the model which workspace credential categories to attach (e.g. Databricks host vs token).
+ */
+export interface RequiredWorkspaceCredentialMeta {
+  credential_type: string;
+  description: string;
+}
+
 export interface AgentRecord {
   id: string;
   agentType: string;
@@ -82,4 +86,3 @@ export interface AgentRecord {
   modelIds: string[];
   toolIds: string[];
 }
-

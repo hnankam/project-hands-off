@@ -36,13 +36,13 @@ const BUFFER_SIZE = 2000;
 const ITEM_SIZE_HINT: number | undefined = undefined;
 
 /** Number of recent messages to keep mounted when off-screen (avoids unmount during scroll). */
-const KEEP_MOUNTED_COUNT = 1000;
+const KEEP_MOUNTED_COUNT = 2000;
 
 /** First N indices to always keep mounted - prevents Virtua from truncating scroll range at top. */
 const KEEP_MOUNTED_FIRST = 5;
 
 /** Keep sticky header from flickering during programmatic scroll (ms). */
-const AUTO_SCROLL_FLAG_MS = 80;
+const AUTO_SCROLL_FLAG_MS = 50;
 
 /** Same cap as chat-messages `.copilotKitUserMessage` / assistant max-width (56rem). */
 const MESSAGE_COLUMN_MAX_WIDTH_PX = 56 * 16;

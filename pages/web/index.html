@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Project Hands-Off - AI-powered browser assistant" />
+    <title>Project Hands-Off</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/icon-34.png" />
+    <link rel="icon" type="image/png" sizes="128x128" href="/icon-128.png" />
+    <link rel="apple-touch-icon" href="/icon-128.png" />
+  </head>
+
+  <body>
+    <div id="app-container">
+      <!-- Skeleton loading state - will be replaced by React app (same markup as extension side-panel) -->
+      <div class="skeleton-container">
+        <!-- Header skeleton -->
+        <div class="skeleton-header">
+          <div class="skeleton-title skeleton-shimmer"></div>
+          <div class="skeleton-actions">
+            <div class="skeleton-button skeleton-shimmer"></div>
+            <div class="skeleton-button skeleton-shimmer"></div>
+            <div class="skeleton-button skeleton-shimmer"></div>
+          </div>
+        </div>
+
+        <!-- Chat area skeleton -->
+        <div class="skeleton-chat">
+          <div class="skeleton-message">
+            <div class="skeleton-avatar skeleton-shimmer"></div>
+            <div class="skeleton-content">
+              <div class="skeleton-line skeleton-shimmer"></div>
+              <div class="skeleton-line short skeleton-shimmer"></div>
+            </div>
+          </div>
+          <div class="skeleton-message">
+            <div class="skeleton-avatar skeleton-shimmer"></div>
+            <div class="skeleton-content">
+              <div class="skeleton-line skeleton-shimmer"></div>
+              <div class="skeleton-line skeleton-shimmer"></div>
+              <div class="skeleton-line short skeleton-shimmer"></div>
+            </div>
+          </div>
+          <div class="skeleton-message">
+            <div class="skeleton-avatar skeleton-shimmer"></div>
+            <div class="skeleton-content">
+              <div class="skeleton-line skeleton-shimmer"></div>
+              <div class="skeleton-line short skeleton-shimmer"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Input area skeleton -->
+        <div class="skeleton-input">
+          <div class="skeleton-input-field skeleton-shimmer"></div>
+          <div class="skeleton-send-button skeleton-shimmer"></div>
+        </div>
+
+        <!-- Session tabs skeleton -->
+        <div class="skeleton-tabs">
+          <div class="skeleton-tab skeleton-shimmer"></div>
+          <div class="skeleton-tab skeleton-shimmer"></div>
+          <div class="skeleton-tab skeleton-shimmer"></div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="./src/index.tsx"></script>
+  </body>
+</html>

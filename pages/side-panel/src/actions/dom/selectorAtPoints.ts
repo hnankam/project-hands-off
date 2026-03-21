@@ -5,6 +5,7 @@
  */
 
 import { debug as baseDebug } from '@extension/shared';
+import { assertExtensionContext } from '@src/utils/extensionOnly';
 import { CSS_ESCAPE_POLYFILL, createBuildSelectorCode } from './shadowDOMHelper';
 
 // ============================================================================
@@ -102,15 +103,8 @@ function createTimeoutPromise<T>(ms: number, fallbackValue: T): Promise<T> {
 /**
  * Type guard for valid script result
  */
-function isValidScriptResult(
-  result: unknown,
-): result is { result: ScriptResult } | { result: ScriptResult[] } {
-  return (
-    result !== null &&
-    typeof result === 'object' &&
-    'result' in result &&
-    result.result !== null
-  );
+function isValidScriptResult(result: unknown): result is { result: ScriptResult } | { result: ScriptResult[] } {
+  return result !== null && typeof result === 'object' && 'result' in result && result.result !== null;
 }
 
 // ============================================================================
@@ -126,6 +120,7 @@ function isValidScriptResult(
  */
 export async function handleGetSelectorAtPoint(x: number, y: number): Promise<SelectorAtPointResult> {
   try {
+    assertExtensionContext('Selector at point');
     debug.log(LOG_PREFIX, 'Request:', { x, y });
 
     // Get the current active tab
@@ -167,10 +162,7 @@ export async function handleGetSelectorAtPoint(x: number, y: number): Promise<Se
     });
 
     const timeoutFallback = [{ result: { success: false, message: 'Timeout generating selector' } }];
-    const results = await Promise.race([
-      execPromise,
-      createTimeoutPromise(SCRIPT_TIMEOUT_MS, timeoutFallback),
-    ]);
+    const results = await Promise.race([execPromise, createTimeoutPromise(SCRIPT_TIMEOUT_MS, timeoutFallback)]);
 
     debug.log(LOG_PREFIX, 'Script execution results:', results);
 
@@ -202,6 +194,7 @@ export async function handleGetSelectorAtPoint(x: number, y: number): Promise<Se
  */
 export async function handleGetSelectorsAtPoints(points: Point[]): Promise<BatchSelectorAtPointsResult> {
   try {
+    assertExtensionContext('Selectors at points');
     debug.log(LOG_PREFIX + 's', 'Request:', points);
 
     if (!Array.isArray(points) || points.length === 0) {
@@ -258,10 +251,7 @@ export async function handleGetSelectorsAtPoints(points: Point[]): Promise<Batch
     });
 
     const timeoutFallback = [{ result: [] as ScriptResult[] }];
-    const results = await Promise.race([
-      execPromise,
-      createTimeoutPromise(SCRIPT_TIMEOUT_MS, timeoutFallback),
-    ]);
+    const results = await Promise.race([execPromise, createTimeoutPromise(SCRIPT_TIMEOUT_MS, timeoutFallback)]);
 
     const payload = (results && results[0]?.result) || [];
     const mapped: BatchSelectorResultItem[] = (payload as ScriptResult[]).map(r => {

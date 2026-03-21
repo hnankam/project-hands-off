@@ -7,9 +7,20 @@ interface SessionListProps {
   className?: string;
   isLight?: boolean;
   viewMode?: 'sidepanel' | 'popup' | 'newtab' | 'fullscreen';
+  /**
+   * Runtime API base (same as API_CONFIG.BASE_URL). Required for correct DELETE /api/threads
+   * when using same-origin web + Vite proxy — do not use raw localhost:3001 or deletes won’t be
+   * authenticated and Sync will restore threads from the server.
+   */
+  apiBaseUrl?: string;
 }
 
-export const SessionList = ({ className, isLight = true, viewMode = 'sidepanel' }: SessionListProps) => {
+export const SessionList = ({
+  className,
+  isLight = true,
+  viewMode = 'sidepanel',
+  apiBaseUrl: apiBaseUrlProp,
+}: SessionListProps) => {
   const { sessions, currentSessionId } = useSessionStorageDB();
   const [isExpanded, setIsExpanded] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -50,9 +61,11 @@ export const SessionList = ({ className, isLight = true, viewMode = 'sidepanel' 
     if (sessionToDelete) {
       const sessionId = sessionToDelete.id; // Capture sessionId before clearing state
       try {
-        // Get API base URL from environment or use default
-        // @ts-ignore - Vite-specific import.meta.env
-        const apiBaseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || 'http://localhost:3001';
+        const apiBaseUrl =
+          apiBaseUrlProp ||
+          (typeof import.meta !== 'undefined' &&
+            (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL) ||
+          'http://localhost:3001';
         // Perform deletion first, then close modal
         // This will delete backend thread (hard delete with cascade) and frontend session
         await sessionStorageDBWrapper.deleteSession(sessionId, apiBaseUrl);
@@ -88,97 +101,82 @@ export const SessionList = ({ className, isLight = true, viewMode = 'sidepanel' 
 
   return (
     <>
-      <div className={cn("flex flex-col py-1.5", className)}>
+      <div className={cn('flex flex-col py-1.5', className)}>
         {/* Match footer bar height from HomePage: px-4 py-1.5 */}
         <div className="flex items-center justify-between px-3 py-1.5">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
             className={cn(
-              "flex items-center gap-1.5 text-xs font-medium transition-colors",
-              isLight ? "text-gray-600 hover:text-gray-900" : "text-gray-500 hover:text-gray-100"
-            )}
-          >
-            <span>
-              Past Chats
-            </span>
+              'flex items-center gap-1.5 text-xs font-medium transition-colors',
+              isLight ? 'text-gray-600 hover:text-gray-900' : 'text-gray-500 hover:text-gray-100',
+            )}>
+            <span>Past Chats</span>
             <svg
-              className={cn(
-                "h-3 w-3 transition-transform",
-                isExpanded ? "rotate-180" : ""
-              )}
+              className={cn('h-3 w-3 transition-transform', isExpanded ? 'rotate-180' : '')}
               fill="none"
               stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+              viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
-          <button 
+          <button
             onClick={handleViewAll}
-            className={cn(
-              "text-xs",
-              isLight
-                ? "hover:text-gray-700"
-                : "hover:text-gray-300"
-            )}
-            style={{ color: isLight ? '#4b5563' : '#6b7280' }}
-          >
+            className={cn('text-xs', isLight ? 'hover:text-gray-700' : 'hover:text-gray-300')}
+            style={{ color: isLight ? '#4b5563' : '#6b7280' }}>
             View All
           </button>
         </div>
 
         {isExpanded && (
-          <div className="space-y-0 max-h-[200px] overflow-y-auto session-list-expanded mb-1">
+          <div className="session-list-expanded mb-1 max-h-[200px] space-y-0 overflow-y-auto">
             {sessions.map((session, index) => (
               <div
                 key={session.id}
                 onClick={() => handleSessionClick(session.id)}
                 className={cn(
-                  "group flex items-center justify-between px-2 py-2 text-xs cursor-pointer transition-colors",
-                  "rounded",
+                  'group flex cursor-pointer items-center justify-between px-2 py-2 text-xs transition-colors',
+                  'rounded',
                   session.id === currentSessionId
                     ? isLight
-                      ? "bg-gray-200 text-gray-900"
-                      : "bg-gray-800/60 text-gray-100"
+                      ? 'bg-gray-200 text-gray-900'
+                      : 'bg-gray-800/60 text-gray-100'
                     : isLight
-                      ? "text-gray-600 hover:bg-gray-100"
-                      : "text-gray-500 hover:bg-gray-700/50"
+                      ? 'text-gray-600 hover:bg-gray-100'
+                      : 'text-gray-500 hover:bg-gray-700/50',
                 )}
                 style={{
                   ...(session.id !== currentSessionId ? { color: isLight ? '#4b5563' : '#6b7280' } : {}),
-                  ...(index === sessions.length - 1 && viewMode === 'sidepanel' ? {
-                    borderBottomLeftRadius: '0.75rem',
-                    borderBottomRightRadius: '0.75rem'
-                  } : {})
-                }}
-              >
+                  ...(index === sessions.length - 1 && viewMode === 'sidepanel'
+                    ? {
+                        borderBottomLeftRadius: '0.75rem',
+                        borderBottomRightRadius: '0.75rem',
+                      }
+                    : {}),
+                }}>
                 <div
-                  className="flex-1 min-w-0 truncate pr-2 transition-colors"
-                  style={session.id !== currentSessionId ? { color: isLight ? '#4b5563' : '#6b7280' } : undefined}
-                >
+                  className="min-w-0 flex-1 truncate pr-2 transition-colors"
+                  style={session.id !== currentSessionId ? { color: isLight ? '#4b5563' : '#6b7280' } : undefined}>
                   {session.title}
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span 
-                    className={cn(
-                    "text-xs",
-                      isLight ? "hover:text-gray-700" : "hover:text-gray-300"
-                    )}
-                    style={{ color: isLight ? '#4b5563' : '#6b7280' }}
-                  >
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  <span
+                    className={cn('text-xs', isLight ? 'hover:text-gray-700' : 'hover:text-gray-300')}
+                    style={{ color: isLight ? '#4b5563' : '#6b7280' }}>
                     {formatTimestamp(session.timestamp)}
                   </span>
                   <button
-                    onClick={(e) => handleDeleteSession(session.id, session.title, e)}
+                    onClick={e => handleDeleteSession(session.id, session.title, e)}
                     className={cn(
-                      "opacity-0 group-hover:opacity-100 p-0.5 transition-opacity",
-                      isLight
-                        ? "text-gray-400 hover:text-red-500"
-                        : "text-gray-500 hover:text-red-400"
-                    )}
-                  >
+                      'p-0.5 opacity-0 transition-opacity group-hover:opacity-100',
+                      isLight ? 'text-gray-400 hover:text-red-500' : 'text-gray-500 hover:text-red-400',
+                    )}>
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
                     </svg>
                   </button>
                 </div>
@@ -193,46 +191,36 @@ export const SessionList = ({ className, isLight = true, viewMode = 'sidepanel' 
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/50 z-[10000] backdrop-blur-sm"
-            onClick={(e) => {
+            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
+            onClick={e => {
               // Only close if clicking directly on backdrop, not on modal content
               if (e.target === e.currentTarget) {
-              setDeleteConfirmOpen(false);
-              setSessionToDelete(null);
+                setDeleteConfirmOpen(false);
+                setSessionToDelete(null);
               }
             }}
           />
 
           {/* Modal */}
-          <div 
-            className="fixed inset-0 z-[10001] flex items-center justify-center p-4 pointer-events-none"
-            onClick={(e) => {
+          <div
+            className="pointer-events-none fixed inset-0 z-[10001] flex items-center justify-center p-4"
+            onClick={e => {
               // Prevent backdrop click when clicking modal container
               e.stopPropagation();
-            }}
-          >
+            }}>
             <div
               className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl pointer-events-auto',
-                isLight
-                  ? 'bg-gray-50 border border-gray-200'
-                  : 'bg-[#151C24] border border-gray-700'
+                'pointer-events-auto w-full max-w-sm rounded-lg shadow-xl',
+                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
               )}
-              onClick={(e) => e.stopPropagation()}
-            >
+              onClick={e => e.stopPropagation()}>
               {/* Header */}
               <div
                 className={cn(
-                  'flex items-center justify-between px-3 py-2 border-b',
-                  isLight ? 'border-gray-200' : 'border-gray-700'
-                )}
-              >
-                <h2
-                  className={cn(
-                    'text-sm font-semibold',
-                    isLight ? 'text-gray-900' : 'text-gray-100'
-                  )}
-                >
+                  'flex items-center justify-between border-b px-3 py-2',
+                  isLight ? 'border-gray-200' : 'border-gray-700',
+                )}>
+                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
                   Delete Chat
                 </h2>
                 <button
@@ -241,12 +229,11 @@ export const SessionList = ({ className, isLight = true, viewMode = 'sidepanel' 
                     setSessionToDelete(null);
                   }}
                   className={cn(
-                    'p-0.5 rounded-md transition-colors',
+                    'rounded-md p-0.5 transition-colors',
                     isLight
-                      ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
-                  )}
-                >
+                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
+                  )}>
                   <svg
                     width="14"
                     height="14"
@@ -255,51 +242,36 @@ export const SessionList = ({ className, isLight = true, viewMode = 'sidepanel' 
                     viewBox="0 0 24 24"
                     strokeWidth={2}
                     strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
+                    strokeLinejoin="round">
                     <path d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
 
               {/* Content */}
-              <div className="px-3 py-4 space-y-3">
+              <div className="space-y-3 px-3 py-4">
                 {/* Warning Icon */}
                 <div className="flex items-start gap-3">
                   <div
                     className={cn(
-                      'flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center',
-                      isLight ? 'bg-red-100' : 'bg-red-900/30'
-                    )}
-                  >
+                      'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
+                      isLight ? 'bg-red-100' : 'bg-red-900/30',
+                    )}>
                     <svg
-                      className={cn(
-                        'w-4 h-4',
-                        isLight ? 'text-red-600' : 'text-red-400'
-                      )}
+                      className={cn('h-4 w-4', isLight ? 'text-red-600' : 'text-red-400')}
                       fill="currentColor"
-                      viewBox="0 0 24 24"
-                    >
+                      viewBox="0 0 24 24">
                       <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
                     </svg>
                   </div>
 
                   <div className="flex-1">
-                    <p
-                      className={cn(
-                        'text-sm font-medium',
-                        isLight ? 'text-gray-900' : 'text-gray-100'
-                      )}
-                    >
+                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
                       Permanently delete chat?
                     </p>
-                    <p
-                      className={cn(
-                        'text-xs mt-1',
-                        isLight ? 'text-gray-600' : 'text-gray-400'
-                      )}
-                    >
-                      "{sessionToDelete.title}" and all its messages will be permanently deleted and cannot be recovered.
+                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      "{sessionToDelete.title}" and all its messages will be permanently deleted and cannot be
+                      recovered.
                     </p>
                   </div>
                 </div>
@@ -308,39 +280,36 @@ export const SessionList = ({ className, isLight = true, viewMode = 'sidepanel' 
               {/* Footer */}
               <div
                 className={cn(
-                  'flex items-center justify-end gap-2 px-3 py-2 border-t',
-                  isLight ? 'border-gray-200' : 'border-gray-700'
-                )}
-              >
+                  'flex items-center justify-end gap-2 border-t px-3 py-2',
+                  isLight ? 'border-gray-200' : 'border-gray-700',
+                )}>
                 <button
                   onClick={() => {
                     setDeleteConfirmOpen(false);
                     setSessionToDelete(null);
                   }}
                   className={cn(
-                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
                     isLight
                       ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
-                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600'
-                  )}
-                >
+                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
+                  )}>
                   Cancel
                 </button>
                 <button
-                  onClick={(e) => {
+                  onClick={e => {
                     e.stopPropagation();
                     e.preventDefault();
                     handleConfirmDelete(e);
                   }}
-                  onMouseDown={(e) => {
+                  onMouseDown={e => {
                     // Prevent backdrop click from firing when clicking delete button
                     e.stopPropagation();
                   }}
                   className={cn(
-                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                    'bg-red-600 text-white hover:bg-red-700'
-                  )}
-                >
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                    'bg-red-600 text-white hover:bg-red-700',
+                  )}>
                   Delete
                 </button>
               </div>

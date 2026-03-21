@@ -49,6 +49,8 @@ export interface UseSessionUrlSyncProps {
   onPageChange: (page: 'sessions') => void;
   /** When true, skip pushing `sessionId` to the URL so we don’t clear it before DB hydration */
   sessionsLoading?: boolean;
+  /** When false, skip all URL sync (e.g. sign-in screen uses `#/login` and no `sessionId`) */
+  enabled?: boolean;
 }
 
 // ============================================================================
@@ -83,6 +85,7 @@ export function useSessionUrlSync({
   activePage,
   onPageChange,
   sessionsLoading = false,
+  enabled = true,
 }: UseSessionUrlSyncProps): void {
   // Track which URL session ID has been applied to prevent re-application
   const urlSessionIdAppliedRef = useRef<string | null>(null);
@@ -99,6 +102,8 @@ export function useSessionUrlSync({
   });
 
   useEffect(() => {
+    if (!enabled) return;
+
     const viewMode = getCurrentViewMode();
     const urlSessionId = getSessionIdFromUrl();
 
@@ -171,11 +176,12 @@ export function useSessionUrlSync({
         debug.warn('[useSessionUrlSync] Session ID from URL not found:', urlSessionId);
       }
     }
-  }, [sessions, currentSessionId, activePage, onPageChange]);
+  }, [sessions, currentSessionId, activePage, onPageChange, enabled]);
 
   // Keep the address bar `sessionId` in sync when switching session tabs (popup / new tab / fullscreen).
   // Side panel has no omnibox; avoid replaceState noise there.
   useEffect(() => {
+    if (!enabled) return;
     if (sessionsLoading) return;
     if (activePage !== 'sessions') return;
 
@@ -196,5 +202,5 @@ export function useSessionUrlSync({
     }
 
     updateUrlWithSession(currentSessionId);
-  }, [sessionsLoading, activePage, currentSessionId, sessions]);
+  }, [sessionsLoading, activePage, currentSessionId, sessions, enabled]);
 }

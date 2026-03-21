@@ -6,6 +6,7 @@ import type { CumulativeUsage, UsageData } from '../../hooks/useUsageStream';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { cn } from '@extension/ui';
 import { API_CONFIG } from '../../constants';
+import { ModalCloseButton } from '../modals/ModalCloseButton';
 
 const API_BASE_URL = API_CONFIG.BASE_URL;
 
@@ -73,7 +74,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
     requestTokens: true,
     responseTokens: true,
   });
-  
+
   // DB-fetched session stats (loaded when popup opens, provides accurate totals)
   const [dbSessionStats, setDbSessionStats] = useState<SessionStats | null>(null);
 
@@ -119,7 +120,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
         if (latestResponse.ok) {
           const latestData = await latestResponse.json();
           console.log('[UsagePopup] Received latest usage data:', latestData);
-          
+
           // The API returns recent.data array with individual usage events
           if (latestData.recent?.data && Array.isArray(latestData.recent.data) && latestData.recent.data.length > 0) {
             const event = latestData.recent.data[0]; // First event is the most recent
@@ -141,9 +142,14 @@ export const UsagePopup: FC<UsagePopupProps> = ({
         if (statsResponse.ok) {
           const statsData = await statsResponse.json();
           console.log('[UsagePopup] Received all-time stats:', statsData);
-          
+
           // Try to get lastUsage from stats response's recent data if not already found
-          if (!latestUsageEvent && statsData.recent?.data && Array.isArray(statsData.recent.data) && statsData.recent.data.length > 0) {
+          if (
+            !latestUsageEvent &&
+            statsData.recent?.data &&
+            Array.isArray(statsData.recent.data) &&
+            statsData.recent.data.length > 0
+          ) {
             const event = statsData.recent.data[0];
             latestUsageEvent = {
               agentType: event.agent || 'unknown',
@@ -155,7 +161,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
             };
             console.log('[UsagePopup] Extracted latest usage from stats response:', latestUsageEvent);
           }
-          
+
           // Use summary from API response if available
           if (statsData.summary) {
             setDbSessionStats({
@@ -175,11 +181,20 @@ export const UsagePopup: FC<UsagePopupProps> = ({
             });
           } else if (statsData.timeseries && Array.isArray(statsData.timeseries)) {
             // Compute from timeseries if summary/totals not provided
-            const totalTokens = statsData.timeseries.reduce((sum: number, p: TimeseriesPoint) => sum + p.totalTokens, 0);
-            const requestTokens = statsData.timeseries.reduce((sum: number, p: TimeseriesPoint) => sum + p.requestTokens, 0);
-            const responseTokens = statsData.timeseries.reduce((sum: number, p: TimeseriesPoint) => sum + p.responseTokens, 0);
+            const totalTokens = statsData.timeseries.reduce(
+              (sum: number, p: TimeseriesPoint) => sum + p.totalTokens,
+              0,
+            );
+            const requestTokens = statsData.timeseries.reduce(
+              (sum: number, p: TimeseriesPoint) => sum + p.requestTokens,
+              0,
+            );
+            const responseTokens = statsData.timeseries.reduce(
+              (sum: number, p: TimeseriesPoint) => sum + p.responseTokens,
+              0,
+            );
             const requestCount = statsData.timeseries.reduce((sum: number, p: TimeseriesPoint) => sum + p.callCount, 0);
-            
+
             setDbSessionStats({
               totalTokens,
               requestTokens,
@@ -187,7 +202,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
               requestCount,
               lastUsage: latestUsageEvent,
             });
-            
+
             console.log('[UsagePopup] Computed all-time session stats from DB:', {
               totalTokens,
               requestTokens,
@@ -208,7 +223,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
         if (chartResponse.ok) {
           const chartData = await chartResponse.json();
           console.log('[UsagePopup] Received 30-day chart data:', chartData);
-          
+
           if (chartData.timeseries && Array.isArray(chartData.timeseries)) {
             console.log('[UsagePopup] Chart timeseries data points:', chartData.timeseries.length);
             setUsageData(chartData.timeseries);
@@ -277,72 +292,53 @@ export const UsagePopup: FC<UsagePopupProps> = ({
   const popupContent = (
     <>
       {/* Compact Popup - Portaled to body so it appears above SessionsPanel (z-40) */}
-      <div 
+      <div
         className={`fixed top-10 left-3 z-[100] transition-opacity ${
-          isOpen ? 'opacity-100 pointer-events-auto animate-slideDown' : 'opacity-0 pointer-events-none'
+          isOpen ? 'animate-slideDown pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
         }`}
-        style={{ width: '400px' }}
-      >
+        style={{ width: '400px' }}>
         <div
           ref={popupRef}
-          className={`rounded-lg shadow-xl border ${
-            isLight ? 'bg-white border-gray-200' : 'bg-[#0C1117] border-gray-700'
-          }`}
-        >
+          className={`rounded-lg border shadow-xl ${
+            isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#0C1117]'
+          }`}>
           {/* Header */}
           <div
-            className={`flex items-center justify-between px-3 py-2 border-b rounded-t-lg ${
-              isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700'
-            }`}
-          >
-            <h3 className={`text-sm font-semibold ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>
-              Token Usage
-            </h3>
-            <button
-              onClick={onClose}
-              className={`p-1 rounded transition-colors ${
-                isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800'
-              }`}
-            >
-              <svg
-                className={`w-3.5 h-3.5 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
+            className={`flex items-center justify-between rounded-t-lg border-b px-3 py-2 ${
+              isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]'
+            }`}>
+            <h3 className={`text-sm font-semibold ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>Token Usage</h3>
+            <ModalCloseButton onClick={onClose} isLight={isLight} />
           </div>
 
           {/* Content */}
-          <div className="p-3 space-y-2.5">
+          <div className="space-y-2.5 p-3">
             {/* Session Tokens - DB data only (all-time, not limited to 30 days) */}
             {loadingUsage ? (
-              <div className={cn(
-                'rounded border p-2.5 flex items-center justify-center h-32',
-                isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
-              )}>
+              <div
+                className={cn(
+                  'flex h-32 items-center justify-center rounded border p-2.5',
+                  isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
+                )}>
                 <div className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                   Loading session stats...
                 </div>
               </div>
             ) : dbSessionStats ? (
               <UsageDisplay
-                lastUsage={dbSessionStats.lastUsage ? {
-                  session_id: sessionId || '',
-                  agent_type: dbSessionStats.lastUsage.agentType,
-                  model: dbSessionStats.lastUsage.model,
-                  request_tokens: dbSessionStats.lastUsage.requestTokens,
-                  response_tokens: dbSessionStats.lastUsage.responseTokens,
-                  total_tokens: dbSessionStats.lastUsage.totalTokens,
-                  timestamp: dbSessionStats.lastUsage.timestamp,
-                } : null}
+                lastUsage={
+                  dbSessionStats.lastUsage
+                    ? {
+                        session_id: sessionId || '',
+                        agent_type: dbSessionStats.lastUsage.agentType,
+                        model: dbSessionStats.lastUsage.model,
+                        request_tokens: dbSessionStats.lastUsage.requestTokens,
+                        response_tokens: dbSessionStats.lastUsage.responseTokens,
+                        total_tokens: dbSessionStats.lastUsage.totalTokens,
+                        timestamp: dbSessionStats.lastUsage.timestamp,
+                      }
+                    : null
+                }
                 cumulativeUsage={{
                   total: dbSessionStats.totalTokens,
                   request: dbSessionStats.requestTokens,
@@ -354,10 +350,11 @@ export const UsagePopup: FC<UsagePopupProps> = ({
                 compact={false}
               />
             ) : (
-              <div className={cn(
-                'rounded border p-2.5 flex items-center justify-center h-32',
-                isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
-              )}>
+              <div
+                className={cn(
+                  'flex h-32 items-center justify-center rounded border p-2.5',
+                  isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
+                )}>
                 <div className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                   No usage data available
                 </div>
@@ -369,9 +366,8 @@ export const UsagePopup: FC<UsagePopupProps> = ({
               <div
                 className={cn(
                   'rounded border p-2.5',
-                  isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
-                )}
-              >
+                  isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
+                )}>
                 {/* Header with Legend */}
                 <div className="mb-2 flex items-center justify-between">
                   <h4 className={cn('text-[11px] font-semibold', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
@@ -382,12 +378,22 @@ export const UsagePopup: FC<UsagePopupProps> = ({
                       type="button"
                       onClick={() => toggleSeries('totalTokens')}
                       className={cn(
-                        'flex items-center gap-1 cursor-pointer transition-all rounded px-2 py-1 -mx-2 -my-1',
-                        isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800'
-                      )}
-                    >
-                      <div className={cn('h-1.5 w-1.5 transition-opacity', isLight ? 'bg-gray-400' : 'bg-gray-500', !visibleSeries.totalTokens && 'opacity-30')} />
-                      <span className={cn('text-[9px] uppercase transition-opacity', isLight ? 'text-gray-600' : 'text-gray-400', !visibleSeries.totalTokens && 'opacity-30')}>
+                        '-mx-2 -my-1 flex cursor-pointer items-center gap-1 rounded px-2 py-1 transition-all',
+                        isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800',
+                      )}>
+                      <div
+                        className={cn(
+                          'h-1.5 w-1.5 transition-opacity',
+                          isLight ? 'bg-gray-400' : 'bg-gray-500',
+                          !visibleSeries.totalTokens && 'opacity-30',
+                        )}
+                      />
+                      <span
+                        className={cn(
+                          'text-[9px] uppercase transition-opacity',
+                          isLight ? 'text-gray-600' : 'text-gray-400',
+                          !visibleSeries.totalTokens && 'opacity-30',
+                        )}>
                         Total
                       </span>
                     </button>
@@ -395,12 +401,22 @@ export const UsagePopup: FC<UsagePopupProps> = ({
                       type="button"
                       onClick={() => toggleSeries('requestTokens')}
                       className={cn(
-                        'flex items-center gap-1 cursor-pointer transition-all rounded px-2 py-1 -mx-2 -my-1',
-                        isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800'
-                      )}
-                    >
-                      <div className={cn('h-1.5 w-1.5 transition-opacity', isLight ? 'bg-blue-500' : 'bg-blue-400', !visibleSeries.requestTokens && 'opacity-30')} />
-                      <span className={cn('text-[9px] uppercase transition-opacity', isLight ? 'text-gray-600' : 'text-gray-400', !visibleSeries.requestTokens && 'opacity-30')}>
+                        '-mx-2 -my-1 flex cursor-pointer items-center gap-1 rounded px-2 py-1 transition-all',
+                        isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800',
+                      )}>
+                      <div
+                        className={cn(
+                          'h-1.5 w-1.5 transition-opacity',
+                          isLight ? 'bg-blue-500' : 'bg-blue-400',
+                          !visibleSeries.requestTokens && 'opacity-30',
+                        )}
+                      />
+                      <span
+                        className={cn(
+                          'text-[9px] uppercase transition-opacity',
+                          isLight ? 'text-gray-600' : 'text-gray-400',
+                          !visibleSeries.requestTokens && 'opacity-30',
+                        )}>
                         Request
                       </span>
                     </button>
@@ -408,156 +424,191 @@ export const UsagePopup: FC<UsagePopupProps> = ({
                       type="button"
                       onClick={() => toggleSeries('responseTokens')}
                       className={cn(
-                        'flex items-center gap-1 cursor-pointer transition-all rounded px-2 py-1 -mx-2 -my-1',
-                        isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800'
-                      )}
-                    >
-                      <div className={cn('h-1.5 w-1.5 transition-opacity', isLight ? 'bg-green-500' : 'bg-green-400', !visibleSeries.responseTokens && 'opacity-30')} />
-                      <span className={cn('text-[9px] uppercase transition-opacity', isLight ? 'text-gray-600' : 'text-gray-400', !visibleSeries.responseTokens && 'opacity-30')}>
+                        '-mx-2 -my-1 flex cursor-pointer items-center gap-1 rounded px-2 py-1 transition-all',
+                        isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800',
+                      )}>
+                      <div
+                        className={cn(
+                          'h-1.5 w-1.5 transition-opacity',
+                          isLight ? 'bg-green-500' : 'bg-green-400',
+                          !visibleSeries.responseTokens && 'opacity-30',
+                        )}
+                      />
+                      <span
+                        className={cn(
+                          'text-[9px] uppercase transition-opacity',
+                          isLight ? 'text-gray-600' : 'text-gray-400',
+                          !visibleSeries.responseTokens && 'opacity-30',
+                        )}>
                         Response
                       </span>
                     </button>
                   </div>
                 </div>
                 {loadingUsage ? (
-                  <div className="h-40 w-full flex items-center justify-center">
+                  <div className="flex h-40 w-full items-center justify-center">
                     <div className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>Loading chart...</div>
                   </div>
                 ) : chartData.length === 0 ? (
-                  <div className="h-40 w-full flex items-center justify-center">
+                  <div className="flex h-40 w-full items-center justify-center">
                     <div className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>No usage data yet</div>
                   </div>
                 ) : (
-                <div className="h-40 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 10, right: 15, left: 0, bottom: 5 }}>
-                      <defs>
-                        <linearGradient id="sessionTotalGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={isLight ? chartColors.total.light : chartColors.total.dark} stopOpacity={0.4} />
-                          <stop offset="95%" stopColor={isLight ? chartColors.total.light : chartColors.total.dark} stopOpacity={0.05} />
-                        </linearGradient>
-                        <linearGradient id="sessionRequestGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={isLight ? chartColors.request.light : chartColors.request.dark} stopOpacity={0.35} />
-                          <stop offset="95%" stopColor={isLight ? chartColors.request.light : chartColors.request.dark} stopOpacity={0.05} />
-                        </linearGradient>
-                        <linearGradient id="sessionResponseGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={isLight ? chartColors.response.light : chartColors.response.dark} stopOpacity={0.35} />
-                          <stop offset="95%" stopColor={isLight ? chartColors.response.light : chartColors.response.dark} stopOpacity={0.05} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        stroke={isLight ? '#E5E7EB' : '#1F2937'}
-                        vertical={false}
-                      />
-                      <XAxis
-                        dataKey="label"
-                        tick={{ fontSize: 9, fill: isLight ? '#6B7280' : '#9CA3AF' }}
-                        axisLine={false}
-                        tickLine={false}
-                        interval={chartData.length > 0 ? Math.max(0, Math.floor(chartData.length / 6) - 1) : 0}
-                        height={20}
-                      />
-                      <YAxis
-                        tick={{ fontSize: 9, fill: isLight ? '#6B7280' : '#9CA3AF' }}
-                        axisLine={false}
-                        tickLine={false}
-                        width={35}
-                        tickFormatter={(value) => {
-                          if (value >= 1000) return `${(value / 1000).toFixed(0)}K`;
-                          return value.toString();
-                        }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: isLight ? '#fff' : '#1F2937',
-                          border: `1px solid ${isLight ? '#E5E7EB' : '#374151'}`,
-                          borderRadius: '6px',
-                          fontSize: '10px',
-                          padding: '0',
-                        }}
-                        labelStyle={{ color: isLight ? '#111827' : '#F9FAFB', fontWeight: 600 }}
-                        itemStyle={{ color: isLight ? '#6B7280' : '#9CA3AF', padding: '2px 0' }}
-                        formatter={(value: number) => value.toLocaleString()}
-                        content={({ active, payload, label }) => {
-                          if (!active || !payload || payload.length === 0) return null;
-                          
-                          return (
-                            <div
-                              style={{
-                                backgroundColor: isLight ? '#fff' : '#1F2937',
-                                border: `1px solid ${isLight ? '#E5E7EB' : '#374151'}`,
-                                borderRadius: '6px',
-                                fontSize: '10px',
-                              }}
-                            >
-                              <div style={{ 
-                                padding: '6px 8px',
-                                color: isLight ? '#111827' : '#F9FAFB',
-                                fontWeight: 600
-                              }}>
-                                {label}
+                  <div className="h-40 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={chartData} margin={{ top: 10, right: 15, left: 0, bottom: 5 }}>
+                        <defs>
+                          <linearGradient id="sessionTotalGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop
+                              offset="5%"
+                              stopColor={isLight ? chartColors.total.light : chartColors.total.dark}
+                              stopOpacity={0.4}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor={isLight ? chartColors.total.light : chartColors.total.dark}
+                              stopOpacity={0.05}
+                            />
+                          </linearGradient>
+                          <linearGradient id="sessionRequestGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop
+                              offset="5%"
+                              stopColor={isLight ? chartColors.request.light : chartColors.request.dark}
+                              stopOpacity={0.35}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor={isLight ? chartColors.request.light : chartColors.request.dark}
+                              stopOpacity={0.05}
+                            />
+                          </linearGradient>
+                          <linearGradient id="sessionResponseGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop
+                              offset="5%"
+                              stopColor={isLight ? chartColors.response.light : chartColors.response.dark}
+                              stopOpacity={0.35}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor={isLight ? chartColors.response.light : chartColors.response.dark}
+                              stopOpacity={0.05}
+                            />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke={isLight ? '#E5E7EB' : '#1F2937'}
+                          vertical={false}
+                        />
+                        <XAxis
+                          dataKey="label"
+                          tick={{ fontSize: 9, fill: isLight ? '#6B7280' : '#9CA3AF' }}
+                          axisLine={false}
+                          tickLine={false}
+                          interval={chartData.length > 0 ? Math.max(0, Math.floor(chartData.length / 6) - 1) : 0}
+                          height={20}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 9, fill: isLight ? '#6B7280' : '#9CA3AF' }}
+                          axisLine={false}
+                          tickLine={false}
+                          width={35}
+                          tickFormatter={value => {
+                            if (value >= 1000) return `${(value / 1000).toFixed(0)}K`;
+                            return value.toString();
+                          }}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: isLight ? '#fff' : '#1F2937',
+                            border: `1px solid ${isLight ? '#E5E7EB' : '#374151'}`,
+                            borderRadius: '6px',
+                            fontSize: '10px',
+                            padding: '0',
+                          }}
+                          labelStyle={{ color: isLight ? '#111827' : '#F9FAFB', fontWeight: 600 }}
+                          itemStyle={{ color: isLight ? '#6B7280' : '#9CA3AF', padding: '2px 0' }}
+                          formatter={(value: number) => value.toLocaleString()}
+                          content={({ active, payload, label }) => {
+                            if (!active || !payload || payload.length === 0) return null;
+
+                            return (
+                              <div
+                                style={{
+                                  backgroundColor: isLight ? '#fff' : '#1F2937',
+                                  border: `1px solid ${isLight ? '#E5E7EB' : '#374151'}`,
+                                  borderRadius: '6px',
+                                  fontSize: '10px',
+                                }}>
+                                <div
+                                  style={{
+                                    padding: '6px 8px',
+                                    color: isLight ? '#111827' : '#F9FAFB',
+                                    fontWeight: 600,
+                                  }}>
+                                  {label}
+                                </div>
+                                <div
+                                  style={{
+                                    borderTop: `1px solid ${isLight ? '#E5E7EB' : '#374151'}`,
+                                  }}
+                                />
+                                <div style={{ padding: '6px 8px' }}>
+                                  {payload.map((entry: any, index: number) => (
+                                    <div
+                                      key={index}
+                                      style={{
+                                        color: isLight ? '#6B7280' : '#9CA3AF',
+                                        padding: '2px 0',
+                                      }}>
+                                      <span style={{ color: entry.color }}>{entry.name}</span>
+                                      {' : '}
+                                      <span style={{ fontWeight: 600 }}>
+                                        {typeof entry.value === 'number' ? entry.value.toLocaleString() : entry.value}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
-                              <div style={{
-                                borderTop: `1px solid ${isLight ? '#E5E7EB' : '#374151'}`,
-                              }} />
-                              <div style={{ padding: '6px 8px' }}>
-                                {payload.map((entry: any, index: number) => (
-                                  <div
-                                    key={index}
-                                    style={{
-                                      color: isLight ? '#6B7280' : '#9CA3AF',
-                                      padding: '2px 0',
-                                    }}
-                                  >
-                                    <span style={{ color: entry.color }}>{entry.name}</span>
-                                    {' : '}
-                                    <span style={{ fontWeight: 600 }}>
-                                      {typeof entry.value === 'number' ? entry.value.toLocaleString() : entry.value}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        }}
-                      />
-                      {visibleSeries.totalTokens && (
-                        <Area
-                          type="step"
-                          dataKey="totalTokens"
-                          stroke={isLight ? chartColors.total.light : chartColors.total.dark}
-                          strokeWidth={2}
-                          fill="url(#sessionTotalGradient)"
-                          dot={false}
-                          name="Total Tokens"
+                            );
+                          }}
                         />
-                      )}
-                      {visibleSeries.requestTokens && (
-                        <Area
-                          type="step"
-                          dataKey="requestTokens"
-                          stroke={isLight ? chartColors.request.light : chartColors.request.dark}
-                          strokeWidth={1.4}
-                          fill="url(#sessionRequestGradient)"
-                          dot={false}
-                          name="Request Tokens"
-                        />
-                      )}
-                      {visibleSeries.responseTokens && (
-                        <Area
-                          type="step"
-                          dataKey="responseTokens"
-                          stroke={isLight ? chartColors.response.light : chartColors.response.dark}
-                          strokeWidth={1.4}
-                          fill="url(#sessionResponseGradient)"
-                          dot={false}
-                          name="Response Tokens"
-                        />
-                      )}
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
+                        {visibleSeries.totalTokens && (
+                          <Area
+                            type="step"
+                            dataKey="totalTokens"
+                            stroke={isLight ? chartColors.total.light : chartColors.total.dark}
+                            strokeWidth={2}
+                            fill="url(#sessionTotalGradient)"
+                            dot={false}
+                            name="Total Tokens"
+                          />
+                        )}
+                        {visibleSeries.requestTokens && (
+                          <Area
+                            type="step"
+                            dataKey="requestTokens"
+                            stroke={isLight ? chartColors.request.light : chartColors.request.dark}
+                            strokeWidth={1.4}
+                            fill="url(#sessionRequestGradient)"
+                            dot={false}
+                            name="Request Tokens"
+                          />
+                        )}
+                        {visibleSeries.responseTokens && (
+                          <Area
+                            type="step"
+                            dataKey="responseTokens"
+                            stroke={isLight ? chartColors.response.light : chartColors.response.dark}
+                            strokeWidth={1.4}
+                            fill="url(#sessionResponseGradient)"
+                            dot={false}
+                            name="Response Tokens"
+                          />
+                        )}
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
                 )}
               </div>
             )}
@@ -566,12 +617,9 @@ export const UsagePopup: FC<UsagePopupProps> = ({
             <div
               className={cn(
                 'rounded border p-2.5 text-[11px]',
-                isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
-              )}
-            >
-              <div className={`font-medium mb-1.5 ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>
-                Last Request
-              </div>
+                isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
+              )}>
+              <div className={`mb-1.5 font-medium ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>Last Request</div>
               <div className={`space-y-1 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
                 <div className="flex justify-between gap-2">
                   <span>Agent:</span>
@@ -579,13 +627,13 @@ export const UsagePopup: FC<UsagePopupProps> = ({
                 </div>
                 <div className="flex justify-between gap-2">
                   <span>Model:</span>
-                  <span className="font-mono truncate">{dbSessionStats?.lastUsage?.model || '--'}</span>
+                  <span className="truncate font-mono">{dbSessionStats?.lastUsage?.model || '--'}</span>
                 </div>
                 <div className="flex justify-between gap-2">
                   <span>Time:</span>
                   <span className="font-mono">
-                    {dbSessionStats?.lastUsage?.timestamp 
-                      ? new Date(dbSessionStats.lastUsage.timestamp).toLocaleTimeString() 
+                    {dbSessionStats?.lastUsage?.timestamp
+                      ? new Date(dbSessionStats.lastUsage.timestamp).toLocaleTimeString()
                       : '--'}
                   </span>
                 </div>
@@ -597,12 +645,9 @@ export const UsagePopup: FC<UsagePopupProps> = ({
               <div
                 className={cn(
                   'rounded border p-2.5 text-[11px]',
-                  isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
-                )}
-              >
-                <div className={`font-medium mb-1.5 ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>
-                  Averages
-                </div>
+                  isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
+                )}>
+                <div className={`mb-1.5 font-medium ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>Averages</div>
                 <div className={`space-y-1 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
                   <div className="flex justify-between gap-2">
                     <span>Per Request:</span>
@@ -618,12 +663,9 @@ export const UsagePopup: FC<UsagePopupProps> = ({
             {false && onReset && cumulativeUsage.total > 0 && (
               <button
                 disabled
-                className={`w-full px-2 py-1.5 rounded text-[11px] font-medium cursor-not-allowed opacity-50 ${
-                  isLight
-                    ? 'text-red-600 bg-red-50'
-                    : 'text-red-400 bg-red-900/30'
-                }`}
-              >
+                className={`w-full cursor-not-allowed rounded px-2 py-1.5 text-[11px] font-medium opacity-50 ${
+                  isLight ? 'bg-red-50 text-red-600' : 'bg-red-900/30 text-red-400'
+                }`}>
                 Reset Counters
               </button>
             )}
@@ -652,4 +694,3 @@ export const UsagePopup: FC<UsagePopupProps> = ({
 
   return createPortal(popupContent, document.body);
 };
-

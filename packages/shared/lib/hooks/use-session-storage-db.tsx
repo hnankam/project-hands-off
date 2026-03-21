@@ -1,6 +1,6 @@
 /**
  * React hook for accessing session storage from IndexedDB
- * 
+ *
  * Replaces useStorage(sessionStorage) with a version that reads from IndexedDB
  * and doesn't trigger massive writes on session switches
  */
@@ -26,7 +26,7 @@ function createSessionStore() {
   let cache: SessionStorageState | null = null;
   let listeners: Array<() => void> = [];
   const syncKeyPrefix = 'session_storage_sync_';
-  
+
   // Refetch deduplication and debouncing
   let refetchInProgress = false;
   let refetchDebounceTimer: NodeJS.Timeout | null = null;
@@ -51,7 +51,7 @@ function createSessionStore() {
     // Check if we've refetched too recently (prevents cascade)
     const now = Date.now();
     const timeSinceLastRefetch = now - lastRefetchTime;
-    
+
     if (timeSinceLastRefetch < MIN_REFETCH_INTERVAL_MS && !refetchInProgress) {
       // Too soon since last refetch - queue it instead
       if (!refetchDebounceTimer) {
@@ -70,29 +70,29 @@ function createSessionStore() {
       }
       return;
     }
-    
+
     // If already pending, just mark that we want another refetch
     if (refetchDebounceTimer) {
       pendingRefetch = true;
       return;
     }
-    
+
     // If refetch is already in progress, queue another one
     if (refetchInProgress) {
       debug.log('[SessionStore] Refetch in progress, queueing');
       pendingRefetch = true;
       return;
     }
-    
+
     // Debounce: Wait for a short period to batch multiple refetch requests
     refetchDebounceTimer = setTimeout(() => {
       refetchDebounceTimer = null;
       pendingRefetch = false;
-      
+
       debug.log('[SessionStore] Triggering refetch');
       refetchInProgress = true;
       lastRefetchTime = Date.now();
-      
+
       fetchData()
         .then(() => {
           debug.log('[SessionStore] Refetch complete, notifying', listeners.length, 'listeners');
@@ -105,7 +105,7 @@ function createSessionStore() {
         })
         .finally(() => {
           refetchInProgress = false;
-          
+
           // If another refetch was requested while this one was in progress, trigger it now
           if (pendingRefetch) {
             debug.log('[SessionStore] Processing queued refetch');
@@ -118,7 +118,7 @@ function createSessionStore() {
   };
 
   // Subscribe to DB changes (local window)
-  const unsubscribeDB = sessionStorageDB.subscribe((event) => {
+  const unsubscribeDB = sessionStorageDB.subscribe(event => {
     if (event.type === 'sessionsUpdated' || event.type === 'sessionChanged') {
       debug.log('[SessionStore] DB event received:', event.type);
       triggerRefetch();
@@ -130,11 +130,8 @@ function createSessionStore() {
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
     // Get our window ID to filter out self-notifications
     const ourWindowId = sessionStorageDB.getWindowId();
-    
-    const handleStorageChange = (
-      changes: { [key: string]: chrome.storage.StorageChange },
-      areaName: string
-    ) => {
+
+    const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
       // Only process changes from chrome.storage.local
       if (areaName !== 'local') return;
 
@@ -150,13 +147,13 @@ function createSessionStore() {
         if (changes[key]) {
           const newValue = changes[key].newValue;
           const oldValue = changes[key].oldValue;
-          
+
           // Filter out self-notifications: ignore if windowId matches ours
           if (newValue?.windowId === ourWindowId) {
             debug.log('[SessionStore] Ignoring self-notification (same window ID)');
             continue;
           }
-          
+
           // Only refetch if this change came from another window (not our own)
           // We can detect this by checking if the timestamp is different
           if (newValue && (!oldValue || newValue.timestamp !== oldValue.timestamp)) {
@@ -183,7 +180,7 @@ function createSessionStore() {
         }, 50);
       }
     };
-    
+
     chrome.storage.onChanged.addListener(handleStorageChange);
     unsubscribeStorage = () => {
       chrome.storage.onChanged.removeListener(handleStorageChange);
@@ -200,12 +197,12 @@ function createSessionStore() {
 
       // Ensure sessions is always an array
       const validSessions = Array.isArray(sessions) ? sessions : [];
-      
-      debug.log('[SessionStore] Fetch complete:', { 
-        sessionsCount: validSessions.length, 
-        currentSessionId: currentSessionId?.slice(0, 8), 
+
+      debug.log('[SessionStore] Fetch complete:', {
+        sessionsCount: validSessions.length,
+        currentSessionId: currentSessionId?.slice(0, 8),
       });
-      
+
       cache = { sessions: validSessions, currentSessionId };
       return cache;
     } catch (error) {
@@ -226,23 +223,23 @@ function createSessionStore() {
 
   const getSnapshot = () => cache;
 
-  return { 
-    fetchData, 
-    subscribe, 
-    getSnapshot, 
+  return {
+    fetchData,
+    subscribe,
+    getSnapshot,
     cleanup: () => {
       // Clean up debounce timer
       if (refetchDebounceTimer) {
         clearTimeout(refetchDebounceTimer);
         refetchDebounceTimer = null;
       }
-      
+
       // Clean up subscriptions
       unsubscribeDB();
       if (unsubscribeStorage) {
         unsubscribeStorage();
       }
-    }
+    },
   };
 }
 
@@ -262,7 +259,7 @@ function getOrCreateStore() {
 
 /**
  * Hook to access session storage from IndexedDB
- * 
+ *
  * Usage:
  *   const { sessions, currentSessionId, isLoading } = useSessionStorageDB();
  */
@@ -276,15 +273,16 @@ export const useSessionStorageDB = (): SessionStorageState => {
     if (!data && !initPromise && !hasInitialized) {
       setIsLoading(true);
       hasInitialized = true; // Mark as started
-      initPromise = store.fetchData()
-        .then((fetchedData) => {
-          debug.log('[useSessionStorageDB] Initial data loaded:', { 
-            sessionsCount: fetchedData.sessions.length, 
-            currentSessionId: fetchedData.currentSessionId?.slice(0, 8) 
+      initPromise = store
+        .fetchData()
+        .then(fetchedData => {
+          debug.log('[useSessionStorageDB] Initial data loaded:', {
+            sessionsCount: fetchedData.sessions.length,
+            currentSessionId: fetchedData.currentSessionId?.slice(0, 8),
           });
           return fetchedData;
         })
-        .catch((error) => {
+        .catch(error => {
           debug.error('[useSessionStorageDB] Failed to fetch session data:', error);
           hasInitialized = false; // Allow retry on error
           // Return empty state on error
@@ -301,9 +299,9 @@ export const useSessionStorageDB = (): SessionStorageState => {
   }, [data]); // Re-run when data changes
 
   // Return cached data or empty state while loading
-  return { 
+  return {
     ...(data || { sessions: [], currentSessionId: null }),
-    isLoading 
+    isLoading,
   };
 };
 
@@ -320,11 +318,13 @@ export const sessionStorageDBWrapper = {
    */
   async addSession(title: string, apiBaseUrl?: string): Promise<void> {
     debug.log('[sessionStorageDBWrapper] Creating session:', title);
-    
+
     // Verify userId is set
     const userId = sessionStorageDB.getCurrentUserId();
     if (!userId) {
-      const error = new Error('[sessionStorageDBWrapper] Cannot create session: No user is logged in. Call setCurrentUserId() first.');
+      const error = new Error(
+        '[sessionStorageDBWrapper] Cannot create session: No user is logged in. Call setCurrentUserId() first.',
+      );
       debug.error(error.message);
       throw error;
     }
@@ -342,23 +342,28 @@ export const sessionStorageDBWrapper = {
 
     if (sessions.length > 0) {
       const currentSessionId = await sessionStorageDB.getCurrentSessionId();
-      const sessionToUse = currentSessionId
-        ? await sessionStorageDB.getSession(currentSessionId)
-        : null;
+      const sessionToUse = currentSessionId ? await sessionStorageDB.getSession(currentSessionId) : null;
       const sessionWithModel = sessionToUse?.selectedModel
         ? sessionToUse
         : [...sessions].sort((a, b) => b.timestamp - a.timestamp).find(s => s.selectedModel);
-      
+
       if (sessionWithModel) {
         lastSelectedAgent = sessionWithModel.selectedAgent || lastSelectedAgent;
         lastSelectedModel = sessionWithModel.selectedModel || lastSelectedModel;
         // Carry over context (pages, notes, credentials) from previous session
         if (sessionWithModel.selectedPageURLs?.length) lastSelectedPageURLs = sessionWithModel.selectedPageURLs;
         if (sessionWithModel.selectedNoteIds?.length) lastSelectedNoteIds = sessionWithModel.selectedNoteIds;
-        if (sessionWithModel.selectedCredentialIds?.length) lastSelectedCredentialIds = sessionWithModel.selectedCredentialIds;
+        if (sessionWithModel.selectedCredentialIds?.length)
+          lastSelectedCredentialIds = sessionWithModel.selectedCredentialIds;
       }
-      
-      debug.log('[sessionStorageDBWrapper] Using from current session:', { lastSelectedAgent, lastSelectedModel, lastSelectedPageURLs, lastSelectedNoteIds, lastSelectedCredentialIds });
+
+      debug.log('[sessionStorageDBWrapper] Using from current session:', {
+        lastSelectedAgent,
+        lastSelectedModel,
+        lastSelectedPageURLs,
+        lastSelectedNoteIds,
+        lastSelectedCredentialIds,
+      });
     }
 
     const session = await sessionStorageDB.addSession({
@@ -372,11 +377,11 @@ export const sessionStorageDBWrapper = {
       ...(lastSelectedNoteIds && { selectedNoteIds: lastSelectedNoteIds }),
       ...(lastSelectedCredentialIds && { selectedCredentialIds: lastSelectedCredentialIds }),
     });
-    
+
     if (apiBaseUrl) {
       sessionStorageDB.persistSessionTitleToBackend(apiBaseUrl, session.id, title);
     }
-    
+
     debug.log('[sessionStorageDBWrapper] Session created successfully');
   },
 
@@ -500,7 +505,7 @@ export const sessionStorageDBWrapper = {
   async updateSessionConfigPanel(
     sessionId: string,
     configPanelOpen: boolean,
-    configPanelTab: 'context' | 'plans' | 'graphs' | 'sub-agents'
+    configPanelTab: 'context' | 'plans' | 'graphs' | 'preview' | 'sub-agents',
   ): Promise<void> {
     await sessionStorageDB.updateSessionConfigPanel(sessionId, configPanelOpen, configPanelTab);
   },
@@ -509,9 +514,9 @@ export const sessionStorageDBWrapper = {
    * Update session selected workspace items (notes and credentials)
    */
   async updateSessionWorkspaceItems(
-    sessionId: string, 
-    selectedNoteIds: string[], 
-    selectedCredentialIds: string[]
+    sessionId: string,
+    selectedNoteIds: string[],
+    selectedCredentialIds: string[],
   ): Promise<void> {
     await sessionStorageDB.updateSessionWorkspaceItems(sessionId, selectedNoteIds, selectedCredentialIds);
   },
@@ -543,7 +548,7 @@ export const sessionStorageDBWrapper = {
    * Update agent state (includes plans and graphs)
    */
   async updateAgentStepState(sessionId: string, state: SessionAgentState): Promise<void> {
-    await sessionStorageDB.updateAgentState(sessionId, { 
+    await sessionStorageDB.updateAgentState(sessionId, {
       plans: state.plans,
       graphs: state.graphs,
     });
@@ -580,4 +585,3 @@ export const sessionStorageDBWrapper = {
     return sessionStorageDB.getWindowId();
   },
 };
-

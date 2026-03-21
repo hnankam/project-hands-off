@@ -1,3 +1,4 @@
+import { isExtensionContext } from '@extension/platform';
 import { createStorage, StorageEnum } from '../base/index.js';
 
 export interface ApiConfigStateType {
@@ -11,21 +12,24 @@ export type ApiConfigStorageType = ReturnType<typeof createStorage<ApiConfigStat
   resetToDefaults: () => Promise<void>;
 };
 
-/** Auto-set URLs for Adobe corp deployment. Reset restores to localhost (empty = DEFAULT in constants). */
-const INITIAL_API_URL = 'http://api.handsoff.corp.adobe.com:3001';
-const INITIAL_BACKEND_URL = 'http://api.handsoff.corp.adobe.com:8001';
+/**
+ * Extension: Adobe corp defaults (Options page can override).
+ * Web / non-extension: empty → `CEB_API_URL` / `CEB_BACKEND_URL` from .env via constants (avoids CORS to corp from localhost).
+ */
+function getInitialApiConfig(): ApiConfigStateType {
+  if (isExtensionContext()) {
+    return {
+      apiUrl: 'http://api.handsoff.corp.adobe.com:3001',
+      backendUrl: 'http://api.handsoff.corp.adobe.com:8001',
+    };
+  }
+  return { apiUrl: '', backendUrl: '' };
+}
 
-const storage = createStorage<ApiConfigStateType>(
-  'api-config-storage-key',
-  {
-    apiUrl: INITIAL_API_URL,
-    backendUrl: INITIAL_BACKEND_URL,
-  },
-  {
-    storageEnum: StorageEnum.Local,
-    liveUpdate: true,
-  },
-);
+const storage = createStorage<ApiConfigStateType>('api-config-storage-key', getInitialApiConfig(), {
+  storageEnum: StorageEnum.Local,
+  liveUpdate: true,
+});
 
 export const apiConfigStorage: ApiConfigStorageType = {
   ...storage,

@@ -62,8 +62,10 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   // Detect current view mode for conditional styling
   const viewMode = getCurrentViewMode();
 
-  // Auth
-  const { user } = useAuth();
+  // Auth — workspaceScopeKey must be passed into ChatSessionContainer so memo allows re-renders
+  // when org/team changes (container reads useAuth internally; memo only compares props).
+  const { user, organization, activeTeam } = useAuth();
+  const workspaceScopeKey = `${organization?.id ?? ''}:${activeTeam ?? ''}`;
 
   // Ensure sessions is always an array (defensive programming)
   const sessions = useMemo(() => {
@@ -497,6 +499,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                       publicApiKey={publicApiKey}
                       initialMetadata={session}
                       isActive={isActive}
+                      workspaceScopeKey={workspaceScopeKey}
                       contextMenuMessage={isActive ? contextMenuMessage : null}
                       onMessagesCountChange={handleMessagesCountChange}
                       onRegisterResetFunction={handleRegisterResetFunction}
@@ -565,13 +568,13 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
             {/* Individual skeletons during session transitions (covers all three sections) */}
             {activeSession && shouldShowSkeleton && !shouldShowSkeletonOverlay && (
               <>
-                {/* Status Bar Skeleton - positioned at top, h-[34px] */}
+                {/* Status Bar Skeleton - positioned at top, h-[35px] */}
                 <div className="pointer-events-auto absolute top-0 right-0 left-0 z-[15]">
                   <StatusBarSkeleton isLight={isLight} />
                 </div>
 
                 {/* Messages Skeleton - positioned in middle (between status bar and selectors bar) */}
-                <div className="pointer-events-auto absolute top-[34px] right-0 bottom-[48px] left-0 z-[15] flex flex-col overflow-hidden">
+                <div className="pointer-events-auto absolute top-[35px] right-0 bottom-[48px] left-0 z-[15] flex flex-col overflow-hidden">
                   <MessagesOnlySkeleton isLight={isLight} />
                 </div>
 
@@ -590,7 +593,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                 'flex-shrink-0 border-t px-3',
                 isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
               )}>
-              <SessionList isLight={isLight} viewMode={viewMode} />
+              <SessionList isLight={isLight} viewMode={viewMode} apiBaseUrl={API_CONFIG.BASE_URL} />
             </div>
           )}
         </div>

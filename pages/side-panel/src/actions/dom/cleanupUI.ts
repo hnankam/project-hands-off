@@ -1,4 +1,5 @@
 import { debug as baseDebug } from '@extension/shared';
+import { assertExtensionContext } from '@src/utils/extensionOnly';
 
 // ============================================================================
 // CONSTANTS
@@ -95,7 +96,7 @@ interface ScriptExecutionResult {
  * Type guard to check if script result is valid
  */
 function isValidScriptResult(
-  results: ScriptExecutionResult[] | undefined
+  results: ScriptExecutionResult[] | undefined,
 ): results is [ScriptExecutionResult, ...ScriptExecutionResult[]] {
   return Array.isArray(results) && results.length > 0 && results[0]?.result !== undefined;
 }
@@ -104,7 +105,7 @@ function isValidScriptResult(
  * Create a timeout promise for cleanup operation
  */
 function createTimeoutPromise(): Promise<ScriptExecutionResult[]> {
-  return new Promise((resolve) =>
+  return new Promise(resolve =>
     setTimeout(
       () =>
         resolve([
@@ -117,8 +118,8 @@ function createTimeoutPromise(): Promise<ScriptExecutionResult[]> {
             },
           },
         ]),
-      CLEANUP_TIMEOUT_MS
-    )
+      CLEANUP_TIMEOUT_MS,
+    ),
   );
 }
 
@@ -146,6 +147,7 @@ function getErrorMessage(error: unknown): string {
  */
 export async function handleCleanupExtensionUI(): Promise<CleanupUIResult> {
   try {
+    assertExtensionContext('Cleanup extension UI');
     debug.log(LOG_PREFIX, 'Removing all extension UI elements');
 
     // Get the current active tab
@@ -180,13 +182,13 @@ export async function handleCleanupExtensionUI(): Promise<CleanupUIResult> {
           const resetElements = (selector: string, label: string, attrs: string[]): void => {
             const nodes = document.querySelectorAll(selector);
             if (nodes.length > 0) {
-              nodes.forEach((el) => {
+              nodes.forEach(el => {
                 const htmlEl = el as HTMLElement;
                 htmlEl.style.outline = '';
                 htmlEl.style.outlineOffset = '';
                 htmlEl.style.backgroundColor = '';
                 htmlEl.style.cursor = '';
-                attrs.forEach((attr) => htmlEl.removeAttribute(attr));
+                attrs.forEach(attr => htmlEl.removeAttribute(attr));
               });
               elementsRemoved.push(`${nodes.length} ${label}`);
             }
@@ -212,9 +214,9 @@ export async function handleCleanupExtensionUI(): Promise<CleanupUIResult> {
           resetElements('[data-copilot-drag-target="true"]', 'drag target element(s)', ['data-copilot-drag-target']);
 
           // Remove animation artifacts
-          document.querySelectorAll('div[style*="scrollFade"]').forEach((el) => el.remove());
-          document.querySelectorAll('div[style*="clickRipple"]').forEach((el) => el.remove());
-          document.querySelectorAll('div[style*="dropRipple"]').forEach((el) => el.remove());
+          document.querySelectorAll('div[style*="scrollFade"]').forEach(el => el.remove());
+          document.querySelectorAll('div[style*="clickRipple"]').forEach(el => el.remove());
+          document.querySelectorAll('div[style*="dropRipple"]').forEach(el => el.remove());
 
           // Clear global cursor state
           const win = window as WindowWithCursorState;

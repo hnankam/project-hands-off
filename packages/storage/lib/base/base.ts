@@ -1,5 +1,6 @@
 import { SessionAccessLevelEnum, StorageEnum } from './enums.js';
 import type { BaseStorageType, StorageConfigType, ValueOrUpdateType } from './types.js';
+import { createWebStorage, isChromeStorageAreaAvailable } from './web-storage.js';
 
 /**
  * Chrome reference error while running `processTailwindFeatures` in tailwindcss.
@@ -58,11 +59,16 @@ export const createStorage = <D = string>(
   fallback: D,
   config?: StorageConfigType<D>,
 ): BaseStorageType<D> => {
+  const storageEnum = config?.storageEnum ?? StorageEnum.Local;
+
+  if (!isChromeStorageAreaAvailable(storageEnum)) {
+    return createWebStorage(key, fallback, config);
+  }
+
   let cache: D | null = null;
   let initialCache = false;
   let listeners: Array<() => void> = [];
 
-  const storageEnum = config?.storageEnum ?? StorageEnum.Local;
   const liveUpdate = config?.liveUpdate ?? false;
 
   const serialize = config?.serialization?.serialize ?? ((v: D) => v);
